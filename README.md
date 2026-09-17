@@ -1,20 +1,20 @@
 # WA-Vendeur
 
-Le commercial IA qui travaille sur WhatsApp 24h/24.
+WA-Vendeur transforme WhatsApp en commercial disponible 24h/24 : assistant IA, catalogue, prospects, commandes et relances.
 
-## MVP 1.4 Beta
+## MVP bêta
+- Dashboard commercial
+- Catalogue produits
+- Prospects et scoring
+- Commandes
+- Assistant IA avec mode démo sans clé API
+- Endpoint de santé pour déploiement
+- PostgreSQL si `DATABASE_URL` est fourni
 
-Plateforme SaaS pour automatiser la qualification commerciale, le CRM, les commandes, les relances et les conversations WhatsApp.
-
-### Démarrage
-
+## Démarrage
 ```bash
 npm install
 npm start
 ```
 
-Puis ouvrir `http://localhost:3000`.
-
-Voir `DEPLOYMENT.md` pour le déploiement et les variables d'environnement.
-
-> Les identifiants Meta/WhatsApp, OpenAI et paiement ne doivent jamais être commités dans Git.
+Variables utiles : `PORT`, `DATABASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `APP_ORIGIN`.
