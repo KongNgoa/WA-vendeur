@@ -1,0 +1,20 @@
+import http from 'node:http';
+import crypto from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PORT = Number(process.env.PORT || 3000);
+const sessions = new Map();
+const hash = (p,s=crypto.randomBytes(16).toString('hex')) => ({salt:s,hash:crypto.scryptSync(p,s,64).toString('hex')});
+const demo = {email:'demo@wavendeur.local',password:hash('demo1234'),name:'Administrateur'};
+const products=[{id:'p1',name:'Nike Air Max',price:25000,stock:8,category:'Chaussures'},{id:'p2',name:'T-shirt Premium',price:12000,stock:17,category:'Vêtements'},{id:'p3',name:'Jean homme',price:18000,stock:5,category:'Vêtements'}];
+const prospects=[{id:'c1',name:'Jean M.',phone:'+237 6 70 00 00 01',need:'Nike Air Max',value:85000,score:87,status:'Chaud'}];
+const orders=[{id:'o1',number:'#001',client:'Jean M.',amount:85000,status:'En attente'}];
+const conversations=[{id:'v1',name:'Jean M.',phone:'+237 6 70 00 00 01',messages:[{from:'in',text:'Bonjour, la Nike est disponible ?'},{from:'out',text:'Bonjour 👋 Oui, elle est disponible à 25 000 FCFA. Quelle taille recherchez-vous ?'}]}];
+const json=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY','Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type, Authorization','Access-Control-Allow-Methods':'GET,POST,OPTIONS'});res.end(JSON.stringify(data));};
+const body=async req=>{let s='';for await(const c of req)s+=c;return s?JSON.parse(s):{}};
+const ai=(text)=>{const q=String(text||'').toLowerCase();if(q.includes('prix')||q.includes('combien'))return products.map(p=>`${p.name}: ${p.price.toLocaleString('fr-FR')} FCFA`).join(' · ')+'. Lequel vous intéresse ?';if(q.includes('dispon')||q.includes('stock'))return 'Oui, dites-moi le produit souhaité et je vérifie le stock.';if(q.includes('livr'))return 'Oui. Quel est votre quartier pour organiser la livraison ?';if(q.includes('acheter')||q.includes('commande'))return 'Avec plaisir. Donnez-moi votre nom, téléphone, produit et localisation pour préparer la commande.';if(q.includes('humain')||q.includes('conseiller'))return 'Bien sûr. Je transmets votre demande à un conseiller humain.';return 'Bonjour 👋 Je suis Julie, votre assistante commerciale. Que puis-je faire pour vous ?';};
+async function handler(req,res){if(req.method==='OPTIONS')return json(res,204,{});const u=new URL(req.url,`http://${req.headers.host}`);if(req.method==='GET'&&u.pathname==='/api/health')return json(res,200,{ok:true,version:'1.4.0-beta',service:'WA-Vendeur'});if(req.method==='GET'&&u.pathname==='/api/version')return json(res,200,{version:'1.4.0-beta'});if(req.method==='POST'&&u.pathname==='/api/login'){const b=await body(req);if(b.email===demo.email&&b.password==='demo1234'){const token=crypto.randomBytes(24).toString('hex');sessions.set(token,Date.now()+86400000);return json(res,200,{token,user:{name:demo.name,email:demo.email}})}return json(res,401,{error:'Identifiants incorrects'});}if(req.method==='GET'&&u.pathname==='/api/bootstrap')return json(res,200,{company:{name:'Boutique Démo Yaoundé',sector:'Mode & accessoires',aiName:'Julie',whatsappStatus:'demo_connected'},products,prospects,orders,conversations,followups:[{id:'f1',when:"Aujourd’hui 12:00",status:'À relancer'}],subscription:{plan:'Business',monthlyPrice:25000,status:'active'}});if(req.method==='POST'&&u.pathname==='/api/ai/reply'){const b=await body(req);return json(res,200,{reply:ai(b.text),provider:'fallback-demo'});}if(req.method==='GET'&&u.pathname==='/'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});return res.end(await readFile(path.join(__dirname,'public/index.html')));}return json(res,404,{error:'Route introuvable'});}
+http.createServer((req,res)=>handler(req,res).catch(e=>json(res,500,{error:e.message}))).listen(PORT,'0.0.0.0',()=>console.log(`WA-Vendeur listening on ${PORT}`));
