@@ -18,3 +18,5 @@ npm start
 ```
 
 Variables utiles : `PORT`, `DATABASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `APP_ORIGIN`.
+
+Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.
