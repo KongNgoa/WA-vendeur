@@ -53,6 +53,7 @@ async function handler(req,res) {
   const u=new URL(req.url,`http://${req.headers.host}`);
   if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.5.0',service:'WA-Vendeur',database:'postgresql'});
   if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.5.0'});
+  if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   await ensureDemo();
   if(req.method==='POST'&&u.pathname==='/api/login') { const b=await body(req); const r=await query('SELECT u.id,u.name,u.email,u.company_id,u.password_hash,u.password_salt,c.name AS company_name FROM users u JOIN companies c ON c.id=u.company_id WHERE u.email=$1',[b.email]); const user=r.rows[0]; if(!user||!verifyPassword(String(b.password||''),user.password_salt,user.password_hash)) return json(res,401,{error:'Identifiants incorrects'}); const t=token(); sessions.set(t,{userId:user.id,companyId:user.company_id,expires:Date.now()+86400000}); return json(res,200,{token:t,user:{id:user.id,name:user.name,email:user.email,companyId:user.company_id,company:user.company_name}}); }
   const auth=(req.headers.authorization||'').replace(/^Bearer\s+/i,''); const session=sessions.get(auth); if(!session||session.expires<Date.now()) return json(res,401,{error:'Authentification requise'});
@@ -63,7 +64,6 @@ async function handler(req,res) {
   if(req.method==='POST'&&u.pathname==='/api/ai/reply') { const b=await body(req); const d=await query('SELECT name,price,stock FROM products WHERE company_id=$1 ORDER BY created_at',[session.companyId]); return json(res,200,{reply:ai(b.text,d.rows),provider:'fallback-demo'}); }
   if(req.method==='POST'&&u.pathname==='/api/followups') { const b=await body(req); const r=await query('INSERT INTO followups(company_id,prospect_id,text,due_at,status) VALUES($1,$2,$3,$4,$5) RETURNING *',[session.companyId,b.prospectId||null,b.text||null,b.dueAt||null,'Programmée']); return json(res,201,{followup:r.rows[0]}); }
   if(req.method==='GET'&&u.pathname==='/api/health/db') { await query('SELECT 1'); return json(res,200,{ok:true,database:'postgresql'}); }
-  if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   return json(res,404,{error:'Route introuvable'});
 }
 
