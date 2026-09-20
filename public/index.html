@@ -1,1 +1,59 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WA-Vendeur</title><style>body{margin:0;font-family:Inter,system-ui,sans-serif;background:#f5f7fb;color:#172033}header{background:#111827;color:white;padding:22px 28px;display:flex;justify-content:space-between;align-items:center}h1{margin:0;font-size:24px}.tag{opacity:.75}.wrap{max-width:1100px;margin:28px auto;padding:0 18px}.hero{background:white;border-radius:18px;padding:28px;box-shadow:0 8px 30px #0000000d;margin-bottom:20px}.hero h2{font-size:34px;margin:0 0 8px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.card{background:white;border-radius:14px;padding:18px;box-shadow:0 4px 18px #0000000a}.num{font-size:28px;font-weight:800;margin-top:6px}.muted{color:#687386}.cols{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px}.list{background:white;border-radius:14px;padding:18px}.row{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid #eee}.badge{padding:5px 9px;border-radius:20px;background:#e7f7ee;color:#18794e;font-size:12px;font-weight:700}.chat{display:flex;gap:8px;margin-top:12px}.chat input{flex:1;padding:13px;border:1px solid #d9deea;border-radius:10px}.chat button{border:0;border-radius:10px;padding:0 18px;background:#111827;color:white;font-weight:700}.reply{margin-top:12px;background:#f0f4ff;padding:13px;border-radius:10px;min-height:22px}@media(max-width:800px){.grid{grid-template-columns:1fr 1fr}.cols{grid-template-columns:1fr}.hero h2{font-size:28px}}</style></head><body><header><div><h1>WA-Vendeur</h1><div class="tag">Le commercial IA qui travaille sur WhatsApp 24h/24</div></div><span class="badge">BÊTA</span></header><main class="wrap"><section class="hero"><h2>Votre WhatsApp devient un commercial.</h2><p class="muted">Assistant IA · CRM prospects · commandes · relances</p></section><section class="grid"><div class="card"><div class="muted">Prospects</div><div class="num" id="prospects">—</div></div><div class="card"><div class="muted">Prospects chauds</div><div class="num" id="hot">—</div></div><div class="card"><div class="muted">Commandes</div><div class="num" id="orders">—</div></div><div class="card"><div class="muted">CA commandes</div><div class="num" id="ca">—</div></div></section><section class="cols"><div class="list"><h3>Catalogue</h3><div id="products"></div></div><div class="list"><h3>Assistant commercial IA</h3><p class="muted">Testez une réponse client.</p><div class="chat"><input id="q" placeholder="Ex. Quel est le prix de la Nike ?"><button onclick="ask()">Envoyer</button></div><div class="reply" id="reply">Bonjour 👋 Je suis Julie. Posez-moi une question.</div></div></section></main><script>async function load(){const d=await fetch('/api/bootstrap').then(r=>r.json());document.getElementById('prospects').textContent=d.prospects.length;document.getElementById('hot').textContent=d.prospects.filter(x=>x.score>=70).length;document.getElementById('orders').textContent=d.orders.length;document.getElementById('ca').textContent=d.orders.reduce((s,x)=>s+(x.amount||0),0).toLocaleString('fr-FR')+' FCFA';document.getElementById('products').innerHTML=d.products.map(p=>`<div class="row"><span>${p.name}</span><strong>${p.price.toLocaleString('fr-FR')} FCFA</strong></div>`).join('')}async function ask(){const q=document.getElementById('q').value;if(!q)return;document.getElementById('reply').textContent='…';const d=await fetch('/api/ai/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:q})}).then(r=>r.json());document.getElementById('reply').textContent=d.reply}load();</script></body></html>
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WA-Vendeur</title>
+<style>
+body{margin:0;font-family:Inter,system-ui,sans-serif;background:#f5f7fb;color:#172033}
+header{background:#111827;color:white;padding:22px 28px;display:flex;justify-content:space-between;align-items:center}
+h1{margin:0;font-size:24px}.tag{opacity:.75}.wrap{max-width:1100px;margin:28px auto;padding:0 18px}
+.hero,.login,.card,.list{background:white;border-radius:18px;padding:24px;box-shadow:0 8px 30px #0000000d;margin-bottom:20px}
+.hero h2{font-size:34px;margin:0 0 8px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.card{margin:0}.num{font-size:28px;font-weight:800;margin-top:6px}.muted{color:#687386}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px}.row{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid #eee}
+.badge{padding:5px 9px;border-radius:20px;background:#e7f7ee;color:#18794e;font-size:12px;font-weight:700}
+.chat{display:flex;gap:8px;margin-top:12px}.chat input,.login input{flex:1;padding:13px;border:1px solid #d9deea;border-radius:10px;box-sizing:border-box}
+.chat button,.login button{border:0;border-radius:10px;padding:13px 18px;background:#111827;color:white;font-weight:700;cursor:pointer}
+.login{max-width:430px;margin:45px auto}.login h2{margin-top:0}.login input{display:block;width:100%;margin:10px 0}.error{color:#b42318;margin-top:10px}.success{color:#18794e;margin-top:10px}
+.reply{margin-top:12px;background:#f0f4ff;padding:13px;border-radius:10px;min-height:22px}
+.hidden{display:none}
+@media(max-width:800px){.grid{grid-template-columns:1fr 1fr}.cols{grid-template-columns:1fr}.hero h2{font-size:28px}}
+</style>
+</head>
+<body>
+<header><div><h1>WA-Vendeur</h1><div class="tag">Le commercial IA qui travaille sur WhatsApp 24h/24</div></div><span class="badge">BÊTA</span></header>
+<main class="wrap">
+<section id="login" class="login">
+<h2>Connexion</h2>
+<p class="muted">Connectez-vous pour accéder à votre espace commercial.</p>
+<input id="email" type="email" value="demo@wavendeur.local" placeholder="Email">
+<input id="password" type="password" value="demo1234" placeholder="Mot de passe">
+<button onclick="login()">Se connecter</button>
+<div id="loginMsg"></div>
+</section>
+<section id="app" class="hidden">
+<section class="hero"><h2>Votre WhatsApp devient un commercial.</h2><p class="muted">Assistant IA · CRM prospects · commandes · relances</p></section>
+<section class="grid">
+<div class="card"><div class="muted">Prospects</div><div class="num" id="prospects">—</div></div>
+<div class="card"><div class="muted">Prospects chauds</div><div class="num" id="hot">—</div></div>
+<div class="card"><div class="muted">Commandes</div><div class="num" id="orders">—</div></div>
+<div class="card"><div class="muted">CA commandes</div><div class="num" id="ca">—</div></div>
+</section>
+<section class="cols">
+<div class="list"><h3>Catalogue</h3><div id="products"></div></div>
+<div class="list"><h3>Assistant commercial IA</h3><p class="muted">Testez une réponse client.</p><div class="chat"><input id="q" placeholder="Ex. Quel est le prix de la Nike ?"><button onclick="ask()">Envoyer</button></div><div class="reply" id="reply">Bonjour 👋 Je suis Julie. Posez-moi une question.</div></div>
+</section>
+</section>
+</main>
+<script>
+let token=localStorage.getItem('wa_token')||'';
+async function api(path,options={}){options.headers={...(options.headers||{}),...(token?{Authorization:'Bearer '+token}:{})};const r=await fetch(path,options);const d=await r.json();if(r.status===401){token='';localStorage.removeItem('wa_token');showLogin('Session expirée. Veuillez vous reconnecter.');throw new Error('auth')}if(!r.ok)throw new Error(d.error||'Erreur');return d}
+function showLogin(msg=''){document.getElementById('login').classList.remove('hidden');document.getElementById('app').classList.add('hidden');document.getElementById('loginMsg').className='error';document.getElementById('loginMsg').textContent=msg}
+async function login(){const msg=document.getElementById('loginMsg');msg.className='';msg.textContent='Connexion…';try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('email').value,password:document.getElementById('password').value})});const d=await r.json();if(!r.ok)throw new Error(d.error||'Identifiants incorrects');token=d.token;localStorage.setItem('wa_token',token);document.getElementById('login').classList.add('hidden');document.getElementById('app').classList.remove('hidden');await load();}catch(e){msg.className='error';msg.textContent=e.message}}
+async function load(){try{const d=await api('/api/bootstrap');document.getElementById('prospects').textContent=d.prospects.length;document.getElementById('hot').textContent=d.prospects.filter(x=>x.score>=70).length;document.getElementById('orders').textContent=d.orders.length;document.getElementById('ca').textContent=d.orders.reduce((s,x)=>s+(Number(x.amount)||0),0).toLocaleString('fr-FR')+' FCFA';document.getElementById('products').innerHTML=d.products.map(p=>'<div class="row"><span>'+p.name+'</span><strong>'+Number(p.price).toLocaleString('fr-FR')+' FCFA</strong></div>').join('')}catch(e){}}
+async function ask(){const q=document.getElementById('q').value;if(!q)return;document.getElementById('reply').textContent='…';try{const d=await api('/api/ai/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:q})});document.getElementById('reply').textContent=d.reply}catch(e){document.getElementById('reply').textContent=e.message}}
+if(token){document.getElementById('login').classList.add('hidden');document.getElementById('app').classList.remove('hidden');load()}
+</script>
+</body>
+</html>
