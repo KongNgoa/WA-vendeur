@@ -260,26 +260,91 @@ async function deleteProspect(id) {
 }
 
 
-function renderConversations(){ $('conversationList').innerHTML=data.conversations.length?'<table><thead><tr><th>Contact</th><th>Canal</th><th>Prospect</th><th>Messages</th><th>Action</th></tr></thead><tbody>'+data.conversations.map(c=>'<tr><td>'+esc(c.phone||'—')+'</td><td>'+esc(c.channel)+'</td><td>'+esc(c.prospect||'Non lié')+'</td><td>'+((c.messages||[]).length)+'</td><td><button class="btn" onclick="openConversation(\''+c.id+'\')">Ouvrir</button></td></tr>').join('')+'</tbody></table>':'<div class="empty">Aucune conversation. Les conversations WhatsApp apparaîtront ici.</div>'; if(activeConversation) showConversation(activeConversation); }
-function openConversation(id){activeConversation=id; $('conversationPanel').classList.remove('hidden'); showConversation(id);}
-function showConversation(id){const c=data.conversations.find(x=>x.id===id); if(!c)return; $('conversationTitle').textContent=(c.prospect||c.phone||'Conversation')+' · '+c.channel; $('messageList').innerHTML=(c.messages||[]).map(m=>'<div style="padding:10px;margin:7px 0;border-radius:10px;background:'+(m.direction==='in'?'#f0f4ff':'#e7f7ee')+'"><strong>'+(m.direction==='in'?'Client':'VENDIA')+'</strong><br>'+esc(m.body)+'</div>').join('')||'<div class="empty">Aucun message.</div>'; }
-async function sendMessage(){if(!activeConversation)return;const body=$('messageInput').value.trim();if(!body)return;try{await api('/api/conversations/'+activeConversation+'/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body,direction:'out'})});$('messageInput').value='';const cv=await api('/api/conversations');data.conversations=cv.conversations||[];showConversation(activeConversation);}catch(e){alert(e.message);}}
-function renderOrders(){const opts=data.prospects.map(p=>'<option value="'+p.id+'">'+esc(p.name||p.phone||'Prospect')+'</option>').join('');$('oProspect').innerHTML=opts||'<option value="">Ajoutez d’abord un prospect</option>'; $('orderTable').innerHTML=data.orders.length?'<table><thead><tr><th>N°</th><th>Client</th><th>Montant</th><th>Statut</th><th>Action</th></tr></thead><tbody>'+data.orders.map(o=>'<tr><td>'+esc(o.number)+'</td><td>'+esc(o.client||'—')+'</td><td>'+money(o.amount)+'</td><td>'+esc(o.status)+'</td><td><button class="btn" onclick="editOrder(\''+o.id+'\',\''+String(o.status).replace(/'/g,"\\'")+'\','+Number(o.amount||0)+')">Statut</button></td></tr>').join('')+'</tbody></table>':'<div class="empty">Aucune commande.</div>'; }
-async function saveOrder(e){e.preventDefault();try{await api('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prospectId:$('oProspect').value,amount:Number($('oAmount').value),status:$('oStatus').value})});e.target.reset();await load();tab('orders');}catch(x){alert(x.message);}}
-async function editOrder(id,status,amount){const ns=prompt('Statut de la commande',status);if(ns===null)return;try{await api('/api/orders/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:ns,amount})});await load();tab('orders');}catch(e){alert(e.message);}}
-function renderFollowups(){const opts=data.prospects.map(p=>'<option value="'+p.id+'">'+esc(p.name||p.phone||'Prospect')+'</option>').join('');$('fProspect').innerHTML=opts||'<option value="">Ajoutez d’abord un prospect</option>';$('followupTable').innerHTML=data.followups.length?'<table><thead><tr><th>Prospect</th><th>Message</th><th>Échéance</th><th>Statut</th><th>Action</th></tr></thead><tbody>'+data.followups.map(f=>'<tr><td>'+esc(f.prospect||'—')+'</td><td>'+esc(f.text||'—')+'</td><td>'+esc(f.dueAt?new Date(f.dueAt).toLocaleString('fr-FR'):'—')+'</td><td>'+esc(f.status)+'</td><td><button class="btn" onclick="completeFollowup(\''+f.id+'\')">Terminer</button></td></tr>').join('')+'</tbody></table>':'<div class="empty">Aucune relance programmée.</div>'; }
-async function saveFollowup(e){e.preventDefault();try{const local=$('fDue').value;const due=local?new Date(local).toISOString():null;await api('/api/followups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prospectId:$('fProspect').value,text:$('fText').value.trim(),dueAt:due})});e.target.reset();await load();tab('followups');}catch(x){alert(x.message);}}
-async function completeFollowup(id){try{await api('/api/followups/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'Terminée'})});await load();tab('followups');}catch(e){alert(e.message);}}
+function renderConversations(){
+  const list=$('conversationList');
+  list.innerHTML=data.conversations.length
+    ? data.conversations.map(c=>'<div class="panel" style="box-shadow:none;border:1px solid #edf0f5"><strong>'+esc(c.prospect||'Contact')+'</strong> · '+esc(c.phone||'—')+'<div class="muted">'+esc(c.channel||'whatsapp')+'</div>'+
+      (c.messages||[]).map(m=>'<div style="padding:8px;margin-top:6px;background:'+(m.direction==='in'?'#f5f7fb':'#f0f4ff')+';border-radius:8px"><b>'+(m.direction==='in'?'Client':'VENDIA')+':</b> '+esc(m.body)+'</div>').join('')+
+      '<form data-conversation-id="'+c.id+'" class="conversation-form" style="display:flex;gap:8px;margin-top:10px"><input placeholder="Répondre au client" required><button class="btn primary">Envoyer</button></form></div>').join('')
+    : '<div class="empty">Aucune conversation.</div>';
+}
+async function saveConversation(e){
+  e.preventDefault();
+  try{
+    await api('/api/conversations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      phone:$('vPhone').value.trim(),prospectId:$('vProspect').value.trim()||null
+    })});
+    e.target.reset();
+    await loadConversations();
+  }catch(x){alert(x.message);}
+}
+async function sendMessage(e,id){
+  e.preventDefault();
+  const input=e.target.querySelector('input');
+  const body=input.value.trim();
+  if(!body)return;
+  try{
+    await api('/api/conversations/'+id+'/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({direction:'out',body})});
+    input.value='';
+    await loadConversations();
+  }catch(x){alert(x.message);}
+}
+async function loadConversations(){
+  try{
+    const r=await api('/api/conversations');
+    data.conversations=r.conversations||[];
+    renderConversations();
+  }catch(e){alert(e.message);}
+}
 
-async function loadConversations(){try{const r=await api('/api/conversations');data.conversations=r.conversations||[];renderConversations();}catch(e){alert(e.message);}}
-function renderConversations(){ $('conversationList').innerHTML=data.conversations.length?data.conversations.map(c=>'<div class="panel" style="box-shadow:none;border:1px solid #edf0f5"><strong>'+esc(c.prospect||'Contact')+'</strong> · '+esc(c.phone||'—')+'<div class="muted">'+esc(c.channel||'whatsapp')+'</div>'+(c.messages||[]).map(m=>'<div style="padding:8px;margin-top:6px;background:'+(m.direction==='in'?'#f5f7fb':'#f0f4ff')+';border-radius:8px"><b>'+(m.direction==='in'?'Client':'VENDIA')+':</b> '+esc(m.body)+'</div>').join('')+'<form onsubmit="sendMessage(event,''+c.id+'')" style="display:flex;gap:8px;margin-top:10px"><input placeholder="Répondre au client" required><button class="btn primary">Envoyer</button></form></div>').join(''):'<div class="empty">Aucune conversation.</div>'; }
-async function saveConversation(e){e.preventDefault();try{await api('/api/conversations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:$('vPhone').value.trim(),prospectId:$('vProspect').value.trim()||null})});e.target.reset();await loadConversations();}catch(x){alert(x.message);}}
-async function sendMessage(e,id){e.preventDefault();const input=e.target.querySelector('input');try{await api('/api/conversations/'+id+'/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({direction:'out',body:input.value.trim()})});input.value='';await loadConversations();}catch(x){alert(x.message);}}
-async function saveOrder(e){e.preventDefault();try{await api('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prospectId:$('oProspect').value.trim(),amount:Number($('oAmount').value),status:$('oStatus').value})});e.target.reset();await load();tab('orders');}catch(x){alert(x.message);}}
-function renderOrders(){ $('orderCount').textContent='('+(data.orders||[]).length+')'; $('orderTable').innerHTML=(data.orders||[]).length?'<table><thead><tr><th>N°</th><th>Client</th><th>Montant</th><th>Statut</th></tr></thead><tbody>'+data.orders.map(o=>'<tr><td><strong>'+esc(o.number)+'</strong></td><td>'+esc(o.client||'—')+'</td><td>'+money(o.amount)+'</td><td>'+esc(o.status)+'</td></tr>').join('')+'</tbody></table>':'<div class="empty">Aucune commande.</div>'; }
-async function saveFollowup(e){e.preventDefault();try{await api('/api/followups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prospectId:$('fProspect').value.trim(),dueAt:new Date($('fDue').value).toISOString(),text:$('fText').value.trim()})});e.target.reset();await load();tab('followups');}catch(x){alert(x.message);}}
-function renderFollowups(){ $('followupCount').textContent='('+(data.followups||[]).length+')'; $('followupTable').innerHTML=(data.followups||[]).length?'<table><thead><tr><th>Prospect</th><th>Échéance</th><th>Message</th><th>Statut</th><th>Action</th></tr></thead><tbody>'+data.followups.map(f=>'<tr><td>'+esc(f.prospect||f.prospectId)+'</td><td>'+esc(f.dueAt?new Date(f.dueAt).toLocaleString('fr-FR'):'—')+'</td><td>'+esc(f.text||'—')+'</td><td>'+esc(f.status)+'</td><td><button class="btn danger" data-delete-followup="'+f.id+'">Supprimer</button></td></tr>').join('')+'</tbody></table>':'<div class="empty">Aucune relance programmée.</div>'; }
-async function deleteFollowup(id){if(!confirm('Supprimer cette relance ?'))return;try{await api('/api/followups/'+id,{method:'DELETE'});await load();tab('followups');}catch(x){alert(x.message);}}
+function renderOrders(){
+  $('orderCount').textContent='('+(data.orders||[]).length+')';
+  $('orderTable').innerHTML=(data.orders||[]).length
+    ? '<table><thead><tr><th>N°</th><th>Client</th><th>Montant</th><th>Statut</th></tr></thead><tbody>'+
+      data.orders.map(o=>'<tr><td><strong>'+esc(o.number)+'</strong></td><td>'+esc(o.client||'—')+'</td><td>'+money(o.amount)+'</td><td>'+esc(o.status)+'</td></tr>').join('')+
+      '</tbody></table>'
+    : '<div class="empty">Aucune commande.</div>';
+}
+async function saveOrder(e){
+  e.preventDefault();
+  try{
+    await api('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      prospectId:$('oProspect').value,amount:Number($('oAmount').value),status:$('oStatus').value
+    })});
+    e.target.reset();
+    await load();
+    tab('orders');
+  }catch(x){alert(x.message);}
+}
+
+function renderFollowups(){
+  $('followupCount').textContent='('+(data.followups||[]).length+')';
+  $('followupTable').innerHTML=(data.followups||[]).length
+    ? '<table><thead><tr><th>Prospect</th><th>Échéance</th><th>Message</th><th>Statut</th><th>Action</th></tr></thead><tbody>'+
+      data.followups.map(f=>'<tr><td>'+esc(f.prospect||f.prospectId)+'</td><td>'+esc(f.dueAt?new Date(f.dueAt).toLocaleString('fr-FR'):'—')+'</td><td>'+esc(f.text||'—')+'</td><td>'+esc(f.status)+'</td><td><button class="btn danger" data-delete-followup="'+f.id+'">Supprimer</button></td></tr>').join('')+
+      '</tbody></table>'
+    : '<div class="empty">Aucune relance programmée.</div>';
+}
+async function saveFollowup(e){
+  e.preventDefault();
+  try{
+    await api('/api/followups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      prospectId:$('fProspect').value,dueAt:new Date($('fDue').value).toISOString(),text:$('fText').value.trim()
+    })});
+    e.target.reset();
+    await load();
+    tab('followups');
+  }catch(x){alert(x.message);}
+}
+async function deleteFollowup(id){
+  if(!confirm('Supprimer cette relance ?'))return;
+  try{
+    await api('/api/followups/'+id,{method:'DELETE'});
+    await load();
+    tab('followups');
+  }catch(x){alert(x.message);}
+}
+
 async function ask() {
   const text=$('q').value.trim(); if(!text)return;
   $('reply').textContent='…';
