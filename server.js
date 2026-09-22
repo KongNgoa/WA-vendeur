@@ -158,6 +158,60 @@ async function handler(req,res) {
     const b=await body(req); const r=await query('INSERT INTO followups(company_id,prospect_id,text,due_at,status) VALUES($1,$2,$3,$4,$5) RETURNING *',[companyId,b.prospectId||null,b.text||null,b.dueAt||null,'Programmée']);
     return json(res,201,{followup:r.rows[0]});
   }
+  if(req.method==='GET'&&u.pathname==='/api/conversations') {
+    const r=await query(`SELECT c.id,c.channel,c.external_contact AS phone,c.prospect_id AS "prospectId",p.name AS prospect, c.created_at AS "createdAt",
+      COALESCE(json_agg(json_build_object('id',m.id,'direction',m.direction,'body',m.body,'createdAt',m.created_at) ORDER BY m.created_at) FILTER (WHERE m.id IS NOT NULL),'[]') AS messages
+      FROM conversations c LEFT JOIN prospects p ON p.id=c.prospect_id LEFT JOIN messages m ON m.conversation_id=c.id
+      WHERE c.company_id=$1 GROUP BY c.id,p.name ORDER BY MAX(m.created_at) DESC NULLS LAST,c.created_at DESC`,[companyId]);
+    return json(res,200,{conversations:r.rows});
+  }
+  if(req.method==='POST'&&u.pathname==='/api/conversations') {
+    const b=await body(req);
+    const r=await query('INSERT INTO conversations(company_id,prospect_id,channel,external_contact) VALUES($1,$2,$3,$4) RETURNING id,prospect_id AS "prospectId",channel,external_contact AS phone,created_at AS "createdAt"',[companyId,b.prospectId||null,b.channel||'whatsapp',b.phone||null]);
+    return json(res,201,{conversation:r.rows[0]});
+  }
+  const convMatch=u.pathname.match(/^\\/api\\/conversations\\/([0-9a-f-]+)\\/messages$/i);
+  if(convMatch && req.method==='POST') {
+    const b=await body(req);
+    if(!b.body) return json(res,400,{error:'Message requis'});
+    const own=await query('SELECT id FROM conversations WHERE id=$1 AND company_id=$2',[convMatch[1],companyId]);
+    if(!own.rows[0]) return json(res,404,{error:'Conversation introuvable'});
+    const r=await query('INSERT INTO messages(conversation_id,direction,body,provider_message_id) VALUES($1,$2,$3,$4) RETURNING id,direction,body,created_at AS "createdAt"',[convMatch[1],b.direction||'out',String(b.body).trim(),b.providerMessageId||null]);
+    if(b.prospectId) await query('UPDATE conversations SET prospect_id=$1 WHERE id=$2 AND company_id=$3',[b.prospectId,convMatch[1],companyId]);
+    if(b.direction==='in') await query('UPDATE prospects SET last_contact=now() WHERE id=(SELECT prospect_id FROM conversations WHERE id=$1)',[convMatch[1]]);
+    return json(res,201,{message:r.rows[0]});
+  }
+  if(req.method==='POST'&&u.pathname==='/api/orders') {
+    const b=await body(req);
+    if(!b.prospectId) return json(res,400,{error:'Prospect requis'});
+    const amount=Number(b.amount||0);
+    if(Number.isNaN(amount)||amount<0) return json(res,400,{error:'Montant invalide'});
+    const number='VND-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+crypto.randomBytes(3).toString('hex').toUpperCase();
+    const r=await query('INSERT INTO orders(company_id,prospect_id,order_number,amount,status) VALUES($1,$2,$3,$4,$5) RETURNING id,order_number AS number,prospect_id AS "prospectId",amount,status,created_at AS "createdAt"',[companyId,b.prospectId,number,amount,b.status||'En attente']);
+    await query('UPDATE prospects SET order_intent=true,status=CASE WHEN status IS NULL OR status IN (\'Nouveau\',\'À contacter\') THEN \'En discussion\' ELSE status END WHERE id=$1 AND company_id=$2',[b.prospectId,companyId]);
+    return json(res,201,{order:r.rows[0]});
+  }
+  if(req.method==='GET'&&u.pathname==='/api/orders') {
+    const r=await query('SELECT o.id,o.order_number AS number,o.prospect_id AS "prospectId",p.name AS client,o.amount,o.status,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC',[companyId]);
+    return json(res,200,{orders:r.rows});
+  }
+  const orderMatch=u.pathname.match(/^\\/api\\/orders\\/([0-9a-f-]+)$/i);
+  if(orderMatch && (req.method==='PUT'||req.method==='PATCH')) {
+    const b=await body(req);
+    const r=await query('UPDATE orders SET amount=$1,status=$2 WHERE id=$3 AND company_id=$4 RETURNING id,order_number AS number,prospect_id AS "prospectId",amount,status,created_at AS "createdAt"',[Math.max(0,Number(b.amount||0)),b.status||'En attente',orderMatch[1],companyId]);
+    if(!r.rows[0]) return json(res,404,{error:'Commande introuvable'});
+    return json(res,200,{order:r.rows[0]});
+  }
+  if(req.method==='GET'&&u.pathname==='/api/followups') {
+    const r=await query('SELECT f.id,f.prospect_id AS "prospectId",p.name AS prospect,f.text,f.due_at AS "dueAt",f.status,f.sent_at AS "sentAt",f.created_at AS "createdAt" FROM followups f LEFT JOIN prospects p ON p.id=f.prospect_id WHERE f.company_id=$1 ORDER BY f.due_at NULLS LAST',[companyId]);
+    return json(res,200,{followups:r.rows});
+  }
+  if(req.method==='PUT'&&u.pathname.startsWith('/api/followups/')) {
+    const id=u.pathname.split('/').pop(); const b=await body(req);
+    const r=await query('UPDATE followups SET text=$1,due_at=$2,status=$3 WHERE id=$4 AND company_id=$5 RETURNING id,prospect_id AS "prospectId",text,due_at AS "dueAt",status,sent_at AS "sentAt"',[b.text||null,b.dueAt||null,b.status||'Programmée',id,companyId]);
+    if(!r.rows[0]) return json(res,404,{error:'Relance introuvable'});
+    return json(res,200,{followup:r.rows[0]});
+  }
   if(req.method==='GET'&&u.pathname==='/api/health/db') { await query('SELECT 1'); return json(res,200,{ok:true,database:'postgresql'}); }
   return json(res,404,{error:'Route introuvable'});
 }
