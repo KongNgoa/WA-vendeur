@@ -1,59 +1,106 @@
 <!doctype html>
 <html lang="fr">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>VENDIA</title>
 <style>
-body{margin:0;font-family:Inter,system-ui,sans-serif;background:#f5f7fb;color:#172033}
-header{background:#111827;color:white;padding:22px 28px;display:flex;justify-content:space-between;align-items:center}
-h1{margin:0;font-size:24px}.tag{opacity:.75}.wrap{max-width:1100px;margin:28px auto;padding:0 18px}
-.hero,.login,.card,.list{background:white;border-radius:18px;padding:24px;box-shadow:0 8px 30px #0000000d;margin-bottom:20px}
-.hero h2{font-size:34px;margin:0 0 8px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
-.card{margin:0}.num{font-size:28px;font-weight:800;margin-top:6px}.muted{color:#687386}
-.cols{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px}.row{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid #eee}
-.badge{padding:5px 9px;border-radius:20px;background:#e7f7ee;color:#18794e;font-size:12px;font-weight:700}
-.chat{display:flex;gap:8px;margin-top:12px}.chat input,.login input{flex:1;padding:13px;border:1px solid #d9deea;border-radius:10px;box-sizing:border-box}
-.chat button,.login button{border:0;border-radius:10px;padding:13px 18px;background:#111827;color:white;font-weight:700;cursor:pointer}
-.login{max-width:430px;margin:45px auto}.login h2{margin-top:0}.login input{display:block;width:100%;margin:10px 0}.error{color:#b42318;margin-top:10px}.success{color:#18794e;margin-top:10px}
-.reply{margin-top:12px;background:#f0f4ff;padding:13px;border-radius:10px;min-height:22px}
-.hidden{display:none}
-@media(max-width:800px){.grid{grid-template-columns:1fr 1fr}.cols{grid-template-columns:1fr}.hero h2{font-size:28px}}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,sans-serif;background:#f5f7fb;color:#172033}
+header{background:#111827;color:white;padding:18px 28px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10}
+h1{margin:0;font-size:24px}.tag{opacity:.75;font-size:13px}.wrap{max-width:1180px;margin:24px auto;padding:0 18px}
+.hero,.login,.panel,.stat{background:white;border-radius:18px;padding:22px;box-shadow:0 8px 30px #0000000d}.hero{margin-bottom:16px}.hero h2{font-size:30px;margin:0 0 6px}
+.nav{display:flex;gap:8px;margin-bottom:18px;overflow:auto}.nav button,.btn{border:0;border-radius:10px;padding:11px 15px;background:#e9edf5;color:#172033;font-weight:700;cursor:pointer;white-space:nowrap}.nav button.active,.btn.primary{background:#111827;color:#fff}.btn.danger{background:#fee4e2;color:#b42318}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}.stat{padding:18px}.num{font-size:28px;font-weight:800;margin-top:6px}.muted{color:#687386;font-size:14px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.panel{margin-bottom:16px}.panel h3{margin-top:0}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 8px;border-bottom:1px solid #edf0f5;font-size:14px}th{color:#687386;font-size:12px;text-transform:uppercase}
+.actions{display:flex;gap:6px;flex-wrap:wrap}.badge{padding:5px 9px;border-radius:20px;background:#e7f7ee;color:#18794e;font-size:12px;font-weight:700;display:inline-block}.hot{background:#fff0e0;color:#b54708}.cold{background:#eef2f6;color:#536071}
+form.formgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px}.formgrid .full{grid-column:1/-1}
+input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px;background:white}.chat{display:flex;gap:8px}.chat input{flex:1}.reply{margin-top:12px;background:#f0f4ff;padding:13px;border-radius:10px;min-height:22px}
+.login{max-width:430px;margin:45px auto}.login h2{margin-top:0}.login input{display:block;margin:10px 0}.error{color:#b42318;margin-top:10px}.success{color:#18794e;margin-top:10px}.hidden{display:none}.empty{padding:28px;text-align:center;color:#687386}
+@media(max-width:800px){.stats{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}form.formgrid{grid-template-columns:1fr}.hero h2{font-size:25px}header{padding:15px 18px}}
 </style>
 </head>
 <body>
 <header><div><h1>VENDIA</h1><div class="tag">Le commercial IA qui travaille pour vous 24h/24</div></div><span class="badge">BÊTA</span></header>
 <main class="wrap">
 <section id="login" class="login">
-<h2>Connexion</h2>
-<p class="muted">Connectez-vous pour accéder à votre espace commercial.</p>
-<input id="email" type="email" value="demo@wavendeur.local" placeholder="Email">
-<input id="password" type="password" value="demo1234" placeholder="Mot de passe">
-<button onclick="login()">Se connecter</button>
-<div id="loginMsg"></div>
+<h2>Connexion</h2><p class="muted">Connectez-vous pour accéder à votre espace commercial.</p>
+<input id="email" type="email" value="demo@wavendeur.local" placeholder="Email"><input id="password" type="password" value="demo1234" placeholder="Mot de passe">
+<button class="btn primary" onclick="login()">Se connecter</button><div id="loginMsg"></div>
 </section>
+
 <section id="app" class="hidden">
-<section class="hero"><h2>Votre entreprise gagne un commercial IA.</h2><p class="muted">Assistant IA · CRM prospects · commandes · relances</p></section>
-<section class="grid">
-<div class="card"><div class="muted">Prospects</div><div class="num" id="prospects">—</div></div>
-<div class="card"><div class="muted">Prospects chauds</div><div class="num" id="hot">—</div></div>
-<div class="card"><div class="muted">Commandes</div><div class="num" id="orders">—</div></div>
-<div class="card"><div class="muted">CA commandes</div><div class="num" id="ca">—</div></div>
+<div class="hero"><h2>Votre entreprise gagne un commercial IA.</h2><p class="muted">Pilotez vos produits, prospects et performances depuis un seul espace.</p></div>
+<nav class="nav">
+<button class="active" data-tab="dashboard" onclick="tab('dashboard')">📊 Tableau de bord</button>
+<button data-tab="products" onclick="tab('products')">📦 Produits</button>
+<button data-tab="crm" onclick="tab('crm')">👥 CRM</button>
+<button data-tab="assistant" onclick="tab('assistant')">🤖 Assistant IA</button>
+</nav>
+
+<section id="dashboardTab">
+<div class="stats">
+<div class="stat"><div class="muted">Prospects</div><div class="num" id="mProspects">0</div></div>
+<div class="stat"><div class="muted">Prospects chauds</div><div class="num" id="mHot">0</div></div>
+<div class="stat"><div class="muted">Commandes</div><div class="num" id="mOrders">0</div></div>
+<div class="stat"><div class="muted">CA commandes</div><div class="num" id="mRevenue">0 FCFA</div></div>
+</div>
+<div class="grid">
+<div class="panel"><h3>État commercial</h3><div id="commercialState"></div></div>
+<div class="panel"><h3>Catalogue récent</h3><div id="recentProducts"></div></div>
+</div>
 </section>
-<section class="cols">
-<div class="list"><h3>Catalogue</h3><div id="products"></div></div>
-<div class="list"><h3>Assistant commercial IA</h3><p class="muted">Testez une réponse client.</p><div class="chat"><input id="q" placeholder="Ex. Quel est le prix de la Nike ?"><button onclick="ask()">Envoyer</button></div><div class="reply" id="reply">Bonjour 👋 Je suis Julie. Posez-moi une question.</div></div>
+
+<section id="productsTab" class="hidden">
+<div class="panel"><h3>Ajouter un produit</h3>
+<form class="formgrid" onsubmit="saveProduct(event)">
+<input id="pName" placeholder="Nom du produit" required><input id="pCategory" placeholder="Catégorie">
+<input id="pPrice" type="number" min="0" placeholder="Prix (FCFA)" required><input id="pStock" type="number" min="0" placeholder="Stock" value="0">
+<div class="full"><button class="btn primary">Ajouter au catalogue</button></div></form>
+</div>
+<div class="panel"><h3>Catalogue <span class="muted" id="productCount"></span></h3><div id="productTable"></div></div>
+</section>
+
+<section id="crmTab" class="hidden">
+<div class="panel"><h3>Ajouter un prospect</h3>
+<form class="formgrid" onsubmit="saveProspect(event)">
+<input id="cName" placeholder="Nom du prospect"><input id="cPhone" placeholder="Téléphone">
+<input id="cNeed" placeholder="Besoin"><input id="cValue" type="number" min="0" placeholder="Valeur potentielle (FCFA)">
+<input id="cScore" type="number" min="0" max="100" placeholder="Score 0–100" value="50">
+<select id="cStatus"><option>Nouveau</option><option>À contacter</option><option>En discussion</option><option>Gagné</option><option>Perdu</option></select>
+<div class="full"><button class="btn primary">Ajouter au CRM</button></div></form>
+</div>
+<div class="panel"><h3>Prospects <span class="muted" id="crmCount"></span></h3><div id="crmTable"></div></div>
+</section>
+
+<section id="assistantTab" class="hidden">
+<div class="panel"><h3>Assistant commercial IA</h3><p class="muted">Testez une réponse client basée sur votre catalogue.</p>
+<div class="chat"><input id="q" placeholder="Ex. Quel est le prix de la Nike ?"><button class="btn primary" onclick="ask()">Envoyer</button></div>
+<div class="reply" id="reply">Bonjour 👋 Je suis Julie. Posez-moi une question.</div></div>
 </section>
 </section>
 </main>
+
 <script>
-let token=localStorage.getItem('wa_token')||'';
+let token=localStorage.getItem('wa_token')||'', data={products:[],prospects:[],orders:[],metrics:{}};
+
 async function api(path,options={}){options.headers={...(options.headers||{}),...(token?{Authorization:'Bearer '+token}:{})};const r=await fetch(path,options);const d=await r.json();if(r.status===401){token='';localStorage.removeItem('wa_token');showLogin('Session expirée. Veuillez vous reconnecter.');throw new Error('auth')}if(!r.ok)throw new Error(d.error||'Erreur');return d}
 function showLogin(msg=''){document.getElementById('login').classList.remove('hidden');document.getElementById('app').classList.add('hidden');document.getElementById('loginMsg').className='error';document.getElementById('loginMsg').textContent=msg}
-async function login(){const msg=document.getElementById('loginMsg');msg.className='';msg.textContent='Connexion…';try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('email').value,password:document.getElementById('password').value})});const d=await r.json();if(!r.ok)throw new Error(d.error||'Identifiants incorrects');token=d.token;localStorage.setItem('wa_token',token);document.getElementById('login').classList.add('hidden');document.getElementById('app').classList.remove('hidden');await load();}catch(e){msg.className='error';msg.textContent=e.message}}
-async function load(){try{const d=await api('/api/bootstrap');document.getElementById('prospects').textContent=d.prospects.length;document.getElementById('hot').textContent=d.prospects.filter(x=>x.score>=70).length;document.getElementById('orders').textContent=d.orders.length;document.getElementById('ca').textContent=d.orders.reduce((s,x)=>s+(Number(x.amount)||0),0).toLocaleString('fr-FR')+' FCFA';document.getElementById('products').innerHTML=d.products.map(p=>'<div class="row"><span>'+p.name+'</span><strong>'+Number(p.price).toLocaleString('fr-FR')+' FCFA</strong></div>').join('')}catch(e){}}
-async function ask(){const q=document.getElementById('q').value;if(!q)return;document.getElementById('reply').textContent='…';try{const d=await api('/api/ai/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:q})});document.getElementById('reply').textContent=d.reply}catch(e){document.getElementById('reply').textContent=e.message}}
+async function login(){const msg=document.getElementById('loginMsg');msg.className='';msg.textContent='Connexion…';try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email.value,password:password.value})});const d=await r.json();if(!r.ok)throw new Error(d.error||'Identifiants incorrects');token=d.token;localStorage.setItem('wa_token',token);document.getElementById('login').classList.add('hidden');document.getElementById('app').classList.remove('hidden');await load();}catch(e){msg.className='error';msg.textContent=e.message}}
+async function load(){try{data=await api('/api/bootstrap');renderAll()}catch(e){console.error(e)}}
+function tab(name){document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));['dashboard','products','crm','assistant'].forEach(x=>document.getElementById(x+'Tab').classList.toggle('hidden',x!==name));if(name==='products')renderProducts();if(name==='crm')renderCRM()}
+function renderAll(){renderDashboard();renderProducts();renderCRM()}
+function money(n){return Number(n||0).toLocaleString('fr-FR')+' FCFA'}
+function renderDashboard(){const m=data.metrics||{};mProspects.textContent=m.prospects||0;mHot.textContent=m.hot||0;mOrders.textContent=m.orders||0;mRevenue.textContent=money(m.revenue);commercialState.innerHTML='<div class="actions"><span class="badge">🔥 Chauds: '+(m.hot||0)+'</span><span class="badge hot">🟠 Tièdes: '+(m.warm||0)+'</span><span class="badge cold">❄️ Froids: '+(m.cold||0)+'</span></div><p class="muted">Produits: '+(m.products||0)+' · Stock faible: '+(m.lowStock||0)+'</p>';recentProducts.innerHTML=(data.products||[]).slice(0,5).map(p=>'<div style="padding:10px 0;border-bottom:1px solid #eee"><strong>'+esc(p.name)+'</strong><br><span class="muted">'+money(p.price)+' · Stock: '+p.stock+'</span></div>').join('')||'<div class="empty">Aucun produit.</div>'}
+function renderProducts(){productCount.textContent='('+data.products.length+')';productTable.innerHTML=data.products.length?'<table><thead><tr><th>Produit</th><th>Catégorie</th><th>Prix</th><th>Stock</th><th>Actions</th></tr></thead><tbody>'+data.products.map(p=>'<tr><td><strong>'+esc(p.name)+'</strong></td><td>'+esc(p.category||'—')+'</td><td>'+money(p.price)+'</td><td>'+p.stock+'</td><td><div class="actions"><button class="btn" onclick="editProduct(\''+p.id+'\')">Modifier</button><button class="btn danger" onclick="deleteProduct(\''+p.id+'\')">Supprimer</button></div></td></tr>').join('')+'</tbody></table>':'<div class="empty">Aucun produit dans le catalogue.</div>'}
+function renderCRM(){crmCount.textContent='('+data.prospects.length+')';crmTable.innerHTML=data.prospects.length?'<table><thead><tr><th>Prospect</th><th>Besoin</th><th>Score</th><th>Statut</th><th>Valeur</th><th>Actions</th></tr></thead><tbody>'+data.prospects.map(p=>'<tr><td><strong>'+esc(p.name||'Sans nom')+'</strong><br><span class="muted">'+esc(p.phone||'—')+'</span></td><td>'+esc(p.need||'—')+'</td><td><span class="badge '+(p.score>=70?'hot':p.score<40?'cold':'')+'">'+p.score+'/100</span></td><td>'+esc(p.status||'Nouveau')+'</td><td>'+money(p.value)+'</td><td><div class="actions"><button class="btn" onclick="editProspect(\''+p.id+'\')">Modifier</button><button class="btn danger" onclick="deleteProspect(\''+p.id+'\')">Supprimer</button></div></td></tr>').join('')+'</tbody></table>':'<div class="empty">Aucun prospect. Ajoutez votre premier contact.</div>'}
+function esc(v){return String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+async function saveProduct(e){e.preventDefault();try{await api('/api/products',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:pName.value,category:pCategory.value,price:Number(pPrice.value),stock:Number(pStock.value)})});e.target.reset();pStock.value=0;await load();tab('products')}catch(err){alert(err.message)}}
+async function editProduct(id){const p=data.products.find(x=>x.id===id);if(!p)return;const name=prompt('Nom du produit',p.name);if(name===null)return;const price=prompt('Prix en FCFA',p.price);if(price===null)return;const stock=prompt('Stock',p.stock);if(stock===null)return;const category=prompt('Catégorie',p.category||'');try{await api('/api/products/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,price:Number(price),stock:Number(stock),category})});await load();tab('products')}catch(e){alert(e.message)}}
+async function deleteProduct(id){if(!confirm('Supprimer ce produit du catalogue ?'))return;try{await api('/api/products/'+id,{method:'DELETE'});await load()}catch(e){alert(e.message)}}
+async function saveProspect(e){e.preventDefault();try{await api('/api/prospects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:cName.value,phone:cPhone.value,need:cNeed.value,value:Number(cValue.value||0),score:Number(cScore.value||0),status:cStatus.value})});e.target.reset();cScore.value=50;await load();tab('crm')}catch(err){alert(err.message)}}
+async function editProspect(id){const p=data.prospects.find(x=>x.id===id);if(!p)return;const name=prompt('Nom',p.name||'');if(name===null)return;const phone=prompt('Téléphone',p.phone||'');if(phone===null)return;const need=prompt('Besoin',p.need||'');if(need===null)return;const score=prompt('Score 0–100',p.score);if(score===null)return;const status=prompt('Statut',p.status||'Nouveau');if(status===null)return;const value=prompt('Valeur potentielle en FCFA',p.value||0);if(value===null)return;try{await api('/api/prospects/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,phone,need,score:Number(score),status,value:Number(value),orderIntent:p.orderIntent})});await load();tab('crm')}catch(e){alert(e.message)}}
+async function deleteProspect(id){if(!confirm('Supprimer ce prospect du CRM ?'))return;try{await api('/api/prospects/'+id,{method:'DELETE'});await load()}catch(e){alert(e.message)}}
+async function ask(){const text=q.value.trim();if(!text)return;reply.textContent='…';try{const d=await api('/api/ai/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});reply.textContent=d.reply}catch(e){reply.textContent=e.message}}
 if(token){document.getElementById('login').classList.add('hidden');document.getElementById('app').classList.remove('hidden');load()}
 </script>
-</body>
-</html>
+</body></html>
