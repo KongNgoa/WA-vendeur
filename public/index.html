@@ -81,26 +81,192 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 </main>
 
 <script>
-let token=localStorage.getItem('wa_token')||'', data={products:[],prospects:[],orders:[],metrics:{}};
+let token = localStorage.getItem('wa_token') || '';
+let data = {products:[], prospects:[], orders:[], metrics:{}};
 
-async function api(path,options={}){options.headers={...(options.headers||{}),...(token?{Authorization:'Bearer '+token}:{})};const r=await fetch(path,options);const d=await r.json();if(r.status===401){token='';localStorage.removeItem('wa_token');showLogin('Session expirée. Veuillez vous reconnecter.');throw new Error('auth')}if(!r.ok)throw new Error(d.error||'Erreur');return d}
-function showLogin(msg=''){document.getElementById('login').classList.remove('hidden');document.getElementById('app').classList.add('hidden');document.getElementById('loginMsg').className='error';document.getElementById('loginMsg').textContent=msg}
-async function login(){const msg=document.getElementById('loginMsg');msg.className='';msg.textContent='Connexion…';try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email.value,password:password.value})});const d=await r.json();if(!r.ok)throw new Error(d.error||'Identifiants incorrects');token=d.token;localStorage.setItem('wa_token',token);document.getElementById('login').classList.add('hidden');document.getElementById('app').classList.remove('hidden');await load();}catch(e){msg.className='error';msg.textContent=e.message}}
-async function load(){try{data=await api('/api/bootstrap');renderAll()}catch(e){console.error(e)}}
-function tab(name){document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));['dashboard','products','crm','assistant'].forEach(x=>document.getElementById(x+'Tab').classList.toggle('hidden',x!==name));if(name==='products')renderProducts();if(name==='crm')renderCRM()}
-function renderAll(){renderDashboard();renderProducts();renderCRM()}
-function money(n){return Number(n||0).toLocaleString('fr-FR')+' FCFA'}
-function renderDashboard(){const m=data.metrics||{};mProspects.textContent=m.prospects||0;mHot.textContent=m.hot||0;mOrders.textContent=m.orders||0;mRevenue.textContent=money(m.revenue);commercialState.innerHTML='<div class="actions"><span class="badge">🔥 Chauds: '+(m.hot||0)+'</span><span class="badge hot">🟠 Tièdes: '+(m.warm||0)+'</span><span class="badge cold">❄️ Froids: '+(m.cold||0)+'</span></div><p class="muted">Produits: '+(m.products||0)+' · Stock faible: '+(m.lowStock||0)+'</p>';recentProducts.innerHTML=(data.products||[]).slice(0,5).map(p=>'<div style="padding:10px 0;border-bottom:1px solid #eee"><strong>'+esc(p.name)+'</strong><br><span class="muted">'+money(p.price)+' · Stock: '+p.stock+'</span></div>').join('')||'<div class="empty">Aucun produit.</div>'}
-function renderProducts(){productCount.textContent='('+data.products.length+')';productTable.innerHTML=data.products.length?'<table><thead><tr><th>Produit</th><th>Catégorie</th><th>Prix</th><th>Stock</th><th>Actions</th></tr></thead><tbody>'+data.products.map(p=>'<tr><td><strong>'+esc(p.name)+'</strong></td><td>'+esc(p.category||'—')+'</td><td>'+money(p.price)+'</td><td>'+p.stock+'</td><td><div class="actions"><button class="btn" onclick="editProduct(\''+p.id+'\')">Modifier</button><button class="btn danger" onclick="deleteProduct(\''+p.id+'\')">Supprimer</button></div></td></tr>').join('')+'</tbody></table>':'<div class="empty">Aucun produit dans le catalogue.</div>'}
-function renderCRM(){crmCount.textContent='('+data.prospects.length+')';crmTable.innerHTML=data.prospects.length?'<table><thead><tr><th>Prospect</th><th>Besoin</th><th>Score</th><th>Statut</th><th>Valeur</th><th>Actions</th></tr></thead><tbody>'+data.prospects.map(p=>'<tr><td><strong>'+esc(p.name||'Sans nom')+'</strong><br><span class="muted">'+esc(p.phone||'—')+'</span></td><td>'+esc(p.need||'—')+'</td><td><span class="badge '+(p.score>=70?'hot':p.score<40?'cold':'')+'">'+p.score+'/100</span></td><td>'+esc(p.status||'Nouveau')+'</td><td>'+money(p.value)+'</td><td><div class="actions"><button class="btn" onclick="editProspect(\''+p.id+'\')">Modifier</button><button class="btn danger" onclick="deleteProspect(\''+p.id+'\')">Supprimer</button></div></td></tr>').join('')+'</tbody></table>':'<div class="empty">Aucun prospect. Ajoutez votre premier contact.</div>'}
-function esc(v){return String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
-async function saveProduct(e){e.preventDefault();try{await api('/api/products',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:pName.value,category:pCategory.value,price:Number(pPrice.value),stock:Number(pStock.value)})});e.target.reset();pStock.value=0;await load();tab('products')}catch(err){alert(err.message)}}
-async function editProduct(id){const p=data.products.find(x=>x.id===id);if(!p)return;const name=prompt('Nom du produit',p.name);if(name===null)return;const price=prompt('Prix en FCFA',p.price);if(price===null)return;const stock=prompt('Stock',p.stock);if(stock===null)return;const category=prompt('Catégorie',p.category||'');try{await api('/api/products/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,price:Number(price),stock:Number(stock),category})});await load();tab('products')}catch(e){alert(e.message)}}
-async function deleteProduct(id){if(!confirm('Supprimer ce produit du catalogue ?'))return;try{await api('/api/products/'+id,{method:'DELETE'});await load()}catch(e){alert(e.message)}}
-async function saveProspect(e){e.preventDefault();try{await api('/api/prospects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:cName.value,phone:cPhone.value,need:cNeed.value,value:Number(cValue.value||0),score:Number(cScore.value||0),status:cStatus.value})});e.target.reset();cScore.value=50;await load();tab('crm')}catch(err){alert(err.message)}}
-async function editProspect(id){const p=data.prospects.find(x=>x.id===id);if(!p)return;const name=prompt('Nom',p.name||'');if(name===null)return;const phone=prompt('Téléphone',p.phone||'');if(phone===null)return;const need=prompt('Besoin',p.need||'');if(need===null)return;const score=prompt('Score 0–100',p.score);if(score===null)return;const status=prompt('Statut',p.status||'Nouveau');if(status===null)return;const value=prompt('Valeur potentielle en FCFA',p.value||0);if(value===null)return;try{await api('/api/prospects/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,phone,need,score:Number(score),status,value:Number(value),orderIntent:p.orderIntent})});await load();tab('crm')}catch(e){alert(e.message)}}
-async function deleteProspect(id){if(!confirm('Supprimer ce prospect du CRM ?'))return;try{await api('/api/prospects/'+id,{method:'DELETE'});await load()}catch(e){alert(e.message)}}
-async function ask(){const text=q.value.trim();if(!text)return;reply.textContent='…';try{const d=await api('/api/ai/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});reply.textContent=d.reply}catch(e){reply.textContent=e.message}}
-if(token){document.getElementById('login').classList.add('hidden');document.getElementById('app').classList.remove('hidden');load()}
+const $ = id => document.getElementById(id);
+const esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const money = n => Number(n || 0).toLocaleString('fr-FR') + ' FCFA';
+
+async function api(path, options = {}) {
+  options.headers = {...(options.headers || {}), ...(token ? {Authorization:'Bearer '+token} : {})};
+  const r = await fetch(path, options);
+  let d = {};
+  try { d = await r.json(); } catch {}
+  if (r.status === 401) {
+    token = ''; localStorage.removeItem('wa_token');
+    showLogin('Session expirée. Veuillez vous reconnecter.');
+    throw new Error('Session expirée');
+  }
+  if (!r.ok) throw new Error(d.error || 'Erreur serveur');
+  return d;
+}
+
+function showLogin(msg='') {
+  $('login').classList.remove('hidden');
+  $('app').classList.add('hidden');
+  $('loginMsg').className = msg ? 'error' : '';
+  $('loginMsg').textContent = msg;
+}
+
+async function login() {
+  const msg = $('loginMsg');
+  msg.className = ''; msg.textContent = 'Connexion…';
+  try {
+    const r = await fetch('/api/login', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email:$('email').value.trim(), password:$('password').value})
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Identifiants incorrects');
+    token = d.token;
+    localStorage.setItem('wa_token', token);
+    $('login').classList.add('hidden');
+    $('app').classList.remove('hidden');
+    await load();
+  } catch(e) {
+    msg.className = 'error'; msg.textContent = e.message;
+  }
+}
+
+function logout() {
+  token = ''; localStorage.removeItem('wa_token');
+  showLogin('Vous êtes déconnecté.');
+}
+
+async function load() {
+  try {
+    data = await api('/api/bootstrap');
+    renderAll();
+  } catch(e) { console.error(e); }
+}
+
+function tab(name) {
+  document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  ['dashboard','products','crm','assistant'].forEach(x => $(x+'Tab').classList.toggle('hidden', x !== name));
+  if (name === 'products') renderProducts();
+  if (name === 'crm') renderCRM();
+}
+
+function renderAll() { renderDashboard(); renderProducts(); renderCRM(); }
+
+function renderDashboard() {
+  const m = data.metrics || {};
+  $('mProspects').textContent = m.prospects || 0;
+  $('mHot').textContent = m.hot || 0;
+  $('mOrders').textContent = m.orders || 0;
+  $('mRevenue').textContent = money(m.revenue);
+  $('commercialState').innerHTML =
+    '<div class="actions"><span class="badge">🔥 Chauds: '+(m.hot||0)+'</span>' +
+    '<span class="badge hot">🟠 Tièdes: '+(m.warm||0)+'</span>' +
+    '<span class="badge cold">❄️ Froids: '+(m.cold||0)+'</span></div>' +
+    '<p class="muted">Produits: '+(m.products||0)+' · Stock faible: '+(m.lowStock||0)+'</p>';
+  $('recentProducts').innerHTML = (data.products||[]).slice(0,5).map(p =>
+    '<div style="padding:10px 0;border-bottom:1px solid #eee"><strong>'+esc(p.name)+'</strong><br>' +
+    '<span class="muted">'+money(p.price)+' · Stock: '+p.stock+'</span></div>'
+  ).join('') || '<div class="empty">Aucun produit.</div>';
+}
+
+function renderProducts() {
+  $('productCount').textContent = '('+data.products.length+')';
+  $('productTable').innerHTML = data.products.length ? '<table><thead><tr><th>Produit</th><th>Catégorie</th><th>Prix</th><th>Stock</th><th>Actions</th></tr></thead><tbody>' +
+    data.products.map(p => '<tr><td><strong>'+esc(p.name)+'</strong></td><td>'+esc(p.category||'—')+'</td><td>'+money(p.price)+'</td><td>'+p.stock+'</td><td><div class="actions">' +
+    '<button class="btn" data-edit-product="'+p.id+'">Modifier</button><button class="btn danger" data-delete-product="'+p.id+'">Supprimer</button></div></td></tr>').join('') +
+    '</tbody></table>' : '<div class="empty">Aucun produit dans le catalogue.</div>';
+}
+
+function renderCRM() {
+  $('crmCount').textContent = '('+data.prospects.length+')';
+  $('crmTable').innerHTML = data.prospects.length ? '<table><thead><tr><th>Prospect</th><th>Besoin</th><th>Score</th><th>Statut</th><th>Valeur</th><th>Actions</th></tr></thead><tbody>' +
+    data.prospects.map(p => '<tr><td><strong>'+esc(p.name||'Sans nom')+'</strong><br><span class="muted">'+esc(p.phone||'—')+'</span></td><td>'+esc(p.need||'—')+'</td>' +
+    '<td><span class="badge '+(p.score>=70?'hot':p.score<40?'cold':'')+'">'+p.score+'/100</span></td><td>'+esc(p.status||'Nouveau')+'</td><td>'+money(p.value)+'</td><td><div class="actions">' +
+    '<button class="btn" data-edit-prospect="'+p.id+'">Modifier</button><button class="btn danger" data-delete-prospect="'+p.id+'">Supprimer</button></div></td></tr>').join('') +
+    '</tbody></table>' : '<div class="empty">Aucun prospect. Ajoutez votre premier contact.</div>';
+}
+
+async function saveProduct(e) {
+  e.preventDefault();
+  try {
+    await api('/api/products',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      name:$('pName').value.trim(), category:$('pCategory').value.trim(),
+      price:Number($('pPrice').value), stock:Number($('pStock').value || 0)
+    })});
+    e.target.reset(); $('pStock').value=0; await load(); tab('products');
+  } catch(err) { alert(err.message); }
+}
+
+async function editProduct(id) {
+  const p = data.products.find(x=>x.id===id); if(!p) return;
+  const name=prompt('Nom du produit',p.name); if(name===null)return;
+  const price=prompt('Prix en FCFA',p.price); if(price===null)return;
+  const stock=prompt('Stock',p.stock); if(stock===null)return;
+  const category=prompt('Catégorie',p.category||''); if(category===null)return;
+  try {
+    await api('/api/products/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,price:Number(price),stock:Number(stock),category})});
+    await load(); tab('products');
+  } catch(e){alert(e.message);}
+}
+
+async function deleteProduct(id) {
+  if(!confirm('Supprimer ce produit du catalogue ?')) return;
+  try { await api('/api/products/'+id,{method:'DELETE'}); await load(); tab('products'); }
+  catch(e){alert(e.message);}
+}
+
+async function saveProspect(e) {
+  e.preventDefault();
+  try {
+    await api('/api/prospects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      name:$('cName').value.trim(), phone:$('cPhone').value.trim(), need:$('cNeed').value.trim(),
+      value:Number($('cValue').value||0), score:Number($('cScore').value||0), status:$('cStatus').value
+    })});
+    e.target.reset(); $('cScore').value=50; await load(); tab('crm');
+  } catch(err){alert(err.message);}
+}
+
+async function editProspect(id) {
+  const p=data.prospects.find(x=>x.id===id); if(!p)return;
+  const name=prompt('Nom',p.name||''); if(name===null)return;
+  const phone=prompt('Téléphone',p.phone||''); if(phone===null)return;
+  const need=prompt('Besoin',p.need||''); if(need===null)return;
+  const score=prompt('Score 0–100',p.score); if(score===null)return;
+  const status=prompt('Statut',p.status||'Nouveau'); if(status===null)return;
+  const value=prompt('Valeur potentielle en FCFA',p.value||0); if(value===null)return;
+  try {
+    await api('/api/prospects/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,phone,need,score:Number(score),status,value:Number(value),orderIntent:p.orderIntent})});
+    await load(); tab('crm');
+  } catch(e){alert(e.message);}
+}
+
+async function deleteProspect(id) {
+  if(!confirm('Supprimer ce prospect du CRM ?')) return;
+  try { await api('/api/prospects/'+id,{method:'DELETE'}); await load(); tab('crm'); }
+  catch(e){alert(e.message);}
+}
+
+async function ask() {
+  const text=$('q').value.trim(); if(!text)return;
+  $('reply').textContent='…';
+  try {
+    const d=await api('/api/ai/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
+    $('reply').textContent=d.reply;
+  } catch(e){$('reply').textContent=e.message;}
+}
+
+document.addEventListener('click', e => {
+  const tabBtn=e.target.closest('[data-tab]');
+  if(tabBtn){tab(tabBtn.dataset.tab);return;}
+  const ep=e.target.closest('[data-edit-product]'); if(ep){editProduct(ep.dataset.editProduct);return;}
+  const dp=e.target.closest('[data-delete-product]'); if(dp){deleteProduct(dp.dataset.deleteProduct);return;}
+  const ec=e.target.closest('[data-edit-prospect]'); if(ec){editProspect(ec.dataset.editProspect);return;}
+  const dc=e.target.closest('[data-delete-prospect]'); if(dc){deleteProspect(dc.dataset.deleteProspect);return;}
+});
+
+if (token) {
+  $('login').classList.add('hidden');
+  $('app').classList.remove('hidden');
+  load();
+}
 </script>
 </body></html>
