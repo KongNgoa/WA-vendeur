@@ -170,7 +170,7 @@ async function handler(req,res) {
     const r=await query('INSERT INTO conversations(company_id,prospect_id,channel,external_contact) VALUES($1,$2,$3,$4) RETURNING id,prospect_id AS "prospectId",channel,external_contact AS phone,created_at AS "createdAt"',[companyId,b.prospectId||null,b.channel||'whatsapp',b.phone||null]);
     return json(res,201,{conversation:r.rows[0]});
   }
-  const convMatch=u.pathname.match(/^\\/api\\/conversations\\/([0-9a-f-]+)\\/messages$/i);
+  const convMatch=u.pathname.match(/^\/api\/conversations\/([0-9a-f-]+)\/messages$/i);
   if(convMatch && req.method==='POST') {
     const b=await body(req);
     if(!b.body) return json(res,400,{error:'Message requis'});
@@ -195,7 +195,7 @@ async function handler(req,res) {
     const r=await query('SELECT o.id,o.order_number AS number,o.prospect_id AS "prospectId",p.name AS client,o.amount,o.status,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC',[companyId]);
     return json(res,200,{orders:r.rows});
   }
-  const orderMatch=u.pathname.match(/^\\/api\\/orders\\/([0-9a-f-]+)$/i);
+  const orderMatch=u.pathname.match(/^\/api\/orders\/([0-9a-f-]+)$/i);
   if(orderMatch && (req.method==='PUT'||req.method==='PATCH')) {
     const b=await body(req);
     const r=await query('UPDATE orders SET amount=$1,status=$2 WHERE id=$3 AND company_id=$4 RETURNING id,order_number AS number,prospect_id AS "prospectId",amount,status,created_at AS "createdAt"',[Math.max(0,Number(b.amount||0)),b.status||'En attente',orderMatch[1],companyId]);
