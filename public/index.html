@@ -34,7 +34,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <button class="active" data-tab="dashboard" onclick="tab('dashboard')">📊 Tableau de bord</button>
 <button data-tab="products" onclick="tab('products')">📦 Produits</button>
 <button data-tab="crm" onclick="tab('crm')">👥 CRM</button>
-<button data-tab="assistant" onclick="tab('assistant')">🤖 Assistant IA</button>
+<button data-tab="conversations" onclick="tab('conversations')">💬 Conversations</button><button data-tab="orders" onclick="tab('orders')">🛒 Commandes</button><button data-tab="followups" onclick="tab('followups')">🔁 Relances</button><button data-tab="assistant" onclick="tab('assistant')">🤖 Assistant IA</button>
 <button data-tab="conversations" onclick="tab('conversations')">💬 Conversations</button>
 <button data-tab="orders" onclick="tab('orders')">🛒 Commandes</button>
 <button data-tab="followups" onclick="tab('followups')">🔁 Relances</button>
@@ -75,6 +75,9 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <div class="panel"><h3>Prospects <span class="muted" id="crmCount"></span></h3><div id="crmTable"></div></div>
 </section>
 
+<section id="conversationsTab" class="hidden"><div class="panel"><h3>Conversations</h3><form class="formgrid" onsubmit="saveConversation(event)"><input id="vPhone" placeholder="Téléphone / contact" required><input id="vProspect" placeholder="ID prospect (optionnel)"><div class="full"><button class="btn primary">Nouvelle conversation</button></div></form><div id="conversationList"></div></div></section>
+<section id="ordersTab" class="hidden"><div class="panel"><h3>Nouvelle commande</h3><form class="formgrid" onsubmit="saveOrder(event)"><input id="oProspect" placeholder="ID prospect" required><input id="oAmount" type="number" min="0" placeholder="Montant (FCFA)" required><select id="oStatus"><option>En attente</option><option>Confirmée</option><option>En préparation</option><option>Livrée</option><option>Annulée</option></select><div class="full"><button class="btn primary">Créer la commande</button></div></form></div><div class="panel"><h3>Commandes <span class="muted" id="orderCount"></span></h3><div id="orderTable"></div></div></section>
+<section id="followupsTab" class="hidden"><div class="panel"><h3>Programmer une relance</h3><form class="formgrid" onsubmit="saveFollowup(event)"><input id="fProspect" placeholder="ID prospect" required><input id="fDue" type="datetime-local" required><input id="fText" class="full" placeholder="Message de relance" required><div class="full"><button class="btn primary">Programmer</button></div></form></div><div class="panel"><h3>Relances <span class="muted" id="followupCount"></span></h3><div id="followupTable"></div></div></section>
 <section id="assistantTab" class="hidden">
 <div class="panel"><h3>Assistant commercial IA</h3><p class="muted">Testez une réponse client basée sur votre catalogue.</p>
 <div class="chat"><input id="q" placeholder="Ex. Quel est le prix de la Nike ?"><button class="btn primary" onclick="ask()">Envoyer</button></div>
@@ -268,6 +271,15 @@ function renderFollowups(){const opts=data.prospects.map(p=>'<option value="'+p.
 async function saveFollowup(e){e.preventDefault();try{const local=$('fDue').value;const due=local?new Date(local).toISOString():null;await api('/api/followups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prospectId:$('fProspect').value,text:$('fText').value.trim(),dueAt:due})});e.target.reset();await load();tab('followups');}catch(x){alert(x.message);}}
 async function completeFollowup(id){try{await api('/api/followups/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'Terminée'})});await load();tab('followups');}catch(e){alert(e.message);}}
 
+async function loadConversations(){try{const r=await api('/api/conversations');data.conversations=r.conversations||[];renderConversations();}catch(e){alert(e.message);}}
+function renderConversations(){ $('conversationList').innerHTML=data.conversations.length?data.conversations.map(c=>'<div class="panel" style="box-shadow:none;border:1px solid #edf0f5"><strong>'+esc(c.prospect||'Contact')+'</strong> · '+esc(c.phone||'—')+'<div class="muted">'+esc(c.channel||'whatsapp')+'</div>'+(c.messages||[]).map(m=>'<div style="padding:8px;margin-top:6px;background:'+(m.direction==='in'?'#f5f7fb':'#f0f4ff')+';border-radius:8px"><b>'+(m.direction==='in'?'Client':'VENDIA')+':</b> '+esc(m.body)+'</div>').join('')+'<form onsubmit="sendMessage(event,''+c.id+'')" style="display:flex;gap:8px;margin-top:10px"><input placeholder="Répondre au client" required><button class="btn primary">Envoyer</button></form></div>').join(''):'<div class="empty">Aucune conversation.</div>'; }
+async function saveConversation(e){e.preventDefault();try{await api('/api/conversations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:$('vPhone').value.trim(),prospectId:$('vProspect').value.trim()||null})});e.target.reset();await loadConversations();}catch(x){alert(x.message);}}
+async function sendMessage(e,id){e.preventDefault();const input=e.target.querySelector('input');try{await api('/api/conversations/'+id+'/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({direction:'out',body:input.value.trim()})});input.value='';await loadConversations();}catch(x){alert(x.message);}}
+async function saveOrder(e){e.preventDefault();try{await api('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prospectId:$('oProspect').value.trim(),amount:Number($('oAmount').value),status:$('oStatus').value})});e.target.reset();await load();tab('orders');}catch(x){alert(x.message);}}
+function renderOrders(){ $('orderCount').textContent='('+(data.orders||[]).length+')'; $('orderTable').innerHTML=(data.orders||[]).length?'<table><thead><tr><th>N°</th><th>Client</th><th>Montant</th><th>Statut</th></tr></thead><tbody>'+data.orders.map(o=>'<tr><td><strong>'+esc(o.number)+'</strong></td><td>'+esc(o.client||'—')+'</td><td>'+money(o.amount)+'</td><td>'+esc(o.status)+'</td></tr>').join('')+'</tbody></table>':'<div class="empty">Aucune commande.</div>'; }
+async function saveFollowup(e){e.preventDefault();try{await api('/api/followups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prospectId:$('fProspect').value.trim(),dueAt:new Date($('fDue').value).toISOString(),text:$('fText').value.trim()})});e.target.reset();await load();tab('followups');}catch(x){alert(x.message);}}
+function renderFollowups(){ $('followupCount').textContent='('+(data.followups||[]).length+')'; $('followupTable').innerHTML=(data.followups||[]).length?'<table><thead><tr><th>Prospect</th><th>Échéance</th><th>Message</th><th>Statut</th><th>Action</th></tr></thead><tbody>'+data.followups.map(f=>'<tr><td>'+esc(f.prospect||f.prospectId)+'</td><td>'+esc(f.dueAt?new Date(f.dueAt).toLocaleString('fr-FR'):'—')+'</td><td>'+esc(f.text||'—')+'</td><td>'+esc(f.status)+'</td><td><button class="btn danger" data-delete-followup="'+f.id+'">Supprimer</button></td></tr>').join('')+'</tbody></table>':'<div class="empty">Aucune relance programmée.</div>'; }
+async function deleteFollowup(id){if(!confirm('Supprimer cette relance ?'))return;try{await api('/api/followups/'+id,{method:'DELETE'});await load();tab('followups');}catch(x){alert(x.message);}}
 async function ask() {
   const text=$('q').value.trim(); if(!text)return;
   $('reply').textContent='…';
@@ -284,6 +296,7 @@ document.addEventListener('click', e => {
   const dp=e.target.closest('[data-delete-product]'); if(dp){deleteProduct(dp.dataset.deleteProduct);return;}
   const ec=e.target.closest('[data-edit-prospect]'); if(ec){editProspect(ec.dataset.editProspect);return;}
   const dc=e.target.closest('[data-delete-prospect]'); if(dc){deleteProspect(dc.dataset.deleteProspect);return;}
+  const df=e.target.closest('[data-delete-followup]'); if(df){deleteFollowup(df.dataset.deleteFollowup);return;}
 });
 
 if (token) {
