@@ -35,6 +35,9 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <button data-tab="products" onclick="tab('products')">📦 Produits</button>
 <button data-tab="crm" onclick="tab('crm')">👥 CRM</button>
 <button data-tab="assistant" onclick="tab('assistant')">🤖 Assistant IA</button>
+<button data-tab="conversations" onclick="tab('conversations')">💬 Conversations</button>
+<button data-tab="orders" onclick="tab('orders')">🛒 Commandes</button>
+<button data-tab="followups" onclick="tab('followups')">🔁 Relances</button>
 </nav>
 
 <section id="dashboardTab">
@@ -76,13 +79,16 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <div class="panel"><h3>Assistant commercial IA</h3><p class="muted">Testez une réponse client basée sur votre catalogue.</p>
 <div class="chat"><input id="q" placeholder="Ex. Quel est le prix de la Nike ?"><button class="btn primary" onclick="ask()">Envoyer</button></div>
 <div class="reply" id="reply">Bonjour 👋 Je suis Julie. Posez-moi une question.</div></div>
+<section id="conversationsTab" class="hidden"><div class="panel"><h3>Conversations</h3><div id="conversationList"></div></div><div class="panel hidden" id="conversationPanel"><h3 id="conversationTitle"></h3><div id="messageList"></div><div class="chat"><input id="messageInput" placeholder="Répondre au prospect…"><button class="btn primary" onclick="sendMessage()">Envoyer</button></div></div></section>
+<section id="ordersTab" class="hidden"><div class="panel"><h3>Créer une commande</h3><form class="formgrid" onsubmit="saveOrder(event)"><select id="oProspect" required></select><input id="oAmount" type="number" min="0" placeholder="Montant (FCFA)" required><select id="oStatus"><option>En attente</option><option>Confirmée</option><option>Préparation</option><option>Livrée</option><option>Annulée</option></select><div class="full"><button class="btn primary">Créer la commande</button></div></form></div><div class="panel"><h3>Commandes</h3><div id="orderTable"></div></div></section>
+<section id="followupsTab" class="hidden"><div class="panel"><h3>Programmer une relance</h3><form class="formgrid" onsubmit="saveFollowup(event)"><select id="fProspect" required></select><input id="fDue" type="datetime-local" required><input id="fText" class="full" placeholder="Message de relance" required><div class="full"><button class="btn primary">Programmer</button></div></form></div><div class="panel"><h3>Relances</h3><div id="followupTable"></div></div></section>
 </section>
 </section>
 </main>
 
 <script>
 let token = localStorage.getItem('wa_token') || '';
-let data = {products:[], prospects:[], orders:[], metrics:{}};
+let data = {products:[], prospects:[], orders:[], followups:[], conversations:[], metrics:{}}; let activeConversation=null;
 
 const $ = id => document.getElementById(id);
 const esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -138,18 +144,23 @@ function logout() {
 async function load() {
   try {
     data = await api('/api/bootstrap');
+    const [cv,fu] = await Promise.all([api('/api/conversations'),api('/api/followups')]);
+    data.conversations=cv.conversations||[]; data.followups=fu.followups||[];
     renderAll();
   } catch(e) { console.error(e); }
 }
 
 function tab(name) {
   document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  ['dashboard','products','crm','assistant'].forEach(x => $(x+'Tab').classList.toggle('hidden', x !== name));
+  ['dashboard','products','crm','assistant','conversations','orders','followups'].forEach(x => $(x+'Tab').classList.toggle('hidden', x !== name));
   if (name === 'products') renderProducts();
   if (name === 'crm') renderCRM();
+  if (name === 'conversations') renderConversations();
+  if (name === 'orders') renderOrders();
+  if (name === 'followups') renderFollowups();
 }
 
-function renderAll() { renderDashboard(); renderProducts(); renderCRM(); }
+function renderAll() { renderDashboard(); renderProducts(); renderCRM(); renderConversations(); renderOrders(); renderFollowups(); }
 
 function renderDashboard() {
   const m = data.metrics || {};
@@ -244,6 +255,18 @@ async function deleteProspect(id) {
   try { await api('/api/prospects/'+id,{method:'DELETE'}); await load(); tab('crm'); }
   catch(e){alert(e.message);}
 }
+
+
+function renderConversations(){ $('conversationList').innerHTML=data.conversations.length?'<table><thead><tr><th>Contact</th><th>Canal</th><th>Prospect</th><th>Messages</th><th>Action</th></tr></thead><tbody>'+data.conversations.map(c=>'<tr><td>'+esc(c.phone||'—')+'</td><td>'+esc(c.channel)+'</td><td>'+esc(c.prospect||'Non lié')+'</td><td>'+((c.messages||[]).length)+'</td><td><button class="btn" onclick="openConversation(\''+c.id+'\')">Ouvrir</button></td></tr>').join('')+'</tbody></table>':'<div class="empty">Aucune conversation. Les conversations WhatsApp apparaîtront ici.</div>'; if(activeConversation) showConversation(activeConversation); }
+function openConversation(id){activeConversation=id; $('conversationPanel').classList.remove('hidden'); showConversation(id);}
+function showConversation(id){const c=data.conversations.find(x=>x.id===id); if(!c)return; $('conversationTitle').textContent=(c.prospect||c.phone||'Conversation')+' · '+c.channel; $('messageList').innerHTML=(c.messages||[]).map(m=>'<div style="padding:10px;margin:7px 0;border-radius:10px;background:'+(m.direction==='in'?'#f0f4ff':'#e7f7ee')+'"><strong>'+(m.direction==='in'?'Client':'VENDIA')+'</strong><br>'+esc(m.body)+'</div>').join('')||'<div class="empty">Aucun message.</div>'; }
+async function sendMessage(){if(!activeConversation)return;const body=$('messageInput').value.trim();if(!body)return;try{await api('/api/conversations/'+activeConversation+'/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body,direction:'out'})});$('messageInput').value='';const cv=await api('/api/conversations');data.conversations=cv.conversations||[];showConversation(activeConversation);}catch(e){alert(e.message);}}
+function renderOrders(){const opts=data.prospects.map(p=>'<option value="'+p.id+'">'+esc(p.name||p.phone||'Prospect')+'</option>').join('');$('oProspect').innerHTML=opts||'<option value="">Ajoutez d’abord un prospect</option>'; $('orderTable').innerHTML=data.orders.length?'<table><thead><tr><th>N°</th><th>Client</th><th>Montant</th><th>Statut</th><th>Action</th></tr></thead><tbody>'+data.orders.map(o=>'<tr><td>'+esc(o.number)+'</td><td>'+esc(o.client||'—')+'</td><td>'+money(o.amount)+'</td><td>'+esc(o.status)+'</td><td><button class="btn" onclick="editOrder(\''+o.id+'\',\''+String(o.status).replace(/'/g,"\\'")+'\','+Number(o.amount||0)+')">Statut</button></td></tr>').join('')+'</tbody></table>':'<div class="empty">Aucune commande.</div>'; }
+async function saveOrder(e){e.preventDefault();try{await api('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prospectId:$('oProspect').value,amount:Number($('oAmount').value),status:$('oStatus').value})});e.target.reset();await load();tab('orders');}catch(x){alert(x.message);}}
+async function editOrder(id,status,amount){const ns=prompt('Statut de la commande',status);if(ns===null)return;try{await api('/api/orders/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:ns,amount})});await load();tab('orders');}catch(e){alert(e.message);}}
+function renderFollowups(){const opts=data.prospects.map(p=>'<option value="'+p.id+'">'+esc(p.name||p.phone||'Prospect')+'</option>').join('');$('fProspect').innerHTML=opts||'<option value="">Ajoutez d’abord un prospect</option>';$('followupTable').innerHTML=data.followups.length?'<table><thead><tr><th>Prospect</th><th>Message</th><th>Échéance</th><th>Statut</th><th>Action</th></tr></thead><tbody>'+data.followups.map(f=>'<tr><td>'+esc(f.prospect||'—')+'</td><td>'+esc(f.text||'—')+'</td><td>'+esc(f.dueAt?new Date(f.dueAt).toLocaleString('fr-FR'):'—')+'</td><td>'+esc(f.status)+'</td><td><button class="btn" onclick="completeFollowup(\''+f.id+'\')">Terminer</button></td></tr>').join('')+'</tbody></table>':'<div class="empty">Aucune relance programmée.</div>'; }
+async function saveFollowup(e){e.preventDefault();try{const local=$('fDue').value;const due=local?new Date(local).toISOString():null;await api('/api/followups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prospectId:$('fProspect').value,text:$('fText').value.trim(),dueAt:due})});e.target.reset();await load();tab('followups');}catch(x){alert(x.message);}}
+async function completeFollowup(id){try{await api('/api/followups/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'Terminée'})});await load();tab('followups');}catch(e){alert(e.message);}}
 
 async function ask() {
   const text=$('q').value.trim(); if(!text)return;
