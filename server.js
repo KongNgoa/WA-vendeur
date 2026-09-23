@@ -67,7 +67,7 @@ async function dashboard(companyId) {
 
 function classifyLead(text, products=[], prospect={}) {
   const q=String(text||'').toLowerCase();
-  let score=Number(prospect.score||0);
+  let score=0;
   const reasons=[];
   const add=(points,reason)=>{ score+=points; reasons.push((points>0?'+':'')+points+' '+reason); };
 
@@ -81,6 +81,7 @@ function classifyLead(text, products=[], prospect={}) {
   if (prospect.phone) add(5,'contact connu');
   if (prospect.value>0) add(5,'valeur potentielle renseignée');
   if (/juste regarder|simplement regarder|pas intéress|pas interesse|je réfléchis|je reflechis|plus tard/.test(q)) add(-15,'intention faible');
+  score=Math.max(score,Number(prospect.score||0));
   score=Math.max(0,Math.min(100,score));
   const status=score>=70?'Chaud':score>=40?'Tiède':'Froid';
   const orderIntent=/acheter|commande|commander|je prends|je veux|réserver|reserver/.test(q);
