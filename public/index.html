@@ -97,9 +97,15 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <div class="panel"><h3>Relances <span class="muted" id="followupCount"></span></h3><div id="followupTable"></div></div>
 </section>
 <section id="assistantTab" class="hidden">
-<div class="panel"><h3>Assistant commercial IA</h3><p class="muted">Testez une réponse client basée sur votre catalogue.</p>
-<div class="chat"><input id="q" placeholder="Ex. Quel est le prix de la Nike ?"><button class="btn primary" onclick="ask()">Envoyer</button></div>
-<div class="reply" id="reply">Bonjour 👋 Je suis Julie. Posez-moi une question.</div></div></section>
+<div class="panel"><h3>Assistant commercial IA</h3><p class="muted">Testez une réponse client basée sur votre catalogue et mesurez l’intention d’achat.</p>
+<div class="formgrid">
+<select id="aiProspect"><option value="">Analyser sans prospect</option></select>
+<input id="q" placeholder="Ex. Je veux la Nike Air Max, vous livrez à Odza ?">
+</div>
+<div class="chat"><button class="btn primary" onclick="ask()">Analyser la demande</button></div>
+<div class="reply" id="reply">Bonjour 👋 Je suis Julie. Posez-moi une question.</div>
+<div id="qualification" style="margin-top:12px"></div>
+</div></section>
 </main>
 
 <script>
@@ -180,10 +186,10 @@ function renderAll() {
   renderDashboard(); renderProducts(); renderCRM(); renderConversations(); renderOrders(); renderFollowups(); populateProspectSelects();
 }
 function populateProspectSelects() {
-  ['vProspect','oProspect','fProspect'].forEach(id => {
+  ['vProspect','oProspect','fProspect','aiProspect'].forEach(id => {
     const el=$(id); if(!el) return;
     const current=el.value;
-    const first=id==='vProspect' ? '<option value="">Associer à un prospect (optionnel)</option>' : '<option value="">Choisir le prospect</option>';
+    const first=id==='vProspect' ? '<option value="">Associer à un prospect (optionnel)</option>' : id==='aiProspect' ? '<option value="">Analyser sans prospect</option>' : '<option value="">Choisir le prospect</option>';
     el.innerHTML=first+(data.prospects||[]).map(p=>'<option value="'+p.id+'">'+esc(p.name||p.phone||'Prospect')+' · '+esc(p.phone||'')+'</option>').join('');
     if(current && [...el.options].some(o=>o.value===current)) el.value=current;
   });
@@ -371,10 +377,19 @@ async function deleteFollowup(id){
 
 async function ask() {
   const text=$('q').value.trim(); if(!text)return;
-  $('reply').textContent='…';
+  $('reply').textContent='Analyse en cours…';
+  $('qualification').innerHTML='';
   try {
-    const d=await api('/api/ai/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
+    const prospectId=$('aiProspect').value||null;
+    const [d,q]=await Promise.all([
+      api('/api/ai/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})}),
+      api('/api/ai/qualify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,prospectId})})
+    ]);
     $('reply').textContent=d.reply;
+    const x=q.qualification;
+    const cls=x.score>=70?'hot':x.score<40?'cold':'';
+    $('qualification').innerHTML='<div class="panel" style="box-shadow:none;border:1px solid #edf0f5;margin:0"><strong>Qualification automatique</strong><div style="margin-top:8px"><span class="badge '+cls+'">'+esc(x.status)+' · '+x.score+'/100</span> '+(x.orderIntent?'<span class="badge">🛒 Intention d’achat</span>':'')+'</div><div class="muted" style="margin-top:8px">'+esc(x.reasons.join(' · ')||'Aucun signal particulier détecté.')+'</div></div>';
+    if(prospectId) await load();
   } catch(e){$('reply').textContent=e.message;}
 }
 
