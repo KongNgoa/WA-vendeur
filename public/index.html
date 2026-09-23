@@ -20,7 +20,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 </style>
 </head>
 <body>
-<header><div><h1>VENDIA</h1><div class="tag">Le commercial IA qui travaille pour vous 24h/24</div></div><span class="badge">BÊTA</span></header>
+<header><div><h1>VENDIA</h1><div class="tag">Le commercial IA qui travaille pour vous 24h/24</div></div><div class="actions"><span class="badge">BÊTA</span><button class="btn" style="margin-left:8px" onclick="logout()">Déconnexion</button></div></header>
 <main class="wrap">
 <section id="login" class="login">
 <h2>Connexion</h2><p class="muted">Connectez-vous pour accéder à votre espace commercial.</p>
@@ -35,9 +35,6 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <button data-tab="products" onclick="tab('products')">📦 Produits</button>
 <button data-tab="crm" onclick="tab('crm')">👥 CRM</button>
 <button data-tab="conversations" onclick="tab('conversations')">💬 Conversations</button><button data-tab="orders" onclick="tab('orders')">🛒 Commandes</button><button data-tab="followups" onclick="tab('followups')">🔁 Relances</button><button data-tab="assistant" onclick="tab('assistant')">🤖 Assistant IA</button>
-<button data-tab="conversations" onclick="tab('conversations')">💬 Conversations</button>
-<button data-tab="orders" onclick="tab('orders')">🛒 Commandes</button>
-<button data-tab="followups" onclick="tab('followups')">🔁 Relances</button>
 </nav>
 
 <section id="dashboardTab">
@@ -75,18 +72,34 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <div class="panel"><h3>Prospects <span class="muted" id="crmCount"></span></h3><div id="crmTable"></div></div>
 </section>
 
-<section id="conversationsTab" class="hidden"><div class="panel"><h3>Conversations</h3><form class="formgrid" onsubmit="saveConversation(event)"><input id="vPhone" placeholder="Téléphone / contact" required><input id="vProspect" placeholder="ID prospect (optionnel)"><div class="full"><button class="btn primary">Nouvelle conversation</button></div></form><div id="conversationList"></div></div></section>
-<section id="ordersTab" class="hidden"><div class="panel"><h3>Nouvelle commande</h3><form class="formgrid" onsubmit="saveOrder(event)"><input id="oProspect" placeholder="ID prospect" required><input id="oAmount" type="number" min="0" placeholder="Montant (FCFA)" required><select id="oStatus"><option>En attente</option><option>Confirmée</option><option>En préparation</option><option>Livrée</option><option>Annulée</option></select><div class="full"><button class="btn primary">Créer la commande</button></div></form></div><div class="panel"><h3>Commandes <span class="muted" id="orderCount"></span></h3><div id="orderTable"></div></div></section>
-<section id="followupsTab" class="hidden"><div class="panel"><h3>Programmer une relance</h3><form class="formgrid" onsubmit="saveFollowup(event)"><input id="fProspect" placeholder="ID prospect" required><input id="fDue" type="datetime-local" required><input id="fText" class="full" placeholder="Message de relance" required><div class="full"><button class="btn primary">Programmer</button></div></form></div><div class="panel"><h3>Relances <span class="muted" id="followupCount"></span></h3><div id="followupTable"></div></div></section>
+<section id="conversationsTab" class="hidden">
+<div class="panel"><h3>Conversations</h3>
+<form class="formgrid" onsubmit="saveConversation(event)">
+<input id="vPhone" placeholder="Téléphone / contact" required><select id="vProspect"><option value="">Associer à un prospect (optionnel)</option></select>
+<div class="full"><button class="btn primary">Nouvelle conversation</button></div></form>
+<div id="conversationList"></div></div>
+</section>
+<section id="ordersTab" class="hidden">
+<div class="panel"><h3>Nouvelle commande</h3>
+<form class="formgrid" onsubmit="saveOrder(event)">
+<select id="oProspect" required><option value="">Choisir le prospect</option></select>
+<input id="oAmount" type="number" min="0" placeholder="Montant (FCFA)" required>
+<select id="oStatus"><option>En attente</option><option>Confirmée</option><option>En préparation</option><option>Livrée</option><option>Annulée</option></select>
+<div class="full"><button class="btn primary">Créer la commande</button></div></form></div>
+<div class="panel"><h3>Commandes <span class="muted" id="orderCount"></span></h3><div id="orderTable"></div></div>
+</section>
+<section id="followupsTab" class="hidden">
+<div class="panel"><h3>Programmer une relance</h3>
+<form class="formgrid" onsubmit="saveFollowup(event)">
+<select id="fProspect" required><option value="">Choisir le prospect</option></select>
+<input id="fDue" type="datetime-local" required><input id="fText" class="full" placeholder="Message de relance" required>
+<div class="full"><button class="btn primary">Programmer</button></div></form></div>
+<div class="panel"><h3>Relances <span class="muted" id="followupCount"></span></h3><div id="followupTable"></div></div>
+</section>
 <section id="assistantTab" class="hidden">
 <div class="panel"><h3>Assistant commercial IA</h3><p class="muted">Testez une réponse client basée sur votre catalogue.</p>
 <div class="chat"><input id="q" placeholder="Ex. Quel est le prix de la Nike ?"><button class="btn primary" onclick="ask()">Envoyer</button></div>
-<div class="reply" id="reply">Bonjour 👋 Je suis Julie. Posez-moi une question.</div></div>
-<section id="conversationsTab" class="hidden"><div class="panel"><h3>Conversations</h3><div id="conversationList"></div></div><div class="panel hidden" id="conversationPanel"><h3 id="conversationTitle"></h3><div id="messageList"></div><div class="chat"><input id="messageInput" placeholder="Répondre au prospect…"><button class="btn primary" onclick="sendMessage()">Envoyer</button></div></div></section>
-<section id="ordersTab" class="hidden"><div class="panel"><h3>Créer une commande</h3><form class="formgrid" onsubmit="saveOrder(event)"><select id="oProspect" required></select><input id="oAmount" type="number" min="0" placeholder="Montant (FCFA)" required><select id="oStatus"><option>En attente</option><option>Confirmée</option><option>Préparation</option><option>Livrée</option><option>Annulée</option></select><div class="full"><button class="btn primary">Créer la commande</button></div></form></div><div class="panel"><h3>Commandes</h3><div id="orderTable"></div></div></section>
-<section id="followupsTab" class="hidden"><div class="panel"><h3>Programmer une relance</h3><form class="formgrid" onsubmit="saveFollowup(event)"><select id="fProspect" required></select><input id="fDue" type="datetime-local" required><input id="fText" class="full" placeholder="Message de relance" required><div class="full"><button class="btn primary">Programmer</button></div></form></div><div class="panel"><h3>Relances</h3><div id="followupTable"></div></div></section>
-</section>
-</section>
+<div class="reply" id="reply">Bonjour 👋 Je suis Julie. Posez-moi une question.</div></div></section>
 </main>
 
 <script>
@@ -163,7 +176,18 @@ function tab(name) {
   if (name === 'followups') renderFollowups();
 }
 
-function renderAll() { renderDashboard(); renderProducts(); renderCRM(); renderConversations(); renderOrders(); renderFollowups(); }
+function renderAll() {
+  renderDashboard(); renderProducts(); renderCRM(); renderConversations(); renderOrders(); renderFollowups(); populateProspectSelects();
+}
+function populateProspectSelects() {
+  ['vProspect','oProspect','fProspect'].forEach(id => {
+    const el=$(id); if(!el) return;
+    const current=el.value;
+    const first=id==='vProspect' ? '<option value="">Associer à un prospect (optionnel)</option>' : '<option value="">Choisir le prospect</option>';
+    el.innerHTML=first+(data.prospects||[]).map(p=>'<option value="'+p.id+'">'+esc(p.name||p.phone||'Prospect')+' · '+esc(p.phone||'')+'</option>').join('');
+    if(current && [...el.options].some(o=>o.value===current)) el.value=current;
+  });
+}
 
 function renderDashboard() {
   const m = data.metrics || {};
