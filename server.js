@@ -65,6 +65,28 @@ async function dashboard(companyId) {
   };
 }
 
+function classifyLead(text, products=[], prospect={}) {
+  const q=String(text||'').toLowerCase();
+  let score=Number(prospect.score||0);
+  const reasons=[];
+  const add=(points,reason)=>{ score+=points; reasons.push((points>0?'+':'')+points+' '+reason); };
+
+  if (/acheter|commande|commander|je prends|je veux|réserver|reserver|prendre/.test(q)) add(30,'intention d’achat');
+  if (/prix|combien|tarif|coût|cout/.test(q)) add(10,'question prix');
+  if (/dispon|stock|avez-vous|avez vous/.test(q)) add(10,'vérification de disponibilité');
+  if (/livr|livraison|expéd|exped|où|ou\b/.test(q)) add(5,'logistique');
+  if (/aujourd|maintenant|urgent|rapidement|ce soir|demain/.test(q)) add(15,'urgence');
+  if (/budget|fcfa|€|euro|payer|paiement|momo|orange money/.test(q)) add(10,'budget/paiement évoqué');
+  if (products.some(p=>q.includes(String(p.name||'').toLowerCase()))) add(15,'produit du catalogue identifié');
+  if (prospect.phone) add(5,'contact connu');
+  if (prospect.value>0) add(5,'valeur potentielle renseignée');
+  if (/juste regarder|simplement regarder|pas intéress|pas interesse|je réfléchis|je reflechis|plus tard/.test(q)) add(-15,'intention faible');
+  score=Math.max(0,Math.min(100,score));
+  const status=score>=70?'Chaud':score>=40?'Tiède':'Froid';
+  const orderIntent=/acheter|commande|commander|je prends|je veux|réserver|reserver/.test(q);
+  return {score,status,orderIntent,reasons};
+}
+
 function ai(text, products=[]) {
   const q=String(text||'').toLowerCase();
   if(q.includes('prix')||q.includes('combien')) return products.length ? products.map(p=>`${p.name}: ${Number(p.price).toLocaleString('fr-FR')} FCFA`).join(' · ')+'. Lequel vous intéresse ?' : 'Je peux vous renseigner sur nos produits. Quel article recherchez-vous ?';
@@ -153,6 +175,26 @@ async function handler(req,res) {
   if(req.method==='POST'&&u.pathname==='/api/ai/reply') {
     const b=await body(req); const d=await query('SELECT name,price,stock FROM products WHERE company_id=$1 ORDER BY created_at',[companyId]);
     return json(res,200,{reply:ai(b.text,d.rows),provider:'fallback-demo'});
+  }
+
+  if(req.method==='POST'&&u.pathname==='/api/ai/qualify') {
+    const b=await body(req);
+    if(!b.text) return json(res,400,{error:'Message requis'});
+    const d=await query('SELECT name,price,stock FROM products WHERE company_id=$1 ORDER BY created_at',[companyId]);
+    let prospect={score:0,phone:b.phone||null,value:Number(b.value||0)};
+    if(b.prospectId){
+      const p=await query('SELECT id,name,phone,need,value,score,status,order_intent AS "orderIntent" FROM prospects WHERE id=$1 AND company_id=$2',[b.prospectId,companyId]);
+      if(!p.rows[0]) return json(res,404,{error:'Prospect introuvable'});
+      prospect=p.rows[0];
+    }
+    const result=classifyLead(b.text,d.rows,prospect);
+    if(b.prospectId){
+      await query(
+        'UPDATE prospects SET score=$1,status=$2,order_intent=$3,last_contact=now(),need=COALESCE(NULLIF($4,\'\'),need) WHERE id=$5 AND company_id=$6',
+        [result.score,result.status,result.orderIntent,b.text,b.prospectId,companyId]
+      );
+    }
+    return json(res,200,{qualification:result,provider:'rules-engine-v1'});
   }
   if(req.method==='POST'&&u.pathname==='/api/followups') {
     const b=await body(req); const r=await query('INSERT INTO followups(company_id,prospect_id,text,due_at,status) VALUES($1,$2,$3,$4,$5) RETURNING *',[companyId,b.prospectId||null,b.text||null,b.dueAt||null,'Programmée']);
