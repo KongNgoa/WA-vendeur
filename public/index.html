@@ -70,6 +70,10 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <div class="full"><button class="btn primary">Ajouter au CRM</button></div></form>
 </div>
 <div class="panel"><h3>Prospects <span class="muted" id="crmCount"></span></h3><div id="crmTable"></div></div>
+<div id="prospectModal" style="position:fixed;inset:0;background:#0008;z-index:100;display:none;align-items:center;justify-content:center;padding:18px">
+<div style="background:white;border-radius:18px;max-width:620px;width:100%;max-height:90vh;overflow:auto;padding:22px;box-shadow:0 20px 60px #0004">
+<div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><div><h3 id="modalProspectName" style="margin:0">Prospect</h3><div class="muted" id="modalProspectPhone"></div></div><button class="btn" onclick="closeProspectModal()">Fermer</button></div>
+<div id="modalProspectBody" style="margin-top:18px"></div></div></div>
 </section>
 
 <section id="conversationsTab" class="hidden">
@@ -225,7 +229,7 @@ function renderCRM() {
   $('crmTable').innerHTML = data.prospects.length ? '<table><thead><tr><th>Prospect</th><th>Besoin</th><th>Score</th><th>Statut</th><th>Valeur</th><th>Actions</th></tr></thead><tbody>' +
     data.prospects.map(p => '<tr><td><strong>'+esc(p.name||'Sans nom')+'</strong><br><span class="muted">'+esc(p.phone||'—')+'</span></td><td>'+esc(p.need||'—')+'</td>' +
     '<td><span class="badge '+(p.score>=70?'hot':p.score<40?'cold':'')+'">'+p.score+'/100</span></td><td>'+esc(p.status||'Nouveau')+'</td><td>'+money(p.value)+'</td><td><div class="actions">' +
-    '<button class="btn" data-edit-prospect="'+p.id+'">Modifier</button><button class="btn danger" data-delete-prospect="'+p.id+'">Supprimer</button></div></td></tr>').join('') +
+    '<button class="btn primary" data-view-prospect="'+p.id+'">Voir</button><button class="btn" data-edit-prospect="'+p.id+'">Modifier</button><button class="btn danger" data-delete-prospect="'+p.id+'">Supprimer</button></div></td></tr>').join('') +
     '</tbody></table>' : '<div class="empty">Aucun prospect. Ajoutez votre premier contact.</div>';
 }
 
@@ -268,6 +272,18 @@ async function saveProspect(e) {
     e.target.reset(); $('cScore').value=50; await load(); tab('crm');
   } catch(err){alert(err.message);}
 }
+
+function viewProspect(id){
+  const p=data.prospects.find(x=>x.id===id); if(!p)return;
+  $('modalProspectName').textContent=p.name||'Prospect sans nom';
+  $('modalProspectPhone').textContent=p.phone||'Téléphone non renseigné';
+  const cls=Number(p.score)>=70?'hot':Number(p.score)<40?'cold':'';
+  $('modalProspectBody').innerHTML='<div class="actions"><span class="badge '+cls+'">Score: '+esc(p.score||0)+'/100</span><span class="badge">'+esc(p.status||'Nouveau')+'</span>'+(p.orderIntent?'<span class="badge">🛒 Intention d’achat</span>':'')+'</div><div class="grid" style="margin-top:16px"><div><div class="muted">Besoin</div><strong>'+esc(p.need||'Non renseigné')+'</strong></div><div><div class="muted">Valeur potentielle</div><strong>'+money(p.value)+'</strong></div></div><div style="margin-top:18px"><button class="btn primary" onclick="goToAssistantFromProspect(\''+p.id+'\')">🤖 Analyser une demande</button></div>';
+  $('prospectModal').style.display='flex';
+}
+function closeProspectModal(){ $('prospectModal').style.display='none'; }
+function goToAssistantFromProspect(id){ closeProspectModal(); tab('assistant'); $('aiProspect').value=id; $('q').focus(); }
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeProspectModal();});
 
 async function editProspect(id) {
   const p=data.prospects.find(x=>x.id===id); if(!p)return;
@@ -398,6 +414,7 @@ document.addEventListener('click', e => {
   if(tabBtn){tab(tabBtn.dataset.tab);return;}
   const ep=e.target.closest('[data-edit-product]'); if(ep){editProduct(ep.dataset.editProduct);return;}
   const dp=e.target.closest('[data-delete-product]'); if(dp){deleteProduct(dp.dataset.deleteProduct);return;}
+  const vp=e.target.closest('[data-view-prospect]'); if(vp){viewProspect(vp.dataset.viewProspect);return;}
   const ec=e.target.closest('[data-edit-prospect]'); if(ec){editProspect(ec.dataset.editProspect);return;}
   const dc=e.target.closest('[data-delete-prospect]'); if(dc){deleteProspect(dc.dataset.deleteProspect);return;}
   const df=e.target.closest('[data-delete-followup]'); if(df){deleteFollowup(df.dataset.deleteFollowup);return;}
