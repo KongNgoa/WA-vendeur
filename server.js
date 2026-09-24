@@ -217,12 +217,38 @@ async function handler(req,res) {
   if(convMatch && req.method==='POST') {
     const b=await body(req);
     if(!b.body) return json(res,400,{error:'Message requis'});
-    const own=await query('SELECT id FROM conversations WHERE id=$1 AND company_id=$2',[convMatch[1],companyId]);
+    const own=await query('SELECT id,prospect_id AS "prospectId",external_contact AS phone FROM conversations WHERE id=$1 AND company_id=$2',[convMatch[1],companyId]);
     if(!own.rows[0]) return json(res,404,{error:'Conversation introuvable'});
-    const r=await query('INSERT INTO messages(conversation_id,direction,body,provider_message_id) VALUES($1,$2,$3,$4) RETURNING id,direction,body,created_at AS "createdAt"',[convMatch[1],b.direction||'out',String(b.body).trim(),b.providerMessageId||null]);
-    if(b.prospectId) await query('UPDATE conversations SET prospect_id=$1 WHERE id=$2 AND company_id=$3',[b.prospectId,convMatch[1],companyId]);
-    if(b.direction==='in') await query('UPDATE prospects SET last_contact=now() WHERE id=(SELECT prospect_id FROM conversations WHERE id=$1)',[convMatch[1]]);
-    return json(res,201,{message:r.rows[0]});
+    const direction=b.direction||'out';
+    const text=String(b.body).trim();
+    const r=await query('INSERT INTO messages(conversation_id,direction,body,provider_message_id) VALUES($1,$2,$3,$4) RETURNING id,direction,body,created_at AS "createdAt"',[convMatch[1],direction,text,b.providerMessageId||null]);
+
+    let prospectId=b.prospectId||own.rows[0].prospectId||null;
+    let qualification=null;
+    if(prospectId) await query('UPDATE conversations SET prospect_id=$1 WHERE id=$2 AND company_id=$3',[prospectId,convMatch[1],companyId]);
+
+    if(direction==='in') {
+      if(!prospectId) {
+        const phone=b.phone||own.rows[0].phone||null;
+        const existing=phone ? await query('SELECT id FROM prospects WHERE company_id=$1 AND phone=$2 ORDER BY created_at DESC LIMIT 1',[companyId,phone]) : {rows:[]};
+        if(existing.rows[0]) {
+          prospectId=existing.rows[0].id;
+        } else {
+          const name=(b.name||'').trim()||null;
+          const created=await query('INSERT INTO prospects(company_id,name,phone,need,value,score,status,order_intent,last_contact) VALUES($1,$2,$3,$4,0,0,$5,false,now()) RETURNING id',[companyId,name,phone,text,'Nouveau']);
+          prospectId=created.rows[0].id;
+        }
+        await query('UPDATE conversations SET prospect_id=$1 WHERE id=$2 AND company_id=$3',[prospectId,convMatch[1],companyId]);
+      }
+
+      const d=await query('SELECT name,price,stock FROM products WHERE company_id=$1 ORDER BY created_at',[companyId]);
+      const p=await query('SELECT id,name,phone,need,value,score,status,order_intent AS "orderIntent" FROM prospects WHERE id=$1 AND company_id=$2',[prospectId,companyId]);
+      if(p.rows[0]) {
+        qualification=classifyLead(text,d.rows,p.rows[0]);
+        await query('UPDATE prospects SET score=$1,status=$2,order_intent=$3,last_contact=now(),need=COALESCE(NULLIF($4,\'\'),need) WHERE id=$5 AND company_id=$6',[qualification.score,qualification.status,qualification.orderIntent,text,prospectId,companyId]);
+      }
+    }
+    return json(res,201,{message:r.rows[0],prospectId,qualification});
   }
   if(req.method==='POST'&&u.pathname==='/api/orders') {
     const b=await body(req);
