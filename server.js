@@ -65,6 +65,16 @@ async function dashboard(companyId) {
   };
 }
 
+function extractCustomerData(text, current={}) {
+  const q=String(text||'').trim();
+  const phone=(q.match(/(?:\+?237[\s.-]?)?(?:6\d{8}|2\d{8})\b/)||[])[0]||current.phone||null;
+  const nameMatch=q.match(/(?:je suis|moi c'est|moi c’est|nom[: ]+|je m'appelle|je m’appelle)\s+([A-Za-zÀ-ÿ' -]{2,40})/i);
+  const name=nameMatch ? nameMatch[1].trim().replace(/\\s+/g,' ') : current.name||null;
+  const locMatch=q.match(/(?:à|a|sur|dans|vers|quartier)\s+([A-Za-zÀ-ÿ' -]{2,35})(?=\\s+(?:svp|s'il|pour|et|,|\.|$))/i);
+  const location=locMatch ? locMatch[1].trim() : null;
+  return {name,phone,location};
+}
+
 function classifyLead(text, products=[], prospect={}) {
   const q=String(text||'').toLowerCase();
   let score=0;
@@ -244,8 +254,10 @@ async function handler(req,res) {
       const d=await query('SELECT name,price,stock FROM products WHERE company_id=$1 ORDER BY created_at',[companyId]);
       const p=await query('SELECT id,name,phone,need,value,score,status,order_intent AS "orderIntent" FROM prospects WHERE id=$1 AND company_id=$2',[prospectId,companyId]);
       if(p.rows[0]) {
+        const extracted=extractCustomerData(text,p.rows[0]);
         qualification=classifyLead(text,d.rows,p.rows[0]);
-        await query('UPDATE prospects SET score=$1,status=$2,order_intent=$3,last_contact=now(),need=COALESCE(NULLIF($4,\'\'),need) WHERE id=$5 AND company_id=$6',[qualification.score,qualification.status,qualification.orderIntent,text,prospectId,companyId]);
+        const needText=extracted.location ? text+' | Localisation: '+extracted.location : text;
+        await query('UPDATE prospects SET name=COALESCE(NULLIF($1,\'\'),name),phone=COALESCE(NULLIF($2,\'\'),phone),score=$3,status=$4,order_intent=$5,last_contact=now(),need=COALESCE(NULLIF($6,\'\'),need) WHERE id=$7 AND company_id=$8',[extracted.name,extracted.phone,qualification.score,qualification.status,qualification.orderIntent,needText,prospectId,companyId]);
       }
     }
     return json(res,201,{message:r.rows[0],prospectId,qualification});
