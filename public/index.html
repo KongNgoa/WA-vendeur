@@ -9,10 +9,11 @@ header{background:#111827;color:white;padding:18px 28px;display:flex;justify-con
 h1{margin:0;font-size:24px}.tag{opacity:.75;font-size:13px}.wrap{max-width:1180px;margin:24px auto;padding:0 18px}
 .hero,.login,.panel,.stat{background:white;border-radius:18px;padding:22px;box-shadow:0 8px 30px #0000000d}.hero{margin-bottom:16px}.hero h2{font-size:30px;margin:0 0 6px}
 .nav{display:flex;gap:8px;margin-bottom:18px;overflow:auto}.nav button,.btn{border:0;border-radius:10px;padding:11px 15px;background:#e9edf5;color:#172033;font-weight:700;cursor:pointer;white-space:nowrap}.nav button.active,.btn.primary{background:#111827;color:#fff}.btn.danger{background:#fee4e2;color:#b42318}
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}.stat{padding:18px}.num{font-size:28px;font-weight:800;margin-top:6px}.muted{color:#687386;font-size:14px}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:16px}.stat{padding:18px}.num{font-size:28px;font-weight:800;margin-top:6px}.muted{color:#687386;font-size:14px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.panel{margin-bottom:16px}.panel h3{margin-top:0}
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 8px;border-bottom:1px solid #edf0f5;font-size:14px}th{color:#687386;font-size:12px;text-transform:uppercase}
 .actions{display:flex;gap:6px;flex-wrap:wrap}.badge{padding:5px 9px;border-radius:20px;background:#e7f7ee;color:#18794e;font-size:12px;font-weight:700;display:inline-block}.hot{background:#fff0e0;color:#b54708}.cold{background:#eef2f6;color:#536071}.handoff{background:#fee4e2;color:#b42318}
+.auto{background:#eef2ff;color:#3538cd}.manual{background:#eef2f6;color:#536071}.overdue{background:#fee4e2;color:#b42318}.cancelledRow{opacity:.55}.cancelledRow td{text-decoration:line-through}.cancelledRow td:last-child{text-decoration:none}
 form.formgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px}.formgrid .full{grid-column:1/-1}
 input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px;background:white}.chat{display:flex;gap:8px}.chat input{flex:1}.reply{margin-top:12px;background:#f0f4ff;padding:13px;border-radius:10px;min-height:22px}
 .login{max-width:430px;margin:45px auto}.login h2{margin-top:0}.login input{display:block;margin:10px 0}.error{color:#b42318;margin-top:10px}.success{color:#18794e;margin-top:10px}.hidden{display:none}.empty{padding:28px;text-align:center;color:#687386}
@@ -43,6 +44,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <div class="stat"><div class="muted">Prospects chauds</div><div class="num" id="mHot">0</div></div>
 <div class="stat"><div class="muted">Commandes</div><div class="num" id="mOrders">0</div></div>
 <div class="stat"><div class="muted">CA commandes</div><div class="num" id="mRevenue">0 FCFA</div></div>
+<div class="stat"><div class="muted">Relances à traiter</div><div class="num" id="mFollowups">0</div></div>
 </div>
 <div class="grid">
 <div class="panel"><h3>État commercial</h3><div id="commercialState"></div></div>
@@ -253,6 +255,8 @@ function renderDashboard() {
   $('mHot').textContent = m.hot || 0;
   $('mOrders').textContent = m.orders || 0;
   $('mRevenue').textContent = money(m.revenue);
+  const pendingFollowups = (data.followups||[]).filter(f => f.status === 'Programmée').length;
+  $('mFollowups').textContent = pendingFollowups;
   $('commercialState').innerHTML =
     '<div class="actions"><span class="badge">🔥 Chauds: '+(m.hot||0)+'</span>' +
     '<span class="badge hot">🟠 Tièdes: '+(m.warm||0)+'</span>' +
@@ -418,8 +422,15 @@ async function saveOrder(e){
 function renderFollowups(){
   $('followupCount').textContent='('+(data.followups||[]).length+')';
   $('followupTable').innerHTML=(data.followups||[]).length
-    ? '<table><thead><tr><th>Prospect</th><th>Échéance</th><th>Message</th><th>Statut</th><th>Action</th></tr></thead><tbody>'+
-      data.followups.map(f=>'<tr><td>'+esc(f.prospect||f.prospectId)+'</td><td>'+esc(f.dueAt?new Date(f.dueAt).toLocaleString('fr-FR'):'—')+'</td><td>'+esc(f.text||'—')+'</td><td>'+esc(f.status)+'</td><td><button class="btn danger" data-delete-followup="'+f.id+'">Supprimer</button></td></tr>').join('')+
+    ? '<table><thead><tr><th>Prospect</th><th>Échéance</th><th>Message</th><th>Origine</th><th>Statut</th><th>Action</th></tr></thead><tbody>'+
+      data.followups.map(f=>{
+        const isAuto=f.source==='auto';
+        const isCancelled=f.status==='Annulée';
+        const isOverdue=!isCancelled&&f.status==='Programmée'&&f.dueAt&&new Date(f.dueAt).getTime()<Date.now();
+        const originBadge='<span class="badge '+(isAuto?'auto':'manual')+'">'+(isAuto?'🤖 Auto':'✍️ Manuel')+'</span>';
+        const statusBadge=isOverdue?'<span class="badge overdue">En retard</span>':esc(f.status)+(isCancelled&&f.cancelledReason?' — '+esc(f.cancelledReason):'');
+        return '<tr'+(isCancelled?' class="cancelledRow"':'')+'><td>'+esc(f.prospect||f.prospectId)+'</td><td>'+esc(f.dueAt?new Date(f.dueAt).toLocaleString('fr-FR'):'—')+'</td><td>'+esc(f.text||'—')+'</td><td>'+originBadge+'</td><td>'+statusBadge+'</td><td><button class="btn danger" data-delete-followup="'+f.id+'">Supprimer</button></td></tr>';
+      }).join('')+
       '</tbody></table>'
     : '<div class="empty">Aucune relance programmée.</div>';
 }

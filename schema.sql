@@ -101,9 +101,17 @@ CREATE TABLE followups (
   text TEXT,
   due_at TIMESTAMPTZ,
   status TEXT NOT NULL DEFAULT 'Programmée',
+  source TEXT NOT NULL DEFAULT 'manual',
+  cancelled_reason TEXT,
   sent_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE INDEX followups_source_idx ON followups(company_id, prospect_id, status, source);
+-- Lot "relances automatiques contrôlées" — idempotent pour les bases déjà déployées.
+-- Pour appliquer uniquement cet ajout sur la base de production existante,
+-- utiliser scripts/migrate-add-followup-automation.js.
+ALTER TABLE followups ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manual';
+ALTER TABLE followups ADD COLUMN IF NOT EXISTS cancelled_reason TEXT;
 CREATE INDEX followups_due_idx ON followups(status, due_at);
 
 CREATE TABLE subscriptions (

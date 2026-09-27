@@ -40,7 +40,7 @@ async function dashboard(companyId) {
     query('SELECT id,name,phone,need,value,score,status,order_intent AS "orderIntent",last_contact AS "lastContact",next_action AS "nextAction",next_action_priority AS "nextActionPriority",next_action_reason AS "nextActionReason",next_action_at AS "nextActionAt",created_at AS "createdAt" FROM prospects WHERE company_id=$1 ORDER BY score DESC,created_at DESC',[companyId]),
     query('SELECT o.id,o.order_number AS number,p.name AS client,o.amount,o.status,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC',[companyId]),
     query(`SELECT c.id,c.external_contact AS phone,p.name,COALESCE(json_agg(json_build_object('id',m.id,'from',m.direction,'text',m.body) ORDER BY m.created_at) FILTER (WHERE m.id IS NOT NULL),'[]') AS messages FROM conversations c LEFT JOIN prospects p ON p.id=c.prospect_id LEFT JOIN messages m ON m.conversation_id=c.id WHERE c.company_id=$1 GROUP BY c.id,p.name ORDER BY c.created_at DESC`,[companyId]),
-    query('SELECT id,due_at AS "dueAt",status,text,prospect_id AS "prospectId" FROM followups WHERE company_id=$1 ORDER BY due_at NULLS LAST',[companyId]),
+    query('SELECT id,due_at AS "dueAt",status,text,prospect_id AS "prospectId",source,cancelled_reason AS "cancelledReason" FROM followups WHERE company_id=$1 ORDER BY due_at NULLS LAST',[companyId]),
     query('SELECT plan,status,monthly_price AS "monthlyPrice",next_billing_at AS "nextBillingAt" FROM subscriptions WHERE company_id=$1',[companyId])
   ]);
   const ps=prospects.rows, os=orders.rows;
@@ -132,6 +132,52 @@ function determineNextAction(text, qualification) {
   return { action: 'answer_and_qualify', priority: 'low', reason: 'Poursuivre la conversation et qualifier davantage' };
 }
 
+// Relances automatiques contrôlées (section 26 du dossier de transmission).
+// Portée volontairement réduite par rapport à la cadence multi-étapes décrite
+// dans le dossier (quelques heures → 24h → 72h avec suivi de réponse) : il
+// n'existe pas encore de planificateur/tâche de fond dans ce serveur HTTP
+// simple, et « pas de réponse » n'a de sens que lorsque l'envoi WhatsApp réel
+// existera (phase suivante). Ici : UNE relance automatique programmée par
+// prospect à la fois, ré-échelonnée (jamais dupliquée) à chaque nouvelle
+// qualification, et annulée dès que la situation ne la justifie plus plus —
+// commande passée, prospect gagné/perdu, ou action immédiate requise (humain,
+// commande à proposer, réponse urgente). Ce moteur ne fait que planifier ou
+// annuler des lignes en base ; il n'envoie jamais de message lui-même.
+const AUTO_FOLLOWUP_DELAYS_MS = {
+  follow_up_soon: 4 * 60 * 60 * 1000,  // ~4h — prospect tiède
+  nurture: 72 * 60 * 60 * 1000         // ~72h — prospect froid
+};
+
+async function cancelAutoFollowups(companyId, prospectId, reason) {
+  if (!companyId || !prospectId) return;
+  await query(
+    "UPDATE followups SET status='Annulée',cancelled_reason=$1 WHERE company_id=$2 AND prospect_id=$3 AND source='auto' AND status='Programmée'",
+    [reason, companyId, prospectId]
+  );
+}
+
+async function syncAutoFollowup(companyId, prospectId, nextAction) {
+  if (!companyId || !prospectId || !nextAction) return;
+  const delayMs = AUTO_FOLLOWUP_DELAYS_MS[nextAction.action];
+  if (!delayMs) {
+    return cancelAutoFollowups(companyId, prospectId, "Action immédiate requise (" + nextAction.action + ") — relance automatique inutile");
+  }
+  const dueAt = new Date(Date.now() + delayMs).toISOString();
+  const text = 'Relance automatique — ' + nextAction.reason;
+  const existing = await query(
+    "SELECT id FROM followups WHERE company_id=$1 AND prospect_id=$2 AND source='auto' AND status='Programmée' ORDER BY created_at DESC LIMIT 1",
+    [companyId, prospectId]
+  );
+  if (existing.rows[0]) {
+    await query('UPDATE followups SET due_at=$1,text=$2 WHERE id=$3', [dueAt, text, existing.rows[0].id]);
+  } else {
+    await query(
+      "INSERT INTO followups(company_id,prospect_id,text,due_at,status,source) VALUES($1,$2,$3,$4,'Programmée','auto')",
+      [companyId, prospectId, text, dueAt]
+    );
+  }
+}
+
 function ai(text, products=[]) {
   const q=String(text||'').toLowerCase();
   if(q.includes('prix')||q.includes('combien')) return products.length ? products.map(p=>`${p.name}: ${Number(p.price).toLocaleString('fr-FR')} FCFA`).join(' · ')+'. Lequel vous intéresse ?' : 'Je peux vous renseigner sur nos produits. Quel article recherchez-vous ?';
@@ -209,6 +255,7 @@ async function handler(req,res) {
     const score=Math.max(0,Math.min(100,Number(b.score||0)));
     const r=await query('UPDATE prospects SET name=$1,phone=$2,need=$3,value=$4,score=$5,status=$6,order_intent=$7,last_contact=now() WHERE id=$8 AND company_id=$9 RETURNING id,name,phone,need,value,score,status,order_intent AS "orderIntent",last_contact AS "lastContact"',[b.name||null,b.phone||null,b.need||null,Number(b.value||0),score,b.status||'Nouveau',Boolean(b.orderIntent),prospectMatch[1],companyId]);
     if(!r.rows[0]) return json(res,404,{error:'Prospect introuvable'});
+    if(r.rows[0].status==='Gagné'||r.rows[0].status==='Perdu') await cancelAutoFollowups(companyId,prospectMatch[1],'Prospect '+r.rows[0].status.toLowerCase()+' — relance automatique inutile');
     return json(res,200,{prospect:r.rows[0]});
   }
   if(prospectMatch && req.method==='DELETE') {
@@ -259,6 +306,7 @@ async function handler(req,res) {
         'UPDATE prospects SET score=$1,status=$2,order_intent=$3,last_contact=now(),need=COALESCE(NULLIF($4,\'\'),need),next_action=$5,next_action_priority=$6,next_action_reason=$7,next_action_at=now() WHERE id=$8 AND company_id=$9',
         [qualification.score,qualification.status,qualification.orderIntent,b.text,nextAction.action,nextAction.priority,nextAction.reason,b.prospectId,companyId]
       );
+      await syncAutoFollowup(companyId,b.prospectId,nextAction);
     }
     return json(res,200,{
       qualification:{score:qualification.score,status:qualification.status,orderIntent:qualification.orderIntent},
@@ -323,6 +371,7 @@ async function handler(req,res) {
           'UPDATE prospects SET name=COALESCE(NULLIF($1,\'\'),name),phone=COALESCE(NULLIF($2,\'\'),phone),score=$3,status=$4,order_intent=$5,last_contact=now(),need=COALESCE(NULLIF($6,\'\'),need),next_action=$7,next_action_priority=$8,next_action_reason=$9,next_action_at=now() WHERE id=$10 AND company_id=$11',
           [extracted.name,extracted.phone,qualification.score,qualification.status,qualification.orderIntent,needText,nextAction.action,nextAction.priority,nextAction.reason,prospectId,companyId]
         );
+        await syncAutoFollowup(companyId,prospectId,nextAction);
       }
     }
     return json(res,201,{message:r.rows[0],prospectId,qualification,nextAction});
@@ -335,6 +384,7 @@ async function handler(req,res) {
     const number='VND-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+crypto.randomBytes(3).toString('hex').toUpperCase();
     const r=await query('INSERT INTO orders(company_id,prospect_id,order_number,amount,status) VALUES($1,$2,$3,$4,$5) RETURNING id,order_number AS number,prospect_id AS "prospectId",amount,status,created_at AS "createdAt"',[companyId,b.prospectId,number,amount,b.status||'En attente']);
     await query('UPDATE prospects SET order_intent=true,status=CASE WHEN status IS NULL OR status IN (\'Nouveau\',\'À contacter\') THEN \'En discussion\' ELSE status END WHERE id=$1 AND company_id=$2',[b.prospectId,companyId]);
+    await cancelAutoFollowups(companyId,b.prospectId,'Commande créée — relance automatique inutile');
     return json(res,201,{order:r.rows[0]});
   }
   if(req.method==='GET'&&u.pathname==='/api/orders') {
@@ -349,7 +399,7 @@ async function handler(req,res) {
     return json(res,200,{order:r.rows[0]});
   }
   if(req.method==='GET'&&u.pathname==='/api/followups') {
-    const r=await query('SELECT f.id,f.prospect_id AS "prospectId",p.name AS prospect,f.text,f.due_at AS "dueAt",f.status,f.sent_at AS "sentAt",f.created_at AS "createdAt" FROM followups f LEFT JOIN prospects p ON p.id=f.prospect_id WHERE f.company_id=$1 ORDER BY f.due_at NULLS LAST',[companyId]);
+    const r=await query('SELECT f.id,f.prospect_id AS "prospectId",p.name AS prospect,f.text,f.due_at AS "dueAt",f.status,f.source,f.cancelled_reason AS "cancelledReason",f.sent_at AS "sentAt",f.created_at AS "createdAt" FROM followups f LEFT JOIN prospects p ON p.id=f.prospect_id WHERE f.company_id=$1 ORDER BY f.due_at NULLS LAST',[companyId]);
     return json(res,200,{followups:r.rows});
   }
   if(req.method==='PUT'&&u.pathname.startsWith('/api/followups/')) {
@@ -357,6 +407,12 @@ async function handler(req,res) {
     const r=await query('UPDATE followups SET text=$1,due_at=$2,status=$3 WHERE id=$4 AND company_id=$5 RETURNING id,prospect_id AS "prospectId",text,due_at AS "dueAt",status,sent_at AS "sentAt"',[b.text||null,b.dueAt||null,b.status||'Programmée',id,companyId]);
     if(!r.rows[0]) return json(res,404,{error:'Relance introuvable'});
     return json(res,200,{followup:r.rows[0]});
+  }
+  if(req.method==='DELETE'&&u.pathname.startsWith('/api/followups/')) {
+    const id=u.pathname.split('/').pop();
+    const r=await query('DELETE FROM followups WHERE id=$1 AND company_id=$2 RETURNING id',[id,companyId]);
+    if(!r.rows[0]) return json(res,404,{error:'Relance introuvable'});
+    return json(res,200,{ok:true});
   }
   if(req.method==='GET'&&u.pathname==='/api/health/db') { await query('SELECT 1'); return json(res,200,{ok:true,database:'postgresql'}); }
   return json(res,404,{error:'Route introuvable'});
