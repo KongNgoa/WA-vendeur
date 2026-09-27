@@ -12,7 +12,7 @@ h1{margin:0;font-size:24px}.tag{opacity:.75;font-size:13px}.wrap{max-width:1180p
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}.stat{padding:18px}.num{font-size:28px;font-weight:800;margin-top:6px}.muted{color:#687386;font-size:14px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.panel{margin-bottom:16px}.panel h3{margin-top:0}
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 8px;border-bottom:1px solid #edf0f5;font-size:14px}th{color:#687386;font-size:12px;text-transform:uppercase}
-.actions{display:flex;gap:6px;flex-wrap:wrap}.badge{padding:5px 9px;border-radius:20px;background:#e7f7ee;color:#18794e;font-size:12px;font-weight:700;display:inline-block}.hot{background:#fff0e0;color:#b54708}.cold{background:#eef2f6;color:#536071}
+.actions{display:flex;gap:6px;flex-wrap:wrap}.badge{padding:5px 9px;border-radius:20px;background:#e7f7ee;color:#18794e;font-size:12px;font-weight:700;display:inline-block}.hot{background:#fff0e0;color:#b54708}.cold{background:#eef2f6;color:#536071}.handoff{background:#fee4e2;color:#b42318}
 form.formgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px}.formgrid .full{grid-column:1/-1}
 input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px;background:white}.chat{display:flex;gap:8px}.chat input{flex:1}.reply{margin-top:12px;background:#f0f4ff;padding:13px;border-radius:10px;min-height:22px}
 .login{max-width:430px;margin:45px auto}.login h2{margin-top:0}.login input{display:block;margin:10px 0}.error{color:#b42318;margin-top:10px}.success{color:#18794e;margin-top:10px}.hidden{display:none}.empty{padding:28px;text-align:center;color:#687386}
@@ -120,6 +120,54 @@ const $ = id => document.getElementById(id);
 const esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const money = n => Number(n || 0).toLocaleString('fr-FR') + ' FCFA';
 
+const ACTION_LABELS = {
+  answer_and_qualify: '💬 Répondre et qualifier',
+  propose_order: '🛒 Proposer la commande',
+  follow_up_soon: '⏱️ Relance rapprochée',
+  follow_up: '🔁 Programmer une relance',
+  nurture: '🌱 Nurturing / relance différée',
+  handoff: '🧑\u200d💼 Transfert à un humain',
+};
+const actionLabel = a => ACTION_LABELS[a] || (a || 'Action à définir');
+const actionClass = (action, priority) => action === 'handoff' ? 'handoff' : priority === 'high' ? 'hot' : priority === 'low' ? 'cold' : '';
+
+// Rend le panneau "Action recommandée" + les deux boutons demandés par le dossier :
+// « Programmer la relance » et « Passer à un humain ». N'envoie jamais rien
+// automatiquement — ces boutons préremplissent seulement le formulaire de relance
+// pour validation manuelle, conformément à la règle « analyse → recommandation → affichage ».
+function renderNextAction(na, prospectId) {
+  if (!na) return '';
+  const cls = actionClass(na.action, na.priority);
+  const buttons = [];
+  if (prospectId) {
+    if (na.action === 'handoff') {
+      buttons.push('<button class="btn danger" onclick="quickFollowup(\''+prospectId+'\',\'🧑\u200d💼 Transfert humain : '+esc(na.reason).replace(/'/g,"\\'")+'\',true)">Passer à un humain</button>');
+    } else if (['follow_up_soon','follow_up','nurture'].includes(na.action)) {
+      buttons.push('<button class="btn" onclick="quickFollowup(\''+prospectId+'\',\'Relance : '+esc(na.reason).replace(/'/g,"\\'")+'\',false)">Programmer la relance</button>');
+    }
+  }
+  return '<div class="panel" style="box-shadow:none;border:1px solid #edf0f5;margin:12px 0 0"><strong>Action recommandée</strong>' +
+    '<div style="margin-top:8px" class="actions"><span class="badge '+cls+'">'+esc(actionLabel(na.action))+'</span>' +
+    '<span class="badge '+(na.priority==='high'?'hot':na.priority==='low'?'cold':'')+'">Priorité: '+esc(na.priority||'—')+'</span></div>' +
+    '<div class="muted" style="margin-top:6px">'+esc(na.reason||'')+'</div>' +
+    (buttons.length ? '<div class="actions" style="margin-top:10px">'+buttons.join('')+'</div>' : '') +
+    '</div>';
+}
+
+// Préremplit le formulaire de relance (Relances) à partir d'une action recommandée
+// et bascule sur cet onglet — rien n'est créé tant que l'utilisateur ne valide pas.
+function quickFollowup(prospectId, presetText, isHandoff) {
+  closeProspectModal();
+  tab('followups');
+  $('fProspect').value = prospectId;
+  $('fText').value = presetText;
+  const due = new Date(Date.now() + (isHandoff ? 15 : 60) * 60000);
+  due.setSeconds(0,0);
+  $('fDue').value = due.toISOString().slice(0,16);
+  if (isHandoff) alert('Aucun transfert automatique n’est encore connecté : ceci programme une tâche de suivi interne à traiter au plus vite. Vérifiez et validez.');
+  $('fText').focus();
+}
+
 async function api(path, options = {}) {
   options.headers = {...(options.headers || {}), ...(token ? {Authorization:'Bearer '+token} : {})};
   const r = await fetch(path, options);
@@ -226,9 +274,11 @@ function renderProducts() {
 
 function renderCRM() {
   $('crmCount').textContent = '('+data.prospects.length+')';
-  $('crmTable').innerHTML = data.prospects.length ? '<table><thead><tr><th>Prospect</th><th>Besoin</th><th>Score</th><th>Statut</th><th>Valeur</th><th>Actions</th></tr></thead><tbody>' +
+  $('crmTable').innerHTML = data.prospects.length ? '<table><thead><tr><th>Prospect</th><th>Besoin</th><th>Score</th><th>Statut</th><th>Action recommandée</th><th>Valeur</th><th>Actions</th></tr></thead><tbody>' +
     data.prospects.map(p => '<tr><td><strong>'+esc(p.name||'Sans nom')+'</strong><br><span class="muted">'+esc(p.phone||'—')+'</span></td><td>'+esc(p.need||'—')+'</td>' +
-    '<td><span class="badge '+(p.score>=70?'hot':p.score<40?'cold':'')+'">'+p.score+'/100</span></td><td>'+esc(p.status||'Nouveau')+'</td><td>'+money(p.value)+'</td><td><div class="actions">' +
+    '<td><span class="badge '+(p.score>=70?'hot':p.score<40?'cold':'')+'">'+p.score+'/100</span></td><td>'+esc(p.status||'Nouveau')+'</td>' +
+    '<td>'+(p.nextAction?'<span class="badge '+actionClass(p.nextAction,p.nextActionPriority)+'">'+esc(actionLabel(p.nextAction))+'</span>':'<span class="muted">—</span>')+'</td>' +
+    '<td>'+money(p.value)+'</td><td><div class="actions">' +
     '<button class="btn primary" data-view-prospect="'+p.id+'">Voir</button><button class="btn" data-edit-prospect="'+p.id+'">Modifier</button><button class="btn danger" data-delete-prospect="'+p.id+'">Supprimer</button></div></td></tr>').join('') +
     '</tbody></table>' : '<div class="empty">Aucun prospect. Ajoutez votre premier contact.</div>';
 }
@@ -278,7 +328,9 @@ function viewProspect(id){
   $('modalProspectName').textContent=p.name||'Prospect sans nom';
   $('modalProspectPhone').textContent=p.phone||'Téléphone non renseigné';
   const cls=Number(p.score)>=70?'hot':Number(p.score)<40?'cold':'';
-  $('modalProspectBody').innerHTML='<div class="actions"><span class="badge '+cls+'">Score: '+esc(p.score||0)+'/100</span><span class="badge">'+esc(p.status||'Nouveau')+'</span>'+(p.orderIntent?'<span class="badge">🛒 Intention d’achat</span>':'')+'</div><div class="grid" style="margin-top:16px"><div><div class="muted">Besoin</div><strong>'+esc(p.need||'Non renseigné')+'</strong></div><div><div class="muted">Valeur potentielle</div><strong>'+money(p.value)+'</strong></div></div><div style="margin-top:18px"><button class="btn primary" onclick="goToAssistantFromProspect(\''+p.id+'\')">🤖 Analyser une demande</button></div>';
+  $('modalProspectBody').innerHTML='<div class="actions"><span class="badge '+cls+'">Score: '+esc(p.score||0)+'/100</span><span class="badge">'+esc(p.status||'Nouveau')+'</span>'+(p.orderIntent?'<span class="badge">🛒 Intention d’achat</span>':'')+'</div><div class="grid" style="margin-top:16px"><div><div class="muted">Besoin</div><strong>'+esc(p.need||'Non renseigné')+'</strong></div><div><div class="muted">Valeur potentielle</div><strong>'+money(p.value)+'</strong></div></div>' +
+    (p.nextAction ? renderNextAction({action:p.nextAction,priority:p.nextActionPriority,reason:p.nextActionReason}, p.id) : '') +
+    '<div style="margin-top:18px"><button class="btn primary" onclick="goToAssistantFromProspect(\''+p.id+'\')">🤖 Analyser une demande</button></div>';
   $('prospectModal').style.display='flex';
 }
 function closeProspectModal(){ $('prospectModal').style.display='none'; }
@@ -397,14 +449,16 @@ async function ask() {
   $('qualification').innerHTML='';
   try {
     const prospectId=$('aiProspect').value||null;
-    const [d,q]=await Promise.all([
+    const [d,q,na]=await Promise.all([
       api('/api/ai/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})}),
-      api('/api/ai/qualify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,prospectId})})
+      api('/api/ai/qualify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,prospectId})}),
+      api('/api/ai/next-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,prospectId})})
     ]);
     $('reply').textContent=d.reply;
     const x=q.qualification;
     const cls=x.score>=70?'hot':x.score<40?'cold':'';
-    $('qualification').innerHTML='<div class="panel" style="box-shadow:none;border:1px solid #edf0f5;margin:0"><strong>Qualification automatique</strong><div style="margin-top:8px"><span class="badge '+cls+'">'+esc(x.status)+' · '+x.score+'/100</span> '+(x.orderIntent?'<span class="badge">🛒 Intention d’achat</span>':'')+'</div><div class="muted" style="margin-top:8px">'+esc(x.reasons.join(' · ')||'Aucun signal particulier détecté.')+'</div></div>';
+    $('qualification').innerHTML='<div class="panel" style="box-shadow:none;border:1px solid #edf0f5;margin:0"><strong>Qualification automatique</strong><div style="margin-top:8px"><span class="badge '+cls+'">'+esc(x.status)+' · '+x.score+'/100</span> '+(x.orderIntent?'<span class="badge">🛒 Intention d’achat</span>':'')+'</div><div class="muted" style="margin-top:8px">'+esc(x.reasons.join(' · ')||'Aucun signal particulier détecté.')+'</div></div>' +
+      renderNextAction(na.nextAction, prospectId);
     if(prospectId) await load();
   } catch(e){$('reply').textContent=e.message;}
 }

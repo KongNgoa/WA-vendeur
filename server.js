@@ -37,7 +37,7 @@ async function dashboard(companyId) {
   const [company,products,prospects,orders,conversations,followups,subscription] = await Promise.all([
     query('SELECT id,name,sector,ai_name AS "aiName",ai_tone AS "aiTone" FROM companies WHERE id=$1',[companyId]),
     query('SELECT id,name,category,price,stock,created_at AS "createdAt" FROM products WHERE company_id=$1 ORDER BY created_at DESC',[companyId]),
-    query('SELECT id,name,phone,need,value,score,status,order_intent AS "orderIntent",last_contact AS "lastContact",created_at AS "createdAt" FROM prospects WHERE company_id=$1 ORDER BY score DESC,created_at DESC',[companyId]),
+    query('SELECT id,name,phone,need,value,score,status,order_intent AS "orderIntent",last_contact AS "lastContact",next_action AS "nextAction",next_action_priority AS "nextActionPriority",next_action_reason AS "nextActionReason",next_action_at AS "nextActionAt",created_at AS "createdAt" FROM prospects WHERE company_id=$1 ORDER BY score DESC,created_at DESC',[companyId]),
     query('SELECT o.id,o.order_number AS number,p.name AS client,o.amount,o.status,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC',[companyId]),
     query(`SELECT c.id,c.external_contact AS phone,p.name,COALESCE(json_agg(json_build_object('id',m.id,'from',m.direction,'text',m.body) ORDER BY m.created_at) FILTER (WHERE m.id IS NOT NULL),'[]') AS messages FROM conversations c LEFT JOIN prospects p ON p.id=c.prospect_id LEFT JOIN messages m ON m.conversation_id=c.id WHERE c.company_id=$1 GROUP BY c.id,p.name ORDER BY c.created_at DESC`,[companyId]),
     query('SELECT id,due_at AS "dueAt",status,text,prospect_id AS "prospectId" FROM followups WHERE company_id=$1 ORDER BY due_at NULLS LAST',[companyId]),
@@ -96,6 +96,40 @@ function classifyLead(text, products=[], prospect={}) {
   const status=score>=70?'Chaud':score>=40?'Tiède':'Froid';
   const orderIntent=/acheter|commande|commander|je prends|je veux|réserver|reserver/.test(q);
   return {score,status,orderIntent,reasons};
+}
+
+// Moteur d'action commerciale (section 10 du dossier de transmission).
+// Règle impérative : ce moteur ne fait qu'analyser et recommander — il ne
+// déclenche jamais lui-même un envoi de message réel (WhatsApp ou autre).
+// Ponctuation tolérante : sur WhatsApp, les apostrophes sont très souvent
+// omises ou remplacées par une espace (« quelqu un » au lieu de « quelqu'un »).
+const HANDOFF_PHRASES = /parler\s+(?:à|a)\s+(?:un|quelqu['’]?\s?un|une\s+personne)|passez[\s-]?moi|je\s+veux\s+(?:un\s+)?(?:humain|conseiller|responsable)|(?:humain|conseiller|responsable)\s+svp|besoin\s+d['’]?\s?un\s+humain|appelez[\s-]?moi\s+quelqu['’]?\s?un/i;
+const HANDOFF_SENSITIVE = /r[ée]clamation|remboursement|rembours(?:er|é)|litige|plainte|arnaque|escroqu|avocat|juridique|paiement\s+(?:bloqu[ée]|refus[ée]|non\s+pass[ée])|erreur\s+de\s+paiement|m[ée]content|insatisfait|d[ée]ç[ue]/i;
+
+function determineNextAction(text, qualification) {
+  const q = String(text || '');
+  if (HANDOFF_PHRASES.test(q)) {
+    return { action: 'handoff', priority: 'high', reason: "Demande explicite d'un interlocuteur humain" };
+  }
+  if (HANDOFF_SENSITIVE.test(q)) {
+    return { action: 'handoff', priority: 'high', reason: 'Réclamation, litige ou paiement bloqué — situation sensible' };
+  }
+  if (qualification.orderIntent) {
+    return { action: 'propose_order', priority: 'high', reason: "Intention d'achat forte" };
+  }
+  if (/prix|combien|tarif|co[uû]t/i.test(q) && qualification.status !== 'Chaud') {
+    return { action: 'answer_and_qualify', priority: 'medium', reason: 'Question de prix — répondre puis qualifier' };
+  }
+  if (qualification.status === 'Chaud') {
+    return { action: 'propose_order', priority: 'high', reason: 'Prospect chaud — action commerciale prioritaire' };
+  }
+  if (qualification.status === 'Tiède') {
+    return { action: 'follow_up_soon', priority: 'medium', reason: 'Prospect tiède — prévoir une relance rapprochée' };
+  }
+  if (qualification.status === 'Froid') {
+    return { action: 'nurture', priority: 'low', reason: 'Prospect froid — nurturing / relance différée' };
+  }
+  return { action: 'answer_and_qualify', priority: 'low', reason: 'Poursuivre la conversation et qualifier davantage' };
 }
 
 function ai(text, products=[]) {
@@ -158,7 +192,7 @@ async function handler(req,res) {
   }
 
   if(req.method==='GET'&&u.pathname==='/api/prospects') {
-    const r=await query('SELECT id,name,phone,need,value,score,status,order_intent AS "orderIntent",last_contact AS "lastContact",created_at AS "createdAt" FROM prospects WHERE company_id=$1 ORDER BY score DESC,created_at DESC',[companyId]);
+    const r=await query('SELECT id,name,phone,need,value,score,status,order_intent AS "orderIntent",last_contact AS "lastContact",next_action AS "nextAction",next_action_priority AS "nextActionPriority",next_action_reason AS "nextActionReason",next_action_at AS "nextActionAt",created_at AS "createdAt" FROM prospects WHERE company_id=$1 ORDER BY score DESC,created_at DESC',[companyId]);
     return json(res,200,{prospects:r.rows});
   }
   if(req.method==='POST'&&u.pathname==='/api/prospects') {
@@ -207,6 +241,32 @@ async function handler(req,res) {
     }
     return json(res,200,{qualification:result,provider:'rules-engine-v1'});
   }
+
+  if(req.method==='POST'&&u.pathname==='/api/ai/next-action') {
+    const b=await body(req);
+    if(!b.text) return json(res,400,{error:'Message requis'});
+    const d=await query('SELECT name,price,stock FROM products WHERE company_id=$1 ORDER BY created_at',[companyId]);
+    let prospect={score:0,phone:b.phone||null,value:Number(b.value||0)};
+    if(b.prospectId){
+      const p=await query('SELECT id,name,phone,need,value,score,status,order_intent AS "orderIntent" FROM prospects WHERE id=$1 AND company_id=$2',[b.prospectId,companyId]);
+      if(!p.rows[0]) return json(res,404,{error:'Prospect introuvable'});
+      prospect=p.rows[0];
+    }
+    const qualification=classifyLead(b.text,d.rows,prospect);
+    const nextAction=determineNextAction(b.text,qualification);
+    if(b.prospectId){
+      await query(
+        'UPDATE prospects SET score=$1,status=$2,order_intent=$3,last_contact=now(),need=COALESCE(NULLIF($4,\'\'),need),next_action=$5,next_action_priority=$6,next_action_reason=$7,next_action_at=now() WHERE id=$8 AND company_id=$9',
+        [qualification.score,qualification.status,qualification.orderIntent,b.text,nextAction.action,nextAction.priority,nextAction.reason,b.prospectId,companyId]
+      );
+    }
+    return json(res,200,{
+      qualification:{score:qualification.score,status:qualification.status,orderIntent:qualification.orderIntent},
+      nextAction,
+      provider:'rules-engine-v1'
+    });
+  }
+
   if(req.method==='POST'&&u.pathname==='/api/followups') {
     const b=await body(req); const r=await query('INSERT INTO followups(company_id,prospect_id,text,due_at,status) VALUES($1,$2,$3,$4,$5) RETURNING *',[companyId,b.prospectId||null,b.text||null,b.dueAt||null,'Programmée']);
     return json(res,201,{followup:r.rows[0]});
@@ -235,6 +295,7 @@ async function handler(req,res) {
 
     let prospectId=b.prospectId||own.rows[0].prospectId||null;
     let qualification=null;
+    let nextAction=null;
     if(prospectId) await query('UPDATE conversations SET prospect_id=$1 WHERE id=$2 AND company_id=$3',[prospectId,convMatch[1],companyId]);
 
     if(direction==='in') {
@@ -256,11 +317,15 @@ async function handler(req,res) {
       if(p.rows[0]) {
         const extracted=extractCustomerData(text,p.rows[0]);
         qualification=classifyLead(text,d.rows,p.rows[0]);
+        nextAction=determineNextAction(text,qualification);
         const needText=extracted.location ? text+' | Localisation: '+extracted.location : text;
-        await query('UPDATE prospects SET name=COALESCE(NULLIF($1,\'\'),name),phone=COALESCE(NULLIF($2,\'\'),phone),score=$3,status=$4,order_intent=$5,last_contact=now(),need=COALESCE(NULLIF($6,\'\'),need) WHERE id=$7 AND company_id=$8',[extracted.name,extracted.phone,qualification.score,qualification.status,qualification.orderIntent,needText,prospectId,companyId]);
+        await query(
+          'UPDATE prospects SET name=COALESCE(NULLIF($1,\'\'),name),phone=COALESCE(NULLIF($2,\'\'),phone),score=$3,status=$4,order_intent=$5,last_contact=now(),need=COALESCE(NULLIF($6,\'\'),need),next_action=$7,next_action_priority=$8,next_action_reason=$9,next_action_at=now() WHERE id=$10 AND company_id=$11',
+          [extracted.name,extracted.phone,qualification.score,qualification.status,qualification.orderIntent,needText,nextAction.action,nextAction.priority,nextAction.reason,prospectId,companyId]
+        );
       }
     }
-    return json(res,201,{message:r.rows[0],prospectId,qualification});
+    return json(res,201,{message:r.rows[0],prospectId,qualification,nextAction});
   }
   if(req.method==='POST'&&u.pathname==='/api/orders') {
     const b=await body(req);

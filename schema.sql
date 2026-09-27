@@ -48,9 +48,20 @@ CREATE TABLE prospects (
   status TEXT,
   order_intent BOOLEAN NOT NULL DEFAULT false,
   last_contact TIMESTAMPTZ,
+  next_action TEXT,
+  next_action_priority TEXT,
+  next_action_reason TEXT,
+  next_action_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX prospects_company_idx ON prospects(company_id);
+-- Lot "moteur d'action commerciale" (/api/ai/next-action) — idempotent pour les bases déjà déployées.
+-- Pour appliquer uniquement cet ajout sur la base de production existante, sans rejouer tout schema.sql,
+-- utiliser scripts/migrate-add-next-action.js.
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS next_action TEXT;
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS next_action_priority TEXT;
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS next_action_reason TEXT;
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS next_action_at TIMESTAMPTZ;
 
 CREATE TABLE conversations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
