@@ -10,8 +10,18 @@ CREATE TABLE companies (
   ai_tone TEXT DEFAULT 'Professionnel et chaleureux',
   ai_language TEXT DEFAULT 'Français',
   ai_rules TEXT,
+  whatsapp_phone_number_id TEXT,
+  whatsapp_access_token TEXT,
+  whatsapp_verify_token TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Lot "envoi WhatsApp réel" (phase 3, Meta WhatsApp Cloud API) — idempotent pour
+-- les bases déjà déployées. Pour appliquer uniquement cet ajout sur la base de
+-- production existante, utiliser scripts/migrate-add-whatsapp-settings.js.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS whatsapp_phone_number_id TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS whatsapp_access_token TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS whatsapp_verify_token TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS companies_whatsapp_phone_idx ON companies(whatsapp_phone_number_id) WHERE whatsapp_phone_number_id IS NOT NULL;
 
 CREATE TABLE users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -79,8 +89,10 @@ CREATE TABLE messages (
   direction TEXT NOT NULL CHECK(direction IN ('in','out','system')),
   body TEXT NOT NULL,
   provider_message_id TEXT,
+  provider_error TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS provider_error TEXT;
 CREATE INDEX messages_conversation_idx ON messages(conversation_id, created_at);
 
 CREATE TABLE orders (

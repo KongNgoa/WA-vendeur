@@ -35,7 +35,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <button class="active" data-tab="dashboard" onclick="tab('dashboard')">📊 Tableau de bord</button>
 <button data-tab="products" onclick="tab('products')">📦 Produits</button>
 <button data-tab="crm" onclick="tab('crm')">👥 CRM</button>
-<button data-tab="conversations" onclick="tab('conversations')">💬 Conversations</button><button data-tab="orders" onclick="tab('orders')">🛒 Commandes</button><button data-tab="followups" onclick="tab('followups')">🔁 Relances</button><button data-tab="assistant" onclick="tab('assistant')">🤖 Assistant IA</button>
+<button data-tab="conversations" onclick="tab('conversations')">💬 Conversations</button><button data-tab="orders" onclick="tab('orders')">🛒 Commandes</button><button data-tab="followups" onclick="tab('followups')">🔁 Relances</button><button data-tab="assistant" onclick="tab('assistant')">🤖 Assistant IA</button><button data-tab="settings" onclick="tab('settings')">⚙️ Réglages WhatsApp</button>
 </nav>
 
 <section id="dashboardTab">
@@ -112,6 +112,26 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <div class="reply" id="reply">Bonjour 👋 Je suis Julie. Posez-moi une question.</div>
 <div id="qualification" style="margin-top:12px"></div>
 </div></section>
+
+<section id="settingsTab" class="hidden">
+<div class="panel"><h3>Connexion WhatsApp (Meta Cloud API)</h3>
+<p class="muted">Renseigne les identifiants obtenus dans ton compte Meta Business (App WhatsApp → Configuration de l'API). Tant que ces champs sont vides, VENDIA fonctionne comme avant : les messages restent enregistrés dans le CRM mais ne sont pas envoyés sur WhatsApp.</p>
+<form class="formgrid" onsubmit="saveWhatsappSettings(event)">
+<input id="wPhoneNumberId" placeholder="ID du numéro de téléphone (Phone Number ID)">
+<input id="wAccessToken" type="password" placeholder="Jeton d'accès (Access Token)">
+<div class="full"><button class="btn primary">Enregistrer</button> <button type="button" class="btn" onclick="testWhatsappSettings()">Tester la connexion</button></div>
+</form>
+<div id="wStatus" style="margin-top:10px"></div>
+</div>
+<div class="panel"><h3>À configurer côté Meta</h3>
+<p class="muted">Dans la configuration du webhook de ton App Meta, colle ces deux valeurs :</p>
+<div class="formgrid">
+<div class="full"><label class="muted">URL de rappel (Callback URL)</label><input id="wWebhookUrl" readonly onclick="this.select()"></div>
+<div class="full"><label class="muted">Jeton de vérification (Verify Token)</label><input id="wVerifyToken" readonly onclick="this.select()"></div>
+</div>
+<p class="muted">Coche l'abonnement au champ <strong>messages</strong> pour que les messages WhatsApp entrants arrivent automatiquement dans le CRM.</p>
+</div>
+</section>
 </main>
 
 <script>
@@ -228,12 +248,13 @@ async function load() {
 
 function tab(name) {
   document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  ['dashboard','products','crm','assistant','conversations','orders','followups'].forEach(x => $(x+'Tab').classList.toggle('hidden', x !== name));
+  ['dashboard','products','crm','assistant','conversations','orders','followups','settings'].forEach(x => $(x+'Tab').classList.toggle('hidden', x !== name));
   if (name === 'products') renderProducts();
   if (name === 'crm') renderCRM();
   if (name === 'conversations') renderConversations();
   if (name === 'orders') renderOrders();
   if (name === 'followups') renderFollowups();
+  if (name === 'settings') loadWhatsappSettings();
 }
 
 function renderAll() {
@@ -452,6 +473,38 @@ async function deleteFollowup(id){
     await load();
     tab('followups');
   }catch(x){alert(x.message);}
+}
+
+async function loadWhatsappSettings(){
+  try{
+    const s=await api('/api/settings/whatsapp');
+    $('wPhoneNumberId').value=s.phoneNumberId||'';
+    $('wAccessToken').value='';
+    $('wAccessToken').placeholder=s.accessTokenSet?('Jeton enregistré ('+s.accessTokenPreview+') — laisser vide pour ne pas le changer'):'Jeton d\'accès (Access Token)';
+    $('wWebhookUrl').value=s.webhookUrl;
+    $('wVerifyToken').value=s.verifyToken;
+    $('wStatus').innerHTML='<span class="badge '+(s.configured?'':'cold')+'">'+(s.configured?'✅ WhatsApp configuré':'⚪ WhatsApp non configuré — les messages restent en mode démo')+'</span>';
+  }catch(x){ $('wStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
+}
+async function saveWhatsappSettings(e){
+  e.preventDefault();
+  const phoneNumberId=$('wPhoneNumberId').value.trim();
+  const accessToken=$('wAccessToken').value.trim();
+  if(!phoneNumberId||!accessToken){ alert('Renseigne l\'ID du numéro ET le jeton d\'accès pour enregistrer.'); return; }
+  try{
+    await api('/api/settings/whatsapp',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({phoneNumberId,accessToken})});
+    await loadWhatsappSettings();
+    alert('Réglages WhatsApp enregistrés.');
+  }catch(x){alert(x.message);}
+}
+async function testWhatsappSettings(){
+  $('wStatus').innerHTML='Test en cours…';
+  try{
+    const r=await api('/api/settings/whatsapp/test',{method:'POST'});
+    $('wStatus').innerHTML=r.ok
+      ? '<span class="badge">✅ Connexion réussie — '+esc(r.verifiedName||r.displayPhoneNumber||'numéro vérifié')+'</span>'
+      : '<span class="error">❌ '+esc(r.error||'Échec de connexion')+'</span>';
+  }catch(x){ $('wStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
 }
 
 async function ask() {

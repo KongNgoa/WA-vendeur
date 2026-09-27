@@ -188,12 +188,168 @@ function ai(text, products=[]) {
   return 'Bonjour 👋 Je suis Julie, votre assistante commerciale. Que puis-je faire pour vous ?';
 }
 
+// Envoi WhatsApp réel (phase 3, Meta WhatsApp Cloud API). Règle impérative,
+// comme pour les moteurs de qualification et de relance : on n'envoie JAMAIS
+// un message de notre propre initiative ici — cette fonction n'est appelée
+// que lorsqu'un utilisateur a explicitement créé un message sortant (via
+// l'interface CRM/Conversations). Si l'entreprise n'a pas configuré
+// WhatsApp, ou si la conversation n'est pas un vrai fil WhatsApp, le message
+// reste simplement enregistré en base comme avant (comportement démo
+// inchangé) sans aucun appel réseau.
+const WHATSAPP_API_VERSION = 'v21.0';
+
+function formatWhatsAppPhone(phone) {
+  let p = String(phone || '').replace(/[^\d+]/g, '');
+  if (p.startsWith('+')) p = p.slice(1);
+  if (/^[62]\d{8}$/.test(p)) p = '237' + p; // numéro mobile camerounais local sans indicatif
+  return p || null;
+}
+
+async function sendWhatsAppMessage(company, toPhone, text) {
+  const to = formatWhatsAppPhone(toPhone);
+  if (!to) return { error: 'Numéro de destinataire invalide' };
+  try {
+    const resp = await fetch(`https://graph.facebook.com/${WHATSAPP_API_VERSION}/${company.whatsappPhoneNumberId}/messages`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + company.whatsappAccessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body: text, preview_url: false } })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      return { error: data?.error?.message || ('Erreur WhatsApp (HTTP ' + resp.status + ')') };
+    }
+    return { providerMessageId: data?.messages?.[0]?.id || null };
+  } catch (e) {
+    return { error: 'Connexion à WhatsApp impossible : ' + e.message };
+  }
+}
+
+// N'envoie réellement que si (a) l'entreprise a configuré ses identifiants
+// WhatsApp, (b) la conversation est un fil WhatsApp avec un numéro connu.
+// Sinon, renvoie null (aucun envoi, comportement inchangé).
+async function maybeSendWhatsApp(companyId, conv, text) {
+  if (!conv || conv.channel !== 'whatsapp' || !conv.phone) return null;
+  const c = await query('SELECT whatsapp_phone_number_id AS "whatsappPhoneNumberId",whatsapp_access_token AS "whatsappAccessToken" FROM companies WHERE id=$1', [companyId]);
+  const company = c.rows[0];
+  if (!company?.whatsappPhoneNumberId || !company?.whatsappAccessToken) return null;
+  return sendWhatsAppMessage(company, conv.phone, text);
+}
+
+// Logique partagée d'ingestion d'un message dans une conversation, utilisée à
+// la fois par la route manuelle POST /api/conversations/:id/messages (saisie
+// dans l'interface, ou test depuis l'Assistant IA) et par le webhook WhatsApp
+// entrant (phase 3) — pour que les deux chemins qualifient, déterminent
+// l'action recommandée et synchronisent la relance automatique de façon
+// identique, sans dérive entre les deux.
+// conv = {id (conversationId), prospectId, phone, channel} tel que connu
+// avant l'ingestion (déjà en base ou résolu par l'appelant).
+async function ingestMessage(companyId, conversationId, conv, b) {
+  const direction=b.direction||'out';
+  const text=String(b.body).trim();
+  const r=await query('INSERT INTO messages(conversation_id,direction,body,provider_message_id) VALUES($1,$2,$3,$4) RETURNING id,direction,body,provider_message_id AS "providerMessageId",provider_error AS "providerError",created_at AS "createdAt"',[conversationId,direction,text,b.providerMessageId||null]);
+  const messageRow=r.rows[0];
+
+  let prospectId=b.prospectId||conv.prospectId||null;
+  let qualification=null;
+  let nextAction=null;
+  if(prospectId) await query('UPDATE conversations SET prospect_id=$1 WHERE id=$2 AND company_id=$3',[prospectId,conversationId,companyId]);
+
+  if(direction==='in') {
+    if(!prospectId) {
+      const phone=b.phone||conv.phone||null;
+      const existing=phone ? await query('SELECT id FROM prospects WHERE company_id=$1 AND phone=$2 ORDER BY created_at DESC LIMIT 1',[companyId,phone]) : {rows:[]};
+      if(existing.rows[0]) {
+        prospectId=existing.rows[0].id;
+      } else {
+        const name=(b.name||'').trim()||null;
+        const created=await query('INSERT INTO prospects(company_id,name,phone,need,value,score,status,order_intent,last_contact) VALUES($1,$2,$3,$4,0,0,$5,false,now()) RETURNING id',[companyId,name,phone,text,'Nouveau']);
+        prospectId=created.rows[0].id;
+      }
+      await query('UPDATE conversations SET prospect_id=$1 WHERE id=$2 AND company_id=$3',[prospectId,conversationId,companyId]);
+    }
+
+    const d=await query('SELECT name,price,stock FROM products WHERE company_id=$1 ORDER BY created_at',[companyId]);
+    const p=await query('SELECT id,name,phone,need,value,score,status,order_intent AS "orderIntent" FROM prospects WHERE id=$1 AND company_id=$2',[prospectId,companyId]);
+    if(p.rows[0]) {
+      const extracted=extractCustomerData(text,p.rows[0]);
+      qualification=classifyLead(text,d.rows,p.rows[0]);
+      nextAction=determineNextAction(text,qualification);
+      const needText=extracted.location ? text+' | Localisation: '+extracted.location : text;
+      await query(
+        'UPDATE prospects SET name=COALESCE(NULLIF($1,\'\'),name),phone=COALESCE(NULLIF($2,\'\'),phone),score=$3,status=$4,order_intent=$5,last_contact=now(),need=COALESCE(NULLIF($6,\'\'),need),next_action=$7,next_action_priority=$8,next_action_reason=$9,next_action_at=now() WHERE id=$10 AND company_id=$11',
+        [extracted.name,extracted.phone,qualification.score,qualification.status,qualification.orderIntent,needText,nextAction.action,nextAction.priority,nextAction.reason,prospectId,companyId]
+      );
+      await syncAutoFollowup(companyId,prospectId,nextAction);
+    }
+  } else if (direction==='out') {
+    const sendResult=await maybeSendWhatsApp(companyId,conv,text);
+    if(sendResult) {
+      const updated=await query('UPDATE messages SET provider_message_id=COALESCE($1,provider_message_id),provider_error=$2 WHERE id=$3 RETURNING provider_message_id AS "providerMessageId",provider_error AS "providerError"',[sendResult.providerMessageId||null,sendResult.error||null,messageRow.id]);
+      Object.assign(messageRow,updated.rows[0]);
+    }
+  }
+  return {message:messageRow,prospectId,qualification,nextAction};
+}
+
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
   if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.6.0',service:'VENDIA',database:'postgresql'});
   if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.6.0'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
+
+  // Webhook WhatsApp (Meta Cloud API, phase 3) — appelé directement par Meta,
+  // donc volontairement AVANT ensureDemo()/l'authentification par session :
+  // Meta n'a ni compte ni jeton de session VENDIA, seulement le jeton de
+  // vérification propre à chaque entreprise, comparé ci-dessous.
+  if(req.method==='GET'&&u.pathname==='/webhooks/whatsapp') {
+    const mode=u.searchParams.get('hub.mode');
+    const verifyToken=u.searchParams.get('hub.verify_token');
+    const challenge=u.searchParams.get('hub.challenge');
+    if(mode==='subscribe'&&verifyToken) {
+      const match=await query('SELECT id FROM companies WHERE whatsapp_verify_token=$1',[verifyToken]);
+      if(match.rows[0]) { res.writeHead(200,{'Content-Type':'text/plain'}); return res.end(challenge||''); }
+    }
+    res.writeHead(403,{'Content-Type':'text/plain'}); return res.end('Forbidden');
+  }
+  if(req.method==='POST'&&u.pathname==='/webhooks/whatsapp') {
+    // Meta exige un accusé 200 rapide, retries sinon — on encaisse toute
+    // erreur de traitement sans jamais la répercuter dans la réponse HTTP.
+    try {
+      const b=await body(req);
+      const entries=Array.isArray(b.entry)?b.entry:[];
+      for(const entry of entries) {
+        const changes=Array.isArray(entry.changes)?entry.changes:[];
+        for(const change of changes) {
+          const value=change.value||{};
+          const phoneNumberId=value.metadata?.phone_number_id;
+          const messages=Array.isArray(value.messages)?value.messages:[];
+          if(!phoneNumberId||!messages.length) continue; // accusés de statut (lu/livré) ou métadonnées seules : rien à faire
+          const c=await query('SELECT id FROM companies WHERE whatsapp_phone_number_id=$1',[phoneNumberId]);
+          const targetCompanyId=c.rows[0]?.id;
+          if(!targetCompanyId) { console.error('Webhook WhatsApp: aucune entreprise pour phone_number_id',phoneNumberId); continue; }
+          const contact=(value.contacts||[])[0];
+          const contactName=contact?.profile?.name||null;
+          for(const msg of messages) {
+            const from=String(msg.from||'').replace(/^237/,''); // aligné sur le format local déjà utilisé dans l'app (ex. prospects saisis manuellement)
+            if(!from) continue;
+            const text=msg.type==='text'?(msg.text?.body||'') : ('[Message '+(msg.type||'non textuel')+' reçu — non traité automatiquement]');
+            let conv=await query('SELECT id,prospect_id AS "prospectId",external_contact AS phone,channel FROM conversations WHERE company_id=$1 AND channel=\'whatsapp\' AND external_contact=$2 ORDER BY created_at DESC LIMIT 1',[targetCompanyId,from]);
+            let conversationRow=conv.rows[0];
+            if(!conversationRow) {
+              const created=await query('INSERT INTO conversations(company_id,prospect_id,channel,external_contact) VALUES($1,NULL,\'whatsapp\',$2) RETURNING id,prospect_id AS "prospectId",external_contact AS phone,channel',[targetCompanyId,from]);
+              conversationRow=created.rows[0];
+            }
+            await ingestMessage(targetCompanyId,conversationRow.id,conversationRow,{body:text,direction:'in',phone:from,name:contactName,providerMessageId:msg.id||null});
+          }
+        }
+      }
+    } catch(e) {
+      console.error('Webhook WhatsApp erreur de traitement:',e);
+    }
+    return json(res,200,{received:true});
+  }
+
   await ensureDemo();
 
   if(req.method==='POST'&&u.pathname==='/api/login') {
@@ -212,6 +368,46 @@ async function handler(req,res) {
 
   if(req.method==='GET'&&u.pathname==='/api/bootstrap') return json(res,200,await dashboard(companyId));
   if(req.method==='GET'&&u.pathname==='/api/dashboard') return json(res,200,await dashboard(companyId));
+
+  if(req.method==='GET'&&u.pathname==='/api/settings/whatsapp') {
+    let c=await query('SELECT whatsapp_phone_number_id AS "phoneNumberId",whatsapp_access_token AS "accessToken",whatsapp_verify_token AS "verifyToken" FROM companies WHERE id=$1',[companyId]);
+    let row=c.rows[0]||{};
+    if(!row.verifyToken) {
+      const vt=crypto.randomBytes(12).toString('hex');
+      await query('UPDATE companies SET whatsapp_verify_token=$1 WHERE id=$2',[vt,companyId]);
+      row.verifyToken=vt;
+    }
+    const proto=req.headers['x-forwarded-proto']||'https';
+    return json(res,200,{
+      phoneNumberId:row.phoneNumberId||null,
+      accessTokenSet:Boolean(row.accessToken),
+      accessTokenPreview:row.accessToken?('••••'+row.accessToken.slice(-4)):null,
+      verifyToken:row.verifyToken,
+      webhookUrl:proto+'://'+req.headers.host+'/webhooks/whatsapp',
+      configured:Boolean(row.phoneNumberId&&row.accessToken)
+    });
+  }
+  if(req.method==='PUT'&&u.pathname==='/api/settings/whatsapp') {
+    const b=await body(req);
+    if(!b.phoneNumberId||!b.accessToken) return json(res,400,{error:'ID du numéro et jeton d\'accès requis'});
+    const existing=await query('SELECT whatsapp_verify_token AS "verifyToken" FROM companies WHERE id=$1',[companyId]);
+    const verifyToken=existing.rows[0]?.verifyToken||crypto.randomBytes(12).toString('hex');
+    await query('UPDATE companies SET whatsapp_phone_number_id=$1,whatsapp_access_token=$2,whatsapp_verify_token=$3 WHERE id=$4',[String(b.phoneNumberId).trim(),String(b.accessToken).trim(),verifyToken,companyId]);
+    return json(res,200,{ok:true});
+  }
+  if(req.method==='POST'&&u.pathname==='/api/settings/whatsapp/test') {
+    const c=await query('SELECT whatsapp_phone_number_id AS "phoneNumberId",whatsapp_access_token AS "accessToken" FROM companies WHERE id=$1',[companyId]);
+    const row=c.rows[0];
+    if(!row?.phoneNumberId||!row?.accessToken) return json(res,400,{ok:false,error:'Renseigne d\'abord l\'ID du numéro et le jeton d\'accès'});
+    try {
+      const resp=await fetch(`https://graph.facebook.com/${WHATSAPP_API_VERSION}/${row.phoneNumberId}?fields=display_phone_number,verified_name`,{headers:{'Authorization':'Bearer '+row.accessToken}});
+      const data=await resp.json().catch(()=>({}));
+      if(!resp.ok) return json(res,200,{ok:false,error:data?.error?.message||('Erreur WhatsApp (HTTP '+resp.status+')')});
+      return json(res,200,{ok:true,displayPhoneNumber:data.display_phone_number||null,verifiedName:data.verified_name||null});
+    } catch(e) {
+      return json(res,200,{ok:false,error:'Connexion à WhatsApp impossible : '+e.message});
+    }
+  }
 
   if(req.method==='GET'&&u.pathname==='/api/products') {
     const r=await query('SELECT id,name,category,price,stock,created_at AS "createdAt" FROM products WHERE company_id=$1 ORDER BY created_at DESC',[companyId]);
@@ -335,46 +531,10 @@ async function handler(req,res) {
   if(convMatch && req.method==='POST') {
     const b=await body(req);
     if(!b.body) return json(res,400,{error:'Message requis'});
-    const own=await query('SELECT id,prospect_id AS "prospectId",external_contact AS phone FROM conversations WHERE id=$1 AND company_id=$2',[convMatch[1],companyId]);
+    const own=await query('SELECT id,prospect_id AS "prospectId",external_contact AS phone,channel FROM conversations WHERE id=$1 AND company_id=$2',[convMatch[1],companyId]);
     if(!own.rows[0]) return json(res,404,{error:'Conversation introuvable'});
-    const direction=b.direction||'out';
-    const text=String(b.body).trim();
-    const r=await query('INSERT INTO messages(conversation_id,direction,body,provider_message_id) VALUES($1,$2,$3,$4) RETURNING id,direction,body,created_at AS "createdAt"',[convMatch[1],direction,text,b.providerMessageId||null]);
-
-    let prospectId=b.prospectId||own.rows[0].prospectId||null;
-    let qualification=null;
-    let nextAction=null;
-    if(prospectId) await query('UPDATE conversations SET prospect_id=$1 WHERE id=$2 AND company_id=$3',[prospectId,convMatch[1],companyId]);
-
-    if(direction==='in') {
-      if(!prospectId) {
-        const phone=b.phone||own.rows[0].phone||null;
-        const existing=phone ? await query('SELECT id FROM prospects WHERE company_id=$1 AND phone=$2 ORDER BY created_at DESC LIMIT 1',[companyId,phone]) : {rows:[]};
-        if(existing.rows[0]) {
-          prospectId=existing.rows[0].id;
-        } else {
-          const name=(b.name||'').trim()||null;
-          const created=await query('INSERT INTO prospects(company_id,name,phone,need,value,score,status,order_intent,last_contact) VALUES($1,$2,$3,$4,0,0,$5,false,now()) RETURNING id',[companyId,name,phone,text,'Nouveau']);
-          prospectId=created.rows[0].id;
-        }
-        await query('UPDATE conversations SET prospect_id=$1 WHERE id=$2 AND company_id=$3',[prospectId,convMatch[1],companyId]);
-      }
-
-      const d=await query('SELECT name,price,stock FROM products WHERE company_id=$1 ORDER BY created_at',[companyId]);
-      const p=await query('SELECT id,name,phone,need,value,score,status,order_intent AS "orderIntent" FROM prospects WHERE id=$1 AND company_id=$2',[prospectId,companyId]);
-      if(p.rows[0]) {
-        const extracted=extractCustomerData(text,p.rows[0]);
-        qualification=classifyLead(text,d.rows,p.rows[0]);
-        nextAction=determineNextAction(text,qualification);
-        const needText=extracted.location ? text+' | Localisation: '+extracted.location : text;
-        await query(
-          'UPDATE prospects SET name=COALESCE(NULLIF($1,\'\'),name),phone=COALESCE(NULLIF($2,\'\'),phone),score=$3,status=$4,order_intent=$5,last_contact=now(),need=COALESCE(NULLIF($6,\'\'),need),next_action=$7,next_action_priority=$8,next_action_reason=$9,next_action_at=now() WHERE id=$10 AND company_id=$11',
-          [extracted.name,extracted.phone,qualification.score,qualification.status,qualification.orderIntent,needText,nextAction.action,nextAction.priority,nextAction.reason,prospectId,companyId]
-        );
-        await syncAutoFollowup(companyId,prospectId,nextAction);
-      }
-    }
-    return json(res,201,{message:r.rows[0],prospectId,qualification,nextAction});
+    const result=await ingestMessage(companyId,convMatch[1],own.rows[0],b);
+    return json(res,201,result);
   }
   if(req.method==='POST'&&u.pathname==='/api/orders') {
     const b=await body(req);
