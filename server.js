@@ -306,28 +306,34 @@ async function handler(req,res) {
     const mode=u.searchParams.get('hub.mode');
     const verifyToken=u.searchParams.get('hub.verify_token');
     const challenge=u.searchParams.get('hub.challenge');
+    console.log('[webhook] GET verification hit — mode=%s token=%s',mode,verifyToken?verifyToken.slice(0,6)+'…':'(none)');
     if(mode==='subscribe'&&verifyToken) {
       const match=await query('SELECT id FROM companies WHERE whatsapp_verify_token=$1',[verifyToken]);
-      if(match.rows[0]) { res.writeHead(200,{'Content-Type':'text/plain'}); return res.end(challenge||''); }
+      if(match.rows[0]) { console.log('[webhook] GET verification OK'); res.writeHead(200,{'Content-Type':'text/plain'}); return res.end(challenge||''); }
+      console.log('[webhook] GET verification FAILED — no company with this verify_token');
     }
     res.writeHead(403,{'Content-Type':'text/plain'}); return res.end('Forbidden');
   }
   if(req.method==='POST'&&u.pathname==='/webhooks/whatsapp') {
     // Meta exige un accusé 200 rapide, retries sinon — on encaisse toute
     // erreur de traitement sans jamais la répercuter dans la réponse HTTP.
+    console.log('[webhook] POST received, content-length=%s',req.headers['content-length']);
     try {
       const b=await body(req);
       const entries=Array.isArray(b.entry)?b.entry:[];
+      console.log('[webhook] POST parsed — %d entry(ies)',entries.length);
       for(const entry of entries) {
         const changes=Array.isArray(entry.changes)?entry.changes:[];
         for(const change of changes) {
           const value=change.value||{};
           const phoneNumberId=value.metadata?.phone_number_id;
           const messages=Array.isArray(value.messages)?value.messages:[];
+          console.log('[webhook] change field=%s phoneNumberId=%s messages=%d',change.field,phoneNumberId,messages.length);
           if(!phoneNumberId||!messages.length) continue; // accusés de statut (lu/livré) ou métadonnées seules : rien à faire
           const c=await query('SELECT id FROM companies WHERE whatsapp_phone_number_id=$1',[phoneNumberId]);
           const targetCompanyId=c.rows[0]?.id;
           if(!targetCompanyId) { console.error('Webhook WhatsApp: aucune entreprise pour phone_number_id',phoneNumberId); continue; }
+          console.log('[webhook] routing %d message(s) to companyId=%s',messages.length,targetCompanyId);
           const contact=(value.contacts||[])[0];
           const contactName=contact?.profile?.name||null;
           for(const msg of messages) {
