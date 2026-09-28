@@ -297,6 +297,7 @@ async function handler(req,res) {
   if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.6.0',service:'VENDIA',database:'postgresql'});
   if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.6.0'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
+  if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
 
   // Webhook WhatsApp (Meta Cloud API, phase 3) — appelé directement par Meta,
   // donc volontairement AVANT ensureDemo()/l'authentification par session :
