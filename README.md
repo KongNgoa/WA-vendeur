@@ -17,6 +17,6 @@ npm install
 npm start
 ```
 
-Variables utiles : `PORT`, `DATABASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `APP_ORIGIN`.
+Variables utiles : `PORT`, `DATABASE_URL`, `ANTHROPIC_API_KEY` (réponse IA automatique sur WhatsApp), `ANTHROPIC_MODEL` (optionnel, défaut `claude-haiku-4-5-20251001`), `META_APP_SECRET` (vérification de signature du webhook WhatsApp).
 
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.

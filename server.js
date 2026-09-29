@@ -717,6 +717,29 @@ async function handler(req,res) {
   return json(res,404,{error:'Route introuvable'});
 }
 
+// Migrations additives et idempotentes exécutées au démarrage : évite de
+// dépendre d'une étape manuelle (CLI/console Railway) après chaque déploiement
+// qui ajoute des colonnes/tables. Sans effet sur les données existantes.
+async function ensureMigrations() {
+  const statements = [
+    'ALTER TABLE companies ADD COLUMN IF NOT EXISTS ai_auto_reply_enabled BOOLEAN NOT NULL DEFAULT true',
+    `CREATE TABLE IF NOT EXISTS sessions (
+       token TEXT PRIMARY KEY,
+       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+       company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+       expires_at TIMESTAMPTZ NOT NULL,
+       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+     )`,
+    'CREATE INDEX IF NOT EXISTS sessions_expires_idx ON sessions(expires_at)',
+  ];
+  for (const stmt of statements) {
+    try { await query(stmt); } catch(e) { console.error('[migrations] echec:',stmt.split('\n')[0],e.message); }
+  }
+  console.log('[migrations] verifiees au demarrage');
+}
+
 const server=http.createServer((req,res)=>handler(req,res).catch(e=>{console.error(e);json(res,500,{error:'Erreur serveur'});}));
-server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.7.0 listening on ${PORT}`));
+ensureMigrations().finally(()=>{
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.7.0 listening on ${PORT}`));
+});
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});
