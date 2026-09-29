@@ -28,7 +28,24 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <section id="login" class="login">
 <h2>Connexion</h2><p class="muted">Connectez-vous pour accéder à votre espace commercial.</p>
 <input id="email" type="email" value="demo@wavendeur.local" placeholder="Email"><input id="password" type="password" value="demo1234" placeholder="Mot de passe">
-<button class="btn primary" onclick="login()">Se connecter</button><div id="loginMsg"></div>
+<button class="btn primary" onclick="login()">Se connecter</button>
+<div style="margin-top:10px"><a href="#" onclick="showForgotPassword(event)" class="muted">Mot de passe oublié ?</a></div>
+<div id="loginMsg"></div>
+</section>
+
+<section id="forgotPassword" class="login hidden">
+<h2>Mot de passe oublié</h2><p class="muted">Indiquez votre email : si un compte existe, un lien de réinitialisation valable 1 heure vous sera envoyé.</p>
+<input id="forgotEmail" type="email" placeholder="Email">
+<button class="btn primary" onclick="submitForgotPassword()">Envoyer le lien</button>
+<div style="margin-top:10px"><a href="#" onclick="showLogin()" class="muted">Retour à la connexion</a></div>
+<div id="forgotMsg" style="margin-top:10px"></div>
+</section>
+
+<section id="resetPassword" class="login hidden">
+<h2>Nouveau mot de passe</h2><p class="muted">Choisissez un nouveau mot de passe (6 caractères minimum).</p>
+<input id="resetPasswordInput" type="password" placeholder="Nouveau mot de passe">
+<button class="btn primary" onclick="submitResetPassword()">Enregistrer</button>
+<div id="resetMsg" style="margin-top:10px"></div>
 </section>
 
 <section id="app" class="hidden">
@@ -122,18 +139,28 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 
 <section id="teamTab" class="hidden">
 <div class="panel"><h3>Équipe <span class="muted" id="teamCount"></span></h3>
+<p class="muted">👑 L'administrateur de l'équipe peut ajouter ou retirer des membres, et transférer ce rôle à quelqu'un d'autre. Nombre d'administrateurs simultanés selon le forfait : Starter/Business = 1, Pro = jusqu'à 3.</p>
 <div id="teamUsage" style="margin-bottom:12px"></div>
 <div id="teamTable"></div>
 </div>
-<div class="panel"><h3>Ajouter un membre</h3>
+<div class="panel hidden" id="addMemberPanel"><h3>Ajouter un membre</h3>
 <form class="formgrid" onsubmit="addTeamMember(event)">
 <input id="tName" placeholder="Nom complet" required>
 <input id="tEmail" type="email" placeholder="Email" required>
 <input id="tPassword" type="password" placeholder="Mot de passe (min. 6 caractères)" required>
-<select id="tRole"><option value="admin">Administrateur</option><option value="sales" selected>Commercial</option><option value="viewer">Lecture seule</option></select>
+<select id="tRole"><option value="admin">Responsable</option><option value="sales" selected>Commercial</option><option value="viewer">Lecture seule</option></select>
 <div class="full"><button class="btn primary">Ajouter</button></div>
 </form>
 <div id="teamStatus" style="margin-top:10px"></div>
+</div>
+<div class="panel"><h3>Mon compte</h3>
+<p class="muted">Changer mon mot de passe (rester connecté).</p>
+<form class="formgrid" onsubmit="changeMyPassword(event)">
+<input id="meCurrentPassword" type="password" placeholder="Mot de passe actuel" required>
+<input id="meNewPassword" type="password" placeholder="Nouveau mot de passe (min. 6 caractères)" required>
+<div class="full"><button class="btn primary">Changer le mot de passe</button></div>
+</form>
+<div id="meStatus" style="margin-top:10px"></div>
 </div>
 </section>
 
@@ -230,9 +257,46 @@ async function api(path, options = {}) {
 
 function showLogin(msg='') {
   $('login').classList.remove('hidden');
+  $('forgotPassword').classList.add('hidden');
+  $('resetPassword').classList.add('hidden');
   $('app').classList.add('hidden');
   $('loginMsg').className = msg ? 'error' : '';
   $('loginMsg').textContent = msg;
+}
+function showForgotPassword(e) {
+  if (e) e.preventDefault();
+  $('login').classList.add('hidden');
+  $('forgotPassword').classList.remove('hidden');
+  $('resetPassword').classList.add('hidden');
+}
+async function submitForgotPassword() {
+  const msg=$('forgotMsg');
+  msg.className='muted'; msg.textContent='Envoi en cours…';
+  try {
+    const r=await fetch('/api/forgot-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:$('forgotEmail').value.trim()})});
+    const d=await r.json();
+    msg.className='success'; msg.textContent=d.message||'Si un compte existe avec cet email, un lien a été envoyé.';
+  } catch(e) { msg.className='error'; msg.textContent=e.message; }
+}
+function showResetPassword() {
+  $('login').classList.add('hidden');
+  $('forgotPassword').classList.add('hidden');
+  $('resetPassword').classList.remove('hidden');
+}
+async function submitResetPassword() {
+  const msg=$('resetMsg');
+  const params=new URLSearchParams(location.search);
+  const resetToken=params.get('resetToken');
+  const password=$('resetPasswordInput').value;
+  if (!password || password.length<6) { msg.className='error'; msg.textContent='6 caractères minimum.'; return; }
+  msg.className='muted'; msg.textContent='Enregistrement…';
+  try {
+    const r=await fetch('/api/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:resetToken,password})});
+    const d=await r.json();
+    if (!r.ok) throw new Error(d.error||'Lien invalide ou expiré');
+    history.replaceState(null,'','/');
+    showLogin('Mot de passe changé avec succès. Connectez-vous.');
+  } catch(e) { msg.className='error'; msg.textContent=e.message; }
 }
 
 async function login() {
@@ -540,23 +604,41 @@ async function deleteFollowup(id){
   }catch(x){alert(x.message);}
 }
 
-const ROLE_LABELS = { owner:'Propriétaire', admin:'Administrateur', sales:'Commercial', viewer:'Lecture seule' };
+const ROLE_LABELS = { owner:'👑 Administrateur', admin:'Responsable', sales:'Commercial', viewer:'Lecture seule' };
+let me = null;
 async function loadTeam(){
   try{
-    const r=await api('/api/users');
+    const [mr,r]=await Promise.all([api('/api/me'),api('/api/users')]);
+    me=mr.me||null;
     renderTeam(r.users||[]);
   }catch(x){ $('teamTable').innerHTML='<div class="error">'+esc(x.message)+'</div>'; }
 }
 function renderTeam(users){
+  const isOwner = me?.role==='owner';
+  $('addMemberPanel').classList.toggle('hidden', !isOwner);
   $('teamCount').textContent='('+users.length+')';
   const limit=data.usage?.maxUsers;
-  $('teamUsage').innerHTML = limit==null
+  const ownerCount=users.filter(u=>u.role==='owner').length;
+  const maxAdmins=data.usage?.maxAdmins;
+  $('teamUsage').innerHTML = (limit==null
     ? '<span class="badge">✅ Membres illimités avec votre forfait</span>'
     : '<span class="badge '+(users.length>=limit?'handoff':users.length>=limit-1?'hot':'')+'">'+users.length+' / '+limit+' membre(s) utilisé(s)</span>'
-      + (users.length>=limit ? '<p class="muted" style="margin-top:6px">Limite atteinte pour votre forfait actuel — passez à un forfait supérieur pour ajouter des membres.</p>' : '');
+      + (users.length>=limit ? '<p class="muted" style="margin-top:6px">Limite atteinte pour votre forfait actuel — passez à un forfait supérieur pour ajouter des membres.</p>' : ''))
+    + (maxAdmins!=null ? ' <span class="badge">'+ownerCount+' / '+maxAdmins+' administrateur(s)</span>' : '');
   $('teamTable').innerHTML = users.length ? '<table><thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Actions</th></tr></thead><tbody>' +
-    users.map(u => '<tr><td><strong>'+esc(u.name)+'</strong></td><td>'+esc(u.email)+'</td><td>'+esc(ROLE_LABELS[u.role]||u.role)+'</td>' +
-      '<td><div class="actions"><button class="btn danger" onclick="deleteTeamMember(\''+u.id+'\',\''+esc(u.name).replace(/'/g,"\\'")+'\')">Retirer</button></div></td></tr>').join('') +
+    users.map(u => {
+      const isSelf = u.id===me?.id;
+      const actions=[];
+      if (isOwner && u.role!=='owner') {
+        actions.push('<button class="btn" onclick="transferAdmin(\''+u.id+'\',\''+esc(u.name).replace(/'/g,"\\'")+'\')">Transférer l\'administration</button>');
+        actions.push('<button class="btn" onclick="resetMemberPassword(\''+u.id+'\',\''+esc(u.name).replace(/'/g,"\\'")+'\')">Réinitialiser le mot de passe</button>');
+        actions.push('<button class="btn danger" onclick="deleteTeamMember(\''+u.id+'\',\''+esc(u.name).replace(/'/g,"\\'")+'\')">Retirer</button>');
+      } else if (isOwner && u.role==='owner' && !isSelf) {
+        actions.push('<button class="btn danger" onclick="deleteTeamMember(\''+u.id+'\',\''+esc(u.name).replace(/'/g,"\\'")+'\')">Retirer</button>');
+      }
+      return '<tr><td><strong>'+esc(u.name)+'</strong>'+(isSelf?' <span class="muted">(vous)</span>':'')+'</td><td>'+esc(u.email)+'</td><td>'+esc(ROLE_LABELS[u.role]||u.role)+'</td>' +
+        '<td><div class="actions">'+(actions.join('')||'<span class="muted">—</span>')+'</div></td></tr>';
+    }).join('') +
     '</tbody></table>' : '<div class="empty">Aucun membre.</div>';
 }
 async function addTeamMember(e){
@@ -576,6 +658,33 @@ async function deleteTeamMember(id,name){
   if(!confirm('Retirer '+name+' de l\'équipe ?')) return;
   try{ await api('/api/users/'+id,{method:'DELETE'}); await loadTeam(); }
   catch(x){ alert(x.message); }
+}
+async function transferAdmin(id,name){
+  if(!confirm('Transférer les droits d\'administration à '+name+' ?')) return;
+  try{
+    const r=await api('/api/users/'+id+'/transfer-admin',{method:'POST'});
+    await loadTeam();
+    if(r.selfDemoted) alert('Administration transférée à '+name+'. Votre forfait ne permettant qu\'un seul administrateur à la fois, vous êtes désormais Responsable.');
+  }catch(x){ alert(x.message); }
+}
+async function resetMemberPassword(id,name){
+  if(!confirm('Réinitialiser le mot de passe de '+name+' ? Un nouveau mot de passe temporaire sera généré.')) return;
+  try{
+    const r=await api('/api/users/'+id+'/reset-password',{method:'POST'});
+    alert('Nouveau mot de passe temporaire pour '+name+' :\n\n'+r.tempPassword+'\n\nCommuniquez-le lui directement (WhatsApp, téléphone…) — il ne sera plus affiché ensuite.');
+  }catch(x){ alert(x.message); }
+}
+async function changeMyPassword(e){
+  e.preventDefault();
+  const status=$('meStatus');
+  status.innerHTML='Enregistrement…';
+  try{
+    await api('/api/me/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      currentPassword:$('meCurrentPassword').value, newPassword:$('meNewPassword').value
+    })});
+    $('meCurrentPassword').value=''; $('meNewPassword').value='';
+    status.innerHTML='<span class="badge">✅ Mot de passe changé.</span>';
+  }catch(x){ status.innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
 }
 
 async function loadWhatsappSettings(){
@@ -641,7 +750,9 @@ document.addEventListener('click', e => {
   const df=e.target.closest('[data-delete-followup]'); if(df){deleteFollowup(df.dataset.deleteFollowup);return;}
 });
 
-if (token) {
+if (new URLSearchParams(location.search).get('resetToken')) {
+  showResetPassword();
+} else if (token) {
   $('login').classList.add('hidden');
   $('app').classList.remove('hidden');
   load();

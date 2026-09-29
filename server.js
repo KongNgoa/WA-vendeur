@@ -16,24 +16,76 @@ const rawBody = async req => { let s=''; for await (const c of req) s += c; if (
 const hashPassword = (password,salt=crypto.randomBytes(16).toString('hex')) => ({salt,hash:crypto.scryptSync(password,salt,64).toString('hex')});
 const verifyPassword = (password,salt,expected) => crypto.timingSafeEqual(Buffer.from(hashPassword(password,salt).hash,'hex'),Buffer.from(expected,'hex'));
 const token = () => crypto.randomBytes(32).toString('hex');
+const escHtml = v => String(v ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const genTempPassword = () => crypto.randomBytes(9).toString('base64url');
 
 // Sessions persistées en base (table 'sessions') plutôt qu'en mémoire du
 // process : sans ça, chaque redéploiement (fréquent sur Railway) déconnectait
-// tout le monde instantanément et sans prévenir.
+// tout le monde instantanément et sans prévenir. Une session est soit celle
+// d'un utilisateur d'entreprise (userId+companyId), soit celle d'un
+// super-admin (superAdminId) — jamais les deux à la fois.
 async function createSession(userId, companyId) {
   const t = token();
   await query('INSERT INTO sessions(token,user_id,company_id,expires_at) VALUES($1,$2,$3,now() + interval \'24 hours\')', [t, userId, companyId]);
   query('DELETE FROM sessions WHERE expires_at < now()').catch(() => {}); // purge opportuniste, pas besoin de cron pour ce volume
   return t;
 }
+async function createSuperAdminSession(superAdminId) {
+  const t = token();
+  await query('INSERT INTO sessions(token,super_admin_id,expires_at) VALUES($1,$2,now() + interval \'24 hours\')', [t, superAdminId]);
+  query('DELETE FROM sessions WHERE expires_at < now()').catch(() => {});
+  return t;
+}
 async function getSession(t) {
   if (!t) return null;
-  const r = await query('SELECT user_id AS "userId",company_id AS "companyId" FROM sessions WHERE token=$1 AND expires_at > now()', [t]);
+  const r = await query('SELECT user_id AS "userId",company_id AS "companyId",super_admin_id AS "superAdminId" FROM sessions WHERE token=$1 AND expires_at > now()', [t]);
   return r.rows[0] || null;
 }
 async function deleteSession(t) {
   if (!t) return;
   await query('DELETE FROM sessions WHERE token=$1', [t]).catch(() => {});
+}
+async function getUserRole(userId) {
+  const r = await query('SELECT role FROM users WHERE id=$1', [userId]);
+  return r.rows[0]?.role || null;
+}
+
+// Réinitialisation de mot de passe en libre-service : jeton à usage unique,
+// valable 1h, dont seul le hash est stocké (comme un mot de passe) pour
+// qu'une fuite de la base ne permette pas de rejouer un lien déjà envoyé.
+async function createPasswordResetToken(userId) {
+  const raw = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(raw).digest('hex');
+  await query('DELETE FROM password_resets WHERE user_id=$1', [userId]); // un seul lien actif à la fois
+  await query('INSERT INTO password_resets(user_id,token_hash,expires_at) VALUES($1,$2,now() + interval \'1 hour\')', [userId, tokenHash]);
+  return raw;
+}
+async function consumePasswordResetToken(raw) {
+  const tokenHash = crypto.createHash('sha256').update(String(raw || '')).digest('hex');
+  const r = await query('SELECT id,user_id AS "userId" FROM password_resets WHERE token_hash=$1 AND expires_at>now() AND used_at IS NULL', [tokenHash]);
+  const row = r.rows[0];
+  if (!row) return null;
+  await query('UPDATE password_resets SET used_at=now() WHERE id=$1', [row.id]);
+  return row.userId;
+}
+
+// Envoi d'email via l'API HTTP de Resend (même approche que l'appel à
+// l'API Anthropic : fetch natif, pas de nouvelle dépendance npm). Sans
+// RESEND_API_KEY configuré, on journalise et on renvoie false plutôt que
+// d'échouer bruyamment — la réinitialisation assistée par un administrateur
+// ou le super-admin reste disponible sans aucune configuration.
+async function sendEmail(to, subject, html) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) { console.warn('[email] RESEND_API_KEY non configuré — email non envoyé (destinataire=%s, sujet=%s)', to, subject); return false; }
+  try {
+    const resp = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: process.env.EMAIL_FROM || 'VENDIA <onboarding@resend.dev>', to: [to], subject, html })
+    });
+    if (!resp.ok) { console.error('[email] echec envoi, HTTP', resp.status, await resp.text().catch(() => '')); return false; }
+    return true;
+  } catch (e) { console.error('[email] erreur envoi:', e.message); return false; }
 }
 
 // Vérifie que le POST du webhook vient bien de Meta (HMAC-SHA256 du corps
@@ -68,6 +120,28 @@ async function ensureDemo() {
   });
 }
 
+// Compte super-admin (vision et contrôle sur toutes les entreprises VENDIA),
+// séparé des comptes clients — créé automatiquement au démarrage à partir de
+// variables d'environnement Railway (même logique que le compte démo), pour
+// éviter d'avoir à exécuter une commande manuellement. Sans SUPERADMIN_EMAIL
+// / SUPERADMIN_PASSWORD définis, aucun compte super-admin n'existe.
+async function ensureSuperAdmin() {
+  const email = process.env.SUPERADMIN_EMAIL, password = process.env.SUPERADMIN_PASSWORD;
+  if (!email || !password) return;
+  const normalized = email.trim().toLowerCase();
+  const existing = await query('SELECT id,password_hash,password_salt FROM super_admins WHERE email=$1',[normalized]);
+  const h = hashPassword(password);
+  if (!existing.rows[0]) {
+    await query('INSERT INTO super_admins(email,name,password_hash,password_salt) VALUES($1,$2,$3,$4)',[normalized, process.env.SUPERADMIN_NAME || 'Super Admin', h.hash, h.salt]);
+    console.log('[superadmin] compte super-admin initial cree pour', normalized);
+  } else {
+    // Le mot de passe reste synchronisé avec la variable d'environnement à
+    // chaque démarrage : changer SUPERADMIN_PASSWORD sur Railway suffit donc
+    // à faire tourner le mot de passe, sans accès direct à la base.
+    await query('UPDATE super_admins SET password_hash=$1,password_salt=$2,name=$3 WHERE id=$4',[h.hash, h.salt, process.env.SUPERADMIN_NAME || 'Super Admin', existing.rows[0].id]);
+  }
+}
+
 async function dashboard(companyId) {
   const [company,products,prospects,orders,conversations,followups,subscription] = await Promise.all([
     query('SELECT id,name,sector,ai_name AS "aiName",ai_tone AS "aiTone",ai_auto_reply_enabled AS "aiAutoReplyEnabled" FROM companies WHERE id=$1',[companyId]),
@@ -98,7 +172,8 @@ async function dashboard(companyId) {
       prospectsThisMonth:prospectsThisMonth.rows[0].n,
       prospectsLimit:limits.maxProspectsPerMonth,
       autoFollowups:limits.autoFollowups,
-      maxUsers:limits.maxUsers
+      maxUsers:limits.maxUsers,
+      maxAdmins:limits.maxAdmins
     },
     metrics:{
       prospects:ps.length,
@@ -281,10 +356,15 @@ async function sendWhatsAppMessage(company, toPhone, text) {
 // que le nom du plan choisi par l'entreprise, jamais ses limites : changer
 // une limite ne demande donc qu'une modification de cet objet.
 // aiMessagesLimit / maxProspectsPerMonth / maxUsers = null signifie illimité.
+// maxAdmins = combien de membres peuvent simultanément porter le rôle
+// 'owner' (l'administrateur d'équipe, capable d'ajouter/retirer des membres
+// et de transférer ce rôle) : Starter n'a qu'un seul utilisateur de toute
+// façon, Business impose un administrateur unique (transférable), Pro en
+// autorise jusqu'à 3 pour les équipes plus grandes.
 const PLAN_LIMITS = {
-  Starter:  { monthlyPrice: 10000, maxProspectsPerMonth: 100, maxUsers: 1,    aiAutoReply: true, aiMessagesLimit: 100, autoFollowups: false, prioritySupport: false },
-  Business: { monthlyPrice: 25000, maxProspectsPerMonth: 300, maxUsers: 3,    aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: false },
-  Pro:      { monthlyPrice: 50000, maxProspectsPerMonth: null, maxUsers: null, aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: true  },
+  Starter:  { monthlyPrice: 10000, maxProspectsPerMonth: 100, maxUsers: 1,    maxAdmins: 1, aiAutoReply: true, aiMessagesLimit: 100, autoFollowups: false, prioritySupport: false },
+  Business: { monthlyPrice: 25000, maxProspectsPerMonth: 300, maxUsers: 3,    maxAdmins: 1, aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: false },
+  Pro:      { monthlyPrice: 50000, maxProspectsPerMonth: null, maxUsers: null, maxAdmins: 3, aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: true  },
 };
 const planLimits = plan => PLAN_LIMITS[plan] || PLAN_LIMITS.Starter;
 
@@ -434,10 +514,11 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.7.0',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.7.0'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.8.0',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.8.0'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
+  if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
 
   // Webhook WhatsApp (Meta Cloud API, phase 3) — appelé directement par Meta,
   // donc volontairement AVANT ensureDemo()/l'authentification par session :
@@ -476,10 +557,11 @@ async function handler(req,res) {
           const messages=Array.isArray(value.messages)?value.messages:[];
           console.log('[webhook] change field=%s phoneNumberId=%s messages=%d',change.field,phoneNumberId,messages.length);
           if(!phoneNumberId||!messages.length) continue; // accusés de statut (lu/livré) ou métadonnées seules : rien à faire
-          const c=await query('SELECT c.id,c.name,c.sector,c.ai_name AS "aiName",c.ai_tone AS "aiTone",c.ai_language AS "aiLanguage",c.ai_rules AS "aiRules",c.ai_auto_reply_enabled AS "aiAutoReplyEnabled",s.plan AS "plan" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id WHERE c.whatsapp_phone_number_id=$1',[phoneNumberId]);
+          const c=await query('SELECT c.id,c.name,c.sector,c.ai_name AS "aiName",c.ai_tone AS "aiTone",c.ai_language AS "aiLanguage",c.ai_rules AS "aiRules",c.ai_auto_reply_enabled AS "aiAutoReplyEnabled",c.suspended,s.plan AS "plan" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id WHERE c.whatsapp_phone_number_id=$1',[phoneNumberId]);
           const companyRow=c.rows[0];
           const targetCompanyId=companyRow?.id;
           if(!targetCompanyId) { console.error('Webhook WhatsApp: aucune entreprise pour phone_number_id',phoneNumberId); continue; }
+          if(companyRow.suspended) { console.warn('[webhook] entreprise suspendue companyId=%s — message ignoré',targetCompanyId); continue; }
           console.log('[webhook] routing %d message(s) to companyId=%s',messages.length,targetCompanyId);
           const contact=(value.contacts||[])[0];
           const contactName=contact?.profile?.name||null;
@@ -538,9 +620,10 @@ async function handler(req,res) {
 
   if(req.method==='POST'&&u.pathname==='/api/login') {
     const b=await body(req);
-    const r=await query('SELECT u.id,u.name,u.email,u.company_id,u.password_hash,u.password_salt,c.name AS company_name FROM users u JOIN companies c ON c.id=u.company_id WHERE u.email=$1',[b.email]);
+    const r=await query('SELECT u.id,u.name,u.email,u.company_id,u.password_hash,u.password_salt,c.name AS company_name,c.suspended FROM users u JOIN companies c ON c.id=u.company_id WHERE u.email=$1',[b.email]);
     const user=r.rows[0];
     if(!user||!verifyPassword(String(b.password||''),user.password_salt,user.password_hash)) return json(res,401,{error:'Identifiants incorrects'});
+    if(user.suspended) return json(res,403,{error:'Ce compte VENDIA est suspendu. Contactez le support.'});
     const t=await createSession(user.id,user.company_id);
     return json(res,200,{token:t,user:{id:user.id,name:user.name,email:user.email,companyId:user.company_id,company:user.company_name}});
   }
@@ -550,13 +633,178 @@ async function handler(req,res) {
     return json(res,200,{ok:true});
   }
 
+  // Mot de passe oublié — libre-service par email (voir sendEmail). La
+  // réponse est volontairement identique que l'email existe ou non, pour ne
+  // pas permettre de deviner quels emails sont enregistrés dans VENDIA.
+  if(req.method==='POST'&&u.pathname==='/api/forgot-password') {
+    const b=await body(req);
+    const email=String(b.email||'').trim().toLowerCase();
+    if(email) {
+      const r=await query('SELECT id,name FROM users WHERE email=$1',[email]);
+      const user=r.rows[0];
+      if(user) {
+        const rawToken=await createPasswordResetToken(user.id);
+        const proto=req.headers['x-forwarded-proto']||'https';
+        const link=proto+'://'+req.headers.host+'/?resetToken='+rawToken;
+        await sendEmail(email,'Réinitialisation de votre mot de passe VENDIA',
+          '<p>Bonjour '+escHtml(user.name)+',</p><p>Cliquez sur ce lien pour choisir un nouveau mot de passe (valable 1 heure) :</p><p><a href="'+link+'">'+link+'</a></p><p>Si vous n\'êtes pas à l\'origine de cette demande, ignorez cet email.</p>');
+      }
+    }
+    return json(res,200,{ok:true,message:"Si un compte existe avec cet email, un lien de réinitialisation a été envoyé."});
+  }
+  if(req.method==='POST'&&u.pathname==='/api/reset-password') {
+    const b=await body(req);
+    if(!b.token||!b.password) return json(res,400,{error:'Lien invalide'});
+    if(String(b.password).length<6) return json(res,400,{error:'Le mot de passe doit contenir au moins 6 caractères'});
+    const userId=await consumePasswordResetToken(b.token);
+    if(!userId) return json(res,400,{error:'Lien invalide ou expiré. Refaites une demande.'});
+    const h=hashPassword(String(b.password));
+    await query('UPDATE users SET password_hash=$1,password_salt=$2 WHERE id=$3',[h.hash,h.salt,userId]);
+    await query('DELETE FROM sessions WHERE user_id=$1',[userId]).catch(()=>{}); // déconnecte partout par sécurité
+    return json(res,200,{ok:true});
+  }
+
+  // --- Super-admin : compte séparé des entreprises clientes, vision et
+  // contrôle sur l'ensemble de VENDIA (voir ensureSuperAdmin). Routes
+  // entièrement indépendantes de l'authentification par entreprise
+  // ci-dessous : un jeton de session super-admin n'a pas de companyId, et
+  // réciproquement un jeton d'entreprise n'ouvre aucune route super-admin.
+  if(req.method==='POST'&&u.pathname==='/api/superadmin/login') {
+    const b=await body(req);
+    const r=await query('SELECT id,name,email,password_hash,password_salt FROM super_admins WHERE email=$1',[String(b.email||'').trim().toLowerCase()]);
+    const sa=r.rows[0];
+    if(!sa||!verifyPassword(String(b.password||''),sa.password_salt,sa.password_hash)) return json(res,401,{error:'Identifiants incorrects'});
+    const t=await createSuperAdminSession(sa.id);
+    return json(res,200,{token:t,admin:{id:sa.id,name:sa.name,email:sa.email}});
+  }
+  if(req.method==='POST'&&u.pathname==='/api/superadmin/logout') {
+    await deleteSession((req.headers.authorization||'').replace(/^Bearer\s+/i,''));
+    return json(res,200,{ok:true});
+  }
+  if(u.pathname.startsWith('/api/superadmin/')) {
+    const saAuth=(req.headers.authorization||'').replace(/^Bearer\s+/i,'');
+    const saSession=await getSession(saAuth);
+    if(!saSession||!saSession.superAdminId) return json(res,401,{error:'Authentification super-admin requise'});
+
+    if(req.method==='GET'&&u.pathname==='/api/superadmin/companies') {
+      const rows=(await query(`SELECT c.id,c.name,c.sector,c.suspended,c.created_at AS "createdAt",s.plan,s.status,s.monthly_price AS "monthlyPrice" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id ORDER BY c.created_at DESC`)).rows;
+      const withUsage=await Promise.all(rows.map(async c=>{
+        const [usage,userCount,prospectsCount]=await Promise.all([
+          getAiUsage(c.id,c.plan),
+          query('SELECT COUNT(*)::int AS n FROM users WHERE company_id=$1',[c.id]),
+          query("SELECT COUNT(*)::int AS n FROM prospects WHERE company_id=$1 AND created_at >= date_trunc('month', now())",[c.id])
+        ]);
+        return {...c,userCount:userCount.rows[0].n,prospectsThisMonth:prospectsCount.rows[0].n,aiUsage:usage,limits:planLimits(c.plan)};
+      }));
+      return json(res,200,{companies:withUsage});
+    }
+
+    if(req.method==='POST'&&u.pathname==='/api/superadmin/companies') {
+      const b=await body(req);
+      if(!b.name||!b.ownerName||!b.ownerEmail||!b.ownerPassword) return json(res,400,{error:'Nom de l\'entreprise, nom/email/mot de passe du propriétaire requis'});
+      if(String(b.ownerPassword).length<6) return json(res,400,{error:'Le mot de passe doit contenir au moins 6 caractères'});
+      const email=String(b.ownerEmail).trim().toLowerCase();
+      const existingUser=await query('SELECT id FROM users WHERE email=$1',[email]);
+      if(existingUser.rows[0]) return json(res,409,{error:'Cet email est déjà utilisé'});
+      const plan=['Starter','Business','Pro'].includes(b.plan) ? b.plan : 'Starter';
+      const result=await transaction(async client=>{
+        const c=await client.query('INSERT INTO companies(name,sector) VALUES($1,$2) RETURNING id',[String(b.name).trim(),b.sector||null]);
+        const newCompanyId=c.rows[0].id;
+        await client.query('INSERT INTO subscriptions(company_id,plan,status,monthly_price) VALUES($1,$2,$3,$4)',[newCompanyId,plan,'trial',planLimits(plan).monthlyPrice]);
+        const h=hashPassword(String(b.ownerPassword));
+        const nu=await client.query('INSERT INTO users(company_id,email,name,role,password_hash,password_salt) VALUES($1,$2,$3,\'owner\',$4,$5) RETURNING id,name,email,role',[newCompanyId,email,String(b.ownerName).trim(),h.hash,h.salt]);
+        return {companyId:newCompanyId,owner:nu.rows[0]};
+      });
+      return json(res,201,{companyId:result.companyId,owner:result.owner});
+    }
+
+    const scMatch=u.pathname.match(/^\/api\/superadmin\/companies\/([0-9a-f-]+)$/i);
+    if(scMatch&&(req.method==='PUT'||req.method==='PATCH')) {
+      const b=await body(req);
+      if(b.plan!==undefined&&['Starter','Business','Pro'].includes(b.plan)) {
+        await query('UPDATE subscriptions SET plan=$1,monthly_price=$2 WHERE company_id=$3',[b.plan,planLimits(b.plan).monthlyPrice,scMatch[1]]);
+      }
+      if(b.suspended!==undefined) {
+        await query('UPDATE companies SET suspended=$1 WHERE id=$2',[Boolean(b.suspended),scMatch[1]]);
+        if(b.suspended) await query('DELETE FROM sessions WHERE company_id=$1',[scMatch[1]]).catch(()=>{}); // déconnecte immédiatement l'entreprise suspendue
+      }
+      if(b.status!==undefined&&['trial','active','cancelled','past_due'].includes(b.status)) {
+        await query('UPDATE subscriptions SET status=$1 WHERE company_id=$2',[b.status,scMatch[1]]);
+      }
+      return json(res,200,{ok:true});
+    }
+
+    const scConvMatch=u.pathname.match(/^\/api\/superadmin\/companies\/([0-9a-f-]+)\/conversations$/i);
+    if(scConvMatch&&req.method==='GET') {
+      const r=await query(`SELECT c.id,c.channel,c.external_contact AS phone,p.name AS prospect,c.created_at AS "createdAt",
+        COALESCE(json_agg(json_build_object('id',m.id,'direction',m.direction,'body',m.body,'createdAt',m.created_at) ORDER BY m.created_at) FILTER (WHERE m.id IS NOT NULL),'[]') AS messages
+        FROM conversations c LEFT JOIN prospects p ON p.id=c.prospect_id LEFT JOIN messages m ON m.conversation_id=c.id
+        WHERE c.company_id=$1 GROUP BY c.id,p.name ORDER BY MAX(m.created_at) DESC NULLS LAST,c.created_at DESC`,[scConvMatch[1]]);
+      return json(res,200,{conversations:r.rows});
+    }
+
+    const scUsersMatch=u.pathname.match(/^\/api\/superadmin\/companies\/([0-9a-f-]+)\/users$/i);
+    if(scUsersMatch&&req.method==='GET') {
+      const r=await query('SELECT id,name,email,role,created_at AS "createdAt" FROM users WHERE company_id=$1 ORDER BY created_at',[scUsersMatch[1]]);
+      return json(res,200,{users:r.rows});
+    }
+    if(scUsersMatch&&req.method==='POST') {
+      const b=await body(req);
+      if(!b.name||!b.email||!b.password) return json(res,400,{error:'Nom, email et mot de passe requis'});
+      if(String(b.password).length<6) return json(res,400,{error:'Le mot de passe doit contenir au moins 6 caractères'});
+      const email=String(b.email).trim().toLowerCase();
+      const existingUser=await query('SELECT id FROM users WHERE email=$1',[email]);
+      if(existingUser.rows[0]) return json(res,409,{error:'Cet email est déjà utilisé'});
+      const role=['owner','admin','sales','viewer'].includes(b.role) ? b.role : 'sales';
+      const h=hashPassword(String(b.password));
+      const r=await query('INSERT INTO users(company_id,email,name,role,password_hash,password_salt) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,name,email,role,created_at AS "createdAt"',[scUsersMatch[1],email,String(b.name).trim(),role,h.hash,h.salt]);
+      return json(res,201,{user:r.rows[0]});
+    }
+    const scUserMatch=u.pathname.match(/^\/api\/superadmin\/companies\/([0-9a-f-]+)\/users\/([0-9a-f-]+)$/i);
+    if(scUserMatch&&req.method==='DELETE') {
+      const r=await query('DELETE FROM users WHERE id=$1 AND company_id=$2 RETURNING id',[scUserMatch[2],scUserMatch[1]]);
+      if(!r.rows[0]) return json(res,404,{error:'Utilisateur introuvable'});
+      await query('DELETE FROM sessions WHERE user_id=$1',[scUserMatch[2]]).catch(()=>{});
+      return json(res,200,{ok:true});
+    }
+    const scResetMatch=u.pathname.match(/^\/api\/superadmin\/companies\/([0-9a-f-]+)\/users\/([0-9a-f-]+)\/reset-password$/i);
+    if(scResetMatch&&req.method==='POST') {
+      const r=await query('SELECT id FROM users WHERE id=$1 AND company_id=$2',[scResetMatch[2],scResetMatch[1]]);
+      if(!r.rows[0]) return json(res,404,{error:'Utilisateur introuvable'});
+      const pwd=genTempPassword();
+      const h=hashPassword(pwd);
+      await query('UPDATE users SET password_hash=$1,password_salt=$2 WHERE id=$3',[h.hash,h.salt,scResetMatch[2]]);
+      await query('DELETE FROM sessions WHERE user_id=$1',[scResetMatch[2]]).catch(()=>{});
+      return json(res,200,{ok:true,tempPassword:pwd});
+    }
+
+    return json(res,404,{error:'Route super-admin introuvable'});
+  }
+
   const auth=(req.headers.authorization||'').replace(/^Bearer\s+/i,'');
   const session=await getSession(auth);
-  if(!session) return json(res,401,{error:'Authentification requise'});
+  if(!session||!session.companyId) return json(res,401,{error:'Authentification requise'});
   const companyId=session.companyId;
+  const susp=await query('SELECT suspended FROM companies WHERE id=$1',[companyId]);
+  if(susp.rows[0]?.suspended) return json(res,403,{error:'Ce compte VENDIA est suspendu. Contactez le support.'});
 
   if(req.method==='GET'&&u.pathname==='/api/bootstrap') return json(res,200,await dashboard(companyId));
   if(req.method==='GET'&&u.pathname==='/api/dashboard') return json(res,200,await dashboard(companyId));
+
+  if(req.method==='GET'&&u.pathname==='/api/me') {
+    const r=await query('SELECT id,name,email,role FROM users WHERE id=$1',[session.userId]);
+    return json(res,200,{me:r.rows[0]||null});
+  }
+  if(req.method==='POST'&&u.pathname==='/api/me/password') {
+    const b=await body(req);
+    const r=await query('SELECT password_hash,password_salt FROM users WHERE id=$1',[session.userId]);
+    const u2=r.rows[0];
+    if(!u2||!verifyPassword(String(b.currentPassword||''),u2.password_salt,u2.password_hash)) return json(res,401,{error:'Mot de passe actuel incorrect'});
+    if(String(b.newPassword||'').length<6) return json(res,400,{error:'Le nouveau mot de passe doit contenir au moins 6 caractères'});
+    const h=hashPassword(String(b.newPassword));
+    await query('UPDATE users SET password_hash=$1,password_salt=$2 WHERE id=$3',[h.hash,h.salt,session.userId]);
+    return json(res,200,{ok:true});
+  }
 
   if(req.method==='PATCH'&&u.pathname==='/api/settings/ai') {
     const b=await body(req);
@@ -632,7 +880,15 @@ async function handler(req,res) {
     const r=await query('SELECT id,name,email,role,created_at AS "createdAt" FROM users WHERE company_id=$1 ORDER BY created_at',[companyId]);
     return json(res,200,{users:r.rows});
   }
+  // Gestion d'équipe : seul le rôle 'owner' (l'administrateur — le premier
+  // utilisateur de l'entreprise, ou celui à qui ce rôle a été transféré)
+  // peut ajouter, modifier ou retirer des membres. Le rôle 'owner' lui-même
+  // ne se distribue jamais via ces routes : seul /transfer-admin le fait,
+  // pour garantir le nombre maximal d'administrateurs simultanés par forfait
+  // (PLAN_LIMITS.maxAdmins).
   if(req.method==='POST'&&u.pathname==='/api/users') {
+    const callerRole=await getUserRole(session.userId);
+    if(callerRole!=='owner') return json(res,403,{error:"Seul l'administrateur de l'équipe peut ajouter des membres"});
     const b=await body(req);
     if(!b.name||!b.email||!b.password) return json(res,400,{error:'Nom, email et mot de passe requis'});
     if(String(b.password).length<6) return json(res,400,{error:'Le mot de passe doit contenir au moins 6 caractères'});
@@ -645,28 +901,84 @@ async function handler(req,res) {
     const email=String(b.email).trim().toLowerCase();
     const existing=await query('SELECT id FROM users WHERE email=$1',[email]);
     if(existing.rows[0]) return json(res,409,{error:'Cet email est déjà utilisé'});
-    const role=['owner','admin','sales','viewer'].includes(b.role) ? b.role : 'sales';
+    const role=['admin','sales','viewer'].includes(b.role) ? b.role : 'sales'; // 'owner' s'attribue uniquement via /transfer-admin
     const h=hashPassword(String(b.password));
     const r=await query('INSERT INTO users(company_id,email,name,role,password_hash,password_salt) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,name,email,role,created_at AS "createdAt"',[companyId,email,String(b.name).trim(),role,h.hash,h.salt]);
     return json(res,201,{user:r.rows[0]});
   }
   const userMatch=u.pathname.match(/^\/api\/users\/([0-9a-f-]+)$/i);
   if(userMatch && (req.method==='PUT'||req.method==='PATCH')) {
+    const isSelf=userMatch[1]===session.userId;
+    if(!isSelf) {
+      const callerRole=await getUserRole(session.userId);
+      if(callerRole!=='owner') return json(res,403,{error:"Seul l'administrateur de l'équipe peut modifier un autre membre"});
+    }
     const b=await body(req);
-    const role=['owner','admin','sales','viewer'].includes(b.role) ? b.role : null;
+    const role=['admin','sales','viewer'].includes(b.role) ? b.role : null; // le rôle 'owner' se change uniquement via /transfer-admin
     if(!role && !b.name) return json(res,400,{error:'Rien à mettre à jour'});
-    const r=await query('UPDATE users SET name=COALESCE(NULLIF($1,\'\'),name),role=COALESCE($2,role) WHERE id=$3 AND company_id=$4 RETURNING id,name,email,role,created_at AS "createdAt"',[b.name||null,role,userMatch[1],companyId]);
-    if(!r.rows[0]) return json(res,404,{error:'Utilisateur introuvable'});
+    const r=await query('UPDATE users SET name=COALESCE(NULLIF($1,\'\'),name),role=COALESCE($2,role) WHERE id=$3 AND company_id=$4 AND role<>\'owner\' RETURNING id,name,email,role,created_at AS "createdAt"',[b.name||null,role,userMatch[1],companyId]);
+    if(!r.rows[0]) {
+      // Si la ligne existe mais est administrateur, on l'autorise quand même à renommer son propre profil.
+      if(isSelf) {
+        const r2=await query('UPDATE users SET name=COALESCE(NULLIF($1,\'\'),name) WHERE id=$2 AND company_id=$3 RETURNING id,name,email,role,created_at AS "createdAt"',[b.name||null,userMatch[1],companyId]);
+        if(r2.rows[0]) return json(res,200,{user:r2.rows[0]});
+      }
+      return json(res,404,{error:'Utilisateur introuvable'});
+    }
     return json(res,200,{user:r.rows[0]});
   }
   if(userMatch && req.method==='DELETE') {
-    if(userMatch[1]===session.userId) return json(res,400,{error:'Vous ne pouvez pas vous supprimer vous-même'});
+    const callerRole=await getUserRole(session.userId);
+    if(callerRole!=='owner') return json(res,403,{error:"Seul l'administrateur de l'équipe peut retirer un membre"});
+    if(userMatch[1]===session.userId) return json(res,400,{error:'Vous ne pouvez pas vous supprimer vous-même — transférez d\'abord vos droits d\'administration si besoin'});
     const count=await query('SELECT COUNT(*)::int AS n FROM users WHERE company_id=$1',[companyId]);
     if(count.rows[0].n<=1) return json(res,400,{error:"Impossible de supprimer le dernier utilisateur de l'entreprise"});
     const r=await query('DELETE FROM users WHERE id=$1 AND company_id=$2 RETURNING id',[userMatch[1],companyId]);
     if(!r.rows[0]) return json(res,404,{error:'Utilisateur introuvable'});
     await query('DELETE FROM sessions WHERE user_id=$1',[userMatch[1]]).catch(()=>{}); // révoque ses sessions actives
     return json(res,200,{ok:true});
+  }
+
+  // Transfert du rôle d'administrateur (owner) vers un autre membre. Si le
+  // forfait limite le nombre d'administrateurs simultanés (Business: 1) et
+  // que la limite serait dépassée, l'administrateur actuel est rétrogradé
+  // en 'admin' dans la foulée — un vrai transfert plutôt qu'un ajout. Sur
+  // Pro (jusqu'à 3), tant qu'il reste de la place, les deux gardent le rôle.
+  const transferMatch=u.pathname.match(/^\/api\/users\/([0-9a-f-]+)\/transfer-admin$/i);
+  if(transferMatch && req.method==='POST') {
+    const callerRole=await getUserRole(session.userId);
+    if(callerRole!=='owner') return json(res,403,{error:"Seul l'administrateur de l'équipe peut transférer ses droits"});
+    if(transferMatch[1]===session.userId) return json(res,400,{error:'Vous êtes déjà administrateur'});
+    const target=await query('SELECT id,role FROM users WHERE id=$1 AND company_id=$2',[transferMatch[1],companyId]);
+    if(!target.rows[0]) return json(res,404,{error:'Utilisateur introuvable'});
+    if(target.rows[0].role==='owner') return json(res,400,{error:'Ce membre est déjà administrateur'});
+    const s=await query('SELECT plan FROM subscriptions WHERE company_id=$1',[companyId]);
+    const maxAdmins=planLimits(s.rows[0]?.plan).maxAdmins;
+    const ownerCount=await query("SELECT COUNT(*)::int AS n FROM users WHERE company_id=$1 AND role='owner'",[companyId]);
+    await query('UPDATE users SET role=\'owner\' WHERE id=$1',[transferMatch[1]]);
+    let selfDemoted=false;
+    if(maxAdmins!=null && (ownerCount.rows[0].n+1)>maxAdmins) {
+      await query('UPDATE users SET role=\'admin\' WHERE id=$1',[session.userId]);
+      selfDemoted=true;
+    }
+    return json(res,200,{ok:true,selfDemoted});
+  }
+
+  // Réinitialisation de mot de passe assistée par l'administrateur : ne
+  // nécessite aucune configuration email — un mot de passe temporaire est
+  // renvoyé une seule fois dans la réponse, à relayer manuellement au
+  // membre concerné (WhatsApp, téléphone, en personne...).
+  const resetPwMatch=u.pathname.match(/^\/api\/users\/([0-9a-f-]+)\/reset-password$/i);
+  if(resetPwMatch && req.method==='POST') {
+    const callerRole=await getUserRole(session.userId);
+    if(callerRole!=='owner') return json(res,403,{error:"Seul l'administrateur de l'équipe peut réinitialiser le mot de passe d'un membre"});
+    const target=await query('SELECT id FROM users WHERE id=$1 AND company_id=$2',[resetPwMatch[1],companyId]);
+    if(!target.rows[0]) return json(res,404,{error:'Utilisateur introuvable'});
+    const pwd=genTempPassword();
+    const h=hashPassword(pwd);
+    await query('UPDATE users SET password_hash=$1,password_salt=$2 WHERE id=$3',[h.hash,h.salt,resetPwMatch[1]]);
+    await query('DELETE FROM sessions WHERE user_id=$1',[resetPwMatch[1]]).catch(()=>{});
+    return json(res,200,{ok:true,tempPassword:pwd});
   }
 
   if(req.method==='GET'&&u.pathname==='/api/prospects') {
@@ -830,6 +1142,32 @@ async function ensureMigrations() {
     'CREATE INDEX IF NOT EXISTS sessions_expires_idx ON sessions(expires_at)',
     'ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS ai_messages_used INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS ai_usage_reset_at TIMESTAMPTZ NOT NULL DEFAULT now()',
+    // Lot "administration d'équipe, réinitialisation de mot de passe et
+    // super-admin" — idempotent. Le super_admin_id est ajouté à 'sessions'
+    // (avec user_id/company_id rendus nullables) plutôt que d'utiliser une
+    // table de sessions séparée, pour réutiliser exactement la même logique
+    // de purge/expiration/révocation.
+    'ALTER TABLE companies ADD COLUMN IF NOT EXISTS suspended BOOLEAN NOT NULL DEFAULT false',
+    `CREATE TABLE IF NOT EXISTS super_admins (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       email TEXT NOT NULL UNIQUE,
+       name TEXT NOT NULL,
+       password_hash TEXT NOT NULL,
+       password_salt TEXT NOT NULL,
+       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+     )`,
+    'ALTER TABLE sessions ALTER COLUMN user_id DROP NOT NULL',
+    'ALTER TABLE sessions ALTER COLUMN company_id DROP NOT NULL',
+    'ALTER TABLE sessions ADD COLUMN IF NOT EXISTS super_admin_id UUID REFERENCES super_admins(id) ON DELETE CASCADE',
+    `CREATE TABLE IF NOT EXISTS password_resets (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+       token_hash TEXT NOT NULL,
+       expires_at TIMESTAMPTZ NOT NULL,
+       used_at TIMESTAMPTZ,
+       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+     )`,
+    'CREATE INDEX IF NOT EXISTS password_resets_token_idx ON password_resets(token_hash)',
   ];
   for (const stmt of statements) {
     try { await query(stmt); } catch(e) { console.error('[migrations] echec:',stmt.split('\n')[0],e.message); }
@@ -838,7 +1176,7 @@ async function ensureMigrations() {
 }
 
 const server=http.createServer((req,res)=>handler(req,res).catch(e=>{console.error(e);json(res,500,{error:'Erreur serveur'});}));
-ensureMigrations().finally(()=>{
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.7.0 listening on ${PORT}`));
+ensureMigrations().then(()=>ensureSuperAdmin()).catch(e=>console.error('[superadmin] echec initialisation:',e.message)).finally(()=>{
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.8.0 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

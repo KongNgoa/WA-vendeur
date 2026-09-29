@@ -27,15 +27,45 @@ CREATE UNIQUE INDEX IF NOT EXISTS companies_whatsapp_phone_idx ON companies(what
 -- appliquer uniquement cet ajout sur la base de production existante, utiliser
 -- scripts/migrate-add-sessions-and-ai-reply.js.
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS ai_auto_reply_enabled BOOLEAN NOT NULL DEFAULT true;
+-- Lot "administration d'équipe, mot de passe oublié et super-admin" —
+-- idempotent. Pour appliquer uniquement cet ajout sur la base de production
+-- existante, utiliser scripts/migrate-add-superadmin-and-roles.js.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS suspended BOOLEAN NOT NULL DEFAULT false;
 
+CREATE TABLE IF NOT EXISTS super_admins (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  password_salt TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- user_id/company_id sont nullables : une session est soit celle d'un
+-- utilisateur d'entreprise (les deux renseignés), soit celle d'un
+-- super-admin (super_admin_id renseigné) — jamais les deux à la fois.
 CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY,
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  company_id UUID REFERENCES companies(id) ON DELETE CASCADE,
+  super_admin_id UUID REFERENCES super_admins(id) ON DELETE CASCADE,
   expires_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE sessions ALTER COLUMN user_id DROP NOT NULL;
+ALTER TABLE sessions ALTER COLUMN company_id DROP NOT NULL;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS super_admin_id UUID REFERENCES super_admins(id) ON DELETE CASCADE;
 CREATE INDEX IF NOT EXISTS sessions_expires_idx ON sessions(expires_at);
+
+CREATE TABLE IF NOT EXISTS password_resets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS password_resets_token_idx ON password_resets(token_hash);
 
 CREATE TABLE users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VENDIA — Super-admin</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,sans-serif;background:#f5f7fb;color:#172033}
+header{background:#111827;color:white;padding:18px 28px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10}
+h1{margin:0;font-size:22px}.tag{opacity:.75;font-size:13px}.wrap{max-width:1180px;margin:24px auto;padding:0 18px}
+.login,.panel,.stat{background:white;border-radius:18px;padding:22px;box-shadow:0 8px 30px #0000000d;margin-bottom:16px}
+.btn{border:0;border-radius:10px;padding:10px 14px;background:#e9edf5;color:#172033;font-weight:700;cursor:pointer;white-space:nowrap;font-size:13px}
+.btn.primary{background:#111827;color:#fff}.btn.danger{background:#fee4e2;color:#b42318}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid #edf0f5;font-size:13px;vertical-align:top}th{color:#687386;font-size:11px;text-transform:uppercase}
+.actions{display:flex;gap:6px;flex-wrap:wrap}.badge{padding:4px 9px;border-radius:20px;background:#e7f7ee;color:#18794e;font-size:12px;font-weight:700;display:inline-block;margin:2px 4px 2px 0}
+.hot{background:#fff0e0;color:#b54708}.handoff{background:#fee4e2;color:#b42318}.cold{background:#eef2f6;color:#536071}
+form.formgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.formgrid .full{grid-column:1/-1}
+input,select{width:100%;padding:10px;border:1px solid #d9deea;border-radius:10px;background:white;font-size:14px}
+.login{max-width:420px;margin:60px auto}.error{color:#b42318;margin-top:10px}.success{color:#18794e;margin-top:10px}.hidden{display:none}.muted{color:#687386;font-size:13px}
+.empty{padding:24px;text-align:center;color:#687386}
+.msgIn{background:#f5f7fb}.msgOut{background:#f0f4ff}.msg{padding:8px;margin-top:6px;border-radius:8px;font-size:13px}
+</style>
+</head>
+<body>
+<header><div><h1>VENDIA — Super-admin</h1><div class="tag">Vue et contrôle sur toutes les entreprises</div></div>
+<div><button class="btn" id="logoutBtn" onclick="logout()" style="display:none">Déconnexion</button></div></header>
+<main class="wrap">
+
+<section id="login" class="login">
+<h2>Connexion super-admin</h2>
+<input id="saEmail" type="email" placeholder="Email"><input id="saPassword" type="password" placeholder="Mot de passe" style="margin-top:10px">
+<button class="btn primary" style="margin-top:10px" onclick="login()">Se connecter</button>
+<div id="loginMsg" style="margin-top:10px"></div>
+</section>
+
+<section id="app" class="hidden">
+<div class="panel"><h3>Nouvelle entreprise</h3>
+<form class="formgrid" onsubmit="createCompany(event)">
+<input id="ncName" placeholder="Nom de l'entreprise" required>
+<input id="ncSector" placeholder="Secteur">
+<select id="ncPlan"><option value="Starter">Starter (10 000 FCFA)</option><option value="Business">Business (25 000 FCFA)</option><option value="Pro">Pro (50 000 FCFA)</option></select>
+<span></span>
+<input id="ncOwnerName" placeholder="Nom du propriétaire" required>
+<input id="ncOwnerEmail" type="email" placeholder="Email du propriétaire" required>
+<input id="ncOwnerPassword" type="password" placeholder="Mot de passe (min. 6 caractères)" required>
+<div class="full"><button class="btn primary">Créer l'entreprise</button></div>
+</form>
+<div id="ncStatus" style="margin-top:10px"></div>
+</div>
+
+<div class="panel"><h3>Entreprises <span class="muted" id="companyCount"></span></h3>
+<div id="companyTable"></div>
+</div>
+
+<div class="panel hidden" id="detailPanel">
+<div style="display:flex;justify-content:space-between;align-items:center"><h3 id="detailTitle">Détail</h3><button class="btn" onclick="closeDetail()">Fermer</button></div>
+<h4>Membres</h4>
+<div id="detailUsers"></div>
+<form class="formgrid" onsubmit="addDetailUser(event)" style="margin-top:12px">
+<input id="duName" placeholder="Nom" required><input id="duEmail" type="email" placeholder="Email" required>
+<input id="duPassword" type="password" placeholder="Mot de passe (min. 6 caractères)" required>
+<select id="duRole"><option value="owner">Administrateur</option><option value="admin">Responsable</option><option value="sales" selected>Commercial</option><option value="viewer">Lecture seule</option></select>
+<div class="full"><button class="btn primary">Ajouter un membre</button></div>
+</form>
+<h4 style="margin-top:20px">Conversations (lecture seule)</h4>
+<div id="detailConversations"></div>
+</div>
+
+</section>
+</main>
+<script>
+let token = localStorage.getItem('vendia_superadmin_token') || '';
+let companies = [];
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const money=n=>Number(n||0).toLocaleString('fr-FR')+' FCFA';
+
+async function api(path,options={}){
+  options.headers={...(options.headers||{}),...(token?{Authorization:'Bearer '+token}:{})};
+  const r=await fetch(path,options);
+  let d={}; try{d=await r.json();}catch{}
+  if(r.status===401){ token=''; localStorage.removeItem('vendia_superadmin_token'); showLogin('Session expirée. Reconnectez-vous.'); throw new Error('Session expirée'); }
+  if(!r.ok) throw new Error(d.error||'Erreur serveur');
+  return d;
+}
+function showLogin(msg=''){
+  $('login').classList.remove('hidden'); $('app').classList.add('hidden'); $('logoutBtn').style.display='none';
+  $('loginMsg').className=msg?'error':''; $('loginMsg').textContent=msg;
+}
+async function login(){
+  const msg=$('loginMsg'); msg.className=''; msg.textContent='Connexion…';
+  try{
+    const r=await fetch('/api/superadmin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:$('saEmail').value.trim(),password:$('saPassword').value})});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error||'Identifiants incorrects');
+    token=d.token; localStorage.setItem('vendia_superadmin_token',token);
+    $('login').classList.add('hidden'); $('app').classList.remove('hidden'); $('logoutBtn').style.display='';
+    await loadCompanies();
+  }catch(e){ msg.className='error'; msg.textContent=e.message; }
+}
+function logout(){
+  api('/api/superadmin/logout',{method:'POST'}).catch(()=>{});
+  token=''; localStorage.removeItem('vendia_superadmin_token');
+  showLogin('Vous êtes déconnecté.');
+}
+
+async function loadCompanies(){
+  try{
+    const r=await api('/api/superadmin/companies');
+    companies=r.companies||[];
+    renderCompanies();
+  }catch(e){ $('companyTable').innerHTML='<div class="error">'+esc(e.message)+'</div>'; }
+}
+function renderCompanies(){
+  $('companyCount').textContent='('+companies.length+')';
+  $('companyTable').innerHTML = companies.length ? '<table><thead><tr><th>Entreprise</th><th>Forfait</th><th>Statut</th><th>Membres</th><th>Réponses IA</th><th>Prospects ce mois</th><th>Actions</th></tr></thead><tbody>'+
+    companies.map(c=>{
+      const aiLabel = c.aiUsage.limit==null ? 'illimité' : (c.aiUsage.remaining+' / '+c.aiUsage.limit+' restantes');
+      const prospectsLabel = c.prospectsThisMonth + (c.limits.maxProspectsPerMonth!=null?' / '+c.limits.maxProspectsPerMonth:' (illimité)');
+      const suspendedBadge = c.suspended ? '<span class="badge handoff">🚫 Suspendue</span>' : '<span class="badge">✅ Active</span>';
+      return '<tr><td><strong>'+esc(c.name)+'</strong><br><span class="muted">'+esc(c.sector||'—')+'</span><br>'+suspendedBadge+'</td>'+
+        '<td><select onchange="changePlan(\''+c.id+'\',this.value)">'+
+          ['Starter','Business','Pro'].map(p=>'<option value="'+p+'"'+(p===c.plan?' selected':'')+'>'+p+'</option>').join('')+
+        '</select></td>'+
+        '<td>'+esc(c.status||'—')+'</td>'+
+        '<td>'+c.userCount+' / '+(c.limits.maxUsers==null?'∞':c.limits.maxUsers)+'</td>'+
+        '<td>'+esc(aiLabel)+'</td>'+
+        '<td>'+esc(prospectsLabel)+'</td>'+
+        '<td><div class="actions">'+
+          '<button class="btn" onclick="openDetail(\''+c.id+'\')">Détails</button>'+
+          '<button class="btn '+(c.suspended?'':'danger')+'" onclick="toggleSuspend(\''+c.id+'\','+(!c.suspended)+')">'+(c.suspended?'Réactiver':'Suspendre')+'</button>'+
+        '</div></td></tr>';
+    }).join('')+'</tbody></table>' : '<div class="empty">Aucune entreprise.</div>';
+}
+async function changePlan(id,plan){
+  try{ await api('/api/superadmin/companies/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan})}); await loadCompanies(); }
+  catch(e){ alert(e.message); await loadCompanies(); }
+}
+async function toggleSuspend(id,suspended){
+  if(suspended && !confirm('Suspendre cette entreprise ? Ses utilisateurs seront déconnectés et ne pourront plus se reconnecter, et le webhook WhatsApp ignorera ses messages.')) return;
+  try{ await api('/api/superadmin/companies/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({suspended})}); await loadCompanies(); }
+  catch(e){ alert(e.message); }
+}
+async function createCompany(e){
+  e.preventDefault();
+  const status=$('ncStatus'); status.innerHTML='Création en cours…';
+  try{
+    await api('/api/superadmin/companies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      name:$('ncName').value.trim(), sector:$('ncSector').value.trim(), plan:$('ncPlan').value,
+      ownerName:$('ncOwnerName').value.trim(), ownerEmail:$('ncOwnerEmail').value.trim(), ownerPassword:$('ncOwnerPassword').value
+    })});
+    e.target.reset();
+    status.innerHTML='<span class="badge">✅ Entreprise créée.</span>';
+    await loadCompanies();
+  }catch(x){ status.innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
+}
+
+let currentDetailId=null;
+async function openDetail(id){
+  currentDetailId=id;
+  const c=companies.find(x=>x.id===id);
+  $('detailTitle').textContent='Détail — '+(c?c.name:'');
+  $('detailPanel').classList.remove('hidden');
+  $('detailPanel').scrollIntoView({behavior:'smooth'});
+  await Promise.all([loadDetailUsers(),loadDetailConversations()]);
+}
+function closeDetail(){ $('detailPanel').classList.add('hidden'); currentDetailId=null; }
+async function loadDetailUsers(){
+  try{
+    const r=await api('/api/superadmin/companies/'+currentDetailId+'/users');
+    const ROLE_LABELS={owner:'👑 Administrateur',admin:'Responsable',sales:'Commercial',viewer:'Lecture seule'};
+    $('detailUsers').innerHTML=(r.users||[]).length? '<table><thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Actions</th></tr></thead><tbody>'+
+      r.users.map(u=>'<tr><td>'+esc(u.name)+'</td><td>'+esc(u.email)+'</td><td>'+esc(ROLE_LABELS[u.role]||u.role)+'</td>'+
+        '<td><div class="actions"><button class="btn" onclick="resetDetailUserPassword(\''+u.id+'\',\''+esc(u.name).replace(/\x27/g,"\\\x27")+'\')">Réinit. mdp</button>'+
+        '<button class="btn danger" onclick="deleteDetailUser(\''+u.id+'\',\''+esc(u.name).replace(/\x27/g,"\\\x27")+'\')">Retirer</button></div></td></tr>').join('')+
+      '</tbody></table>' : '<div class="empty">Aucun membre.</div>';
+  }catch(e){ $('detailUsers').innerHTML='<div class="error">'+esc(e.message)+'</div>'; }
+}
+async function addDetailUser(e){
+  e.preventDefault();
+  try{
+    await api('/api/superadmin/companies/'+currentDetailId+'/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      name:$('duName').value.trim(),email:$('duEmail').value.trim(),password:$('duPassword').value,role:$('duRole').value
+    })});
+    e.target.reset();
+    await Promise.all([loadDetailUsers(),loadCompanies()]);
+  }catch(x){ alert(x.message); }
+}
+async function deleteDetailUser(id,name){
+  if(!confirm('Retirer '+name+' de cette entreprise ?')) return;
+  try{ await api('/api/superadmin/companies/'+currentDetailId+'/users/'+id,{method:'DELETE'}); await Promise.all([loadDetailUsers(),loadCompanies()]); }
+  catch(x){ alert(x.message); }
+}
+async function resetDetailUserPassword(id,name){
+  if(!confirm('Réinitialiser le mot de passe de '+name+' ?')) return;
+  try{
+    const r=await api('/api/superadmin/companies/'+currentDetailId+'/users/'+id+'/reset-password',{method:'POST'});
+    alert('Nouveau mot de passe temporaire pour '+name+' :\n\n'+r.tempPassword);
+  }catch(x){ alert(x.message); }
+}
+async function loadDetailConversations(){
+  try{
+    const r=await api('/api/superadmin/companies/'+currentDetailId+'/conversations');
+    $('detailConversations').innerHTML=(r.conversations||[]).length ? r.conversations.map(c=>
+      '<div class="panel" style="box-shadow:none;border:1px solid #edf0f5;margin-bottom:10px"><strong>'+esc(c.prospect||'Contact')+'</strong> · '+esc(c.phone||'—')+
+      (c.messages||[]).map(m=>'<div class="msg '+(m.direction==='in'?'msgIn':'msgOut')+'"><b>'+(m.direction==='in'?'Client':'VENDIA')+':</b> '+esc(m.body)+'</div>').join('')+
+      '</div>').join('') : '<div class="empty">Aucune conversation.</div>';
+  }catch(e){ $('detailConversations').innerHTML='<div class="error">'+esc(e.message)+'</div>'; }
+}
+
+if(token){ $('login').classList.add('hidden'); $('app').classList.remove('hidden'); $('logoutBtn').style.display=''; loadCompanies(); }
+</script>
+</body></html>
