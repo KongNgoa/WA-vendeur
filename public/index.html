@@ -37,7 +37,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <button class="active" data-tab="dashboard" onclick="tab('dashboard')">📊 Tableau de bord</button>
 <button data-tab="products" onclick="tab('products')">📦 Produits</button>
 <button data-tab="crm" onclick="tab('crm')">👥 CRM</button>
-<button data-tab="conversations" onclick="tab('conversations')">💬 Conversations</button><button data-tab="orders" onclick="tab('orders')">🛒 Commandes</button><button data-tab="followups" onclick="tab('followups')">🔁 Relances</button><button data-tab="assistant" onclick="tab('assistant')">🤖 Assistant IA</button><button data-tab="settings" onclick="tab('settings')">⚙️ Réglages WhatsApp</button>
+<button data-tab="conversations" onclick="tab('conversations')">💬 Conversations</button><button data-tab="orders" onclick="tab('orders')">🛒 Commandes</button><button data-tab="followups" onclick="tab('followups')">🔁 Relances</button><button data-tab="assistant" onclick="tab('assistant')">🤖 Assistant IA</button><button data-tab="team" onclick="tab('team')">👥 Équipe</button><button data-tab="settings" onclick="tab('settings')">⚙️ Réglages WhatsApp</button>
 </nav>
 
 <section id="dashboardTab">
@@ -119,6 +119,23 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="aiAutoReplyToggle" onchange="toggleAiAutoReply()"> Activer la réponse automatique par IA</label>
 <div id="aiUsagePanel" style="margin-top:14px"></div>
 </div></section>
+
+<section id="teamTab" class="hidden">
+<div class="panel"><h3>Équipe <span class="muted" id="teamCount"></span></h3>
+<div id="teamUsage" style="margin-bottom:12px"></div>
+<div id="teamTable"></div>
+</div>
+<div class="panel"><h3>Ajouter un membre</h3>
+<form class="formgrid" onsubmit="addTeamMember(event)">
+<input id="tName" placeholder="Nom complet" required>
+<input id="tEmail" type="email" placeholder="Email" required>
+<input id="tPassword" type="password" placeholder="Mot de passe (min. 6 caractères)" required>
+<select id="tRole"><option value="admin">Administrateur</option><option value="sales" selected>Commercial</option><option value="viewer">Lecture seule</option></select>
+<div class="full"><button class="btn primary">Ajouter</button></div>
+</form>
+<div id="teamStatus" style="margin-top:10px"></div>
+</div>
+</section>
 
 <section id="settingsTab" class="hidden">
 <div class="panel"><h3>Connexion WhatsApp (Meta Cloud API)</h3>
@@ -256,12 +273,13 @@ async function load() {
 
 function tab(name) {
   document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  ['dashboard','products','crm','assistant','conversations','orders','followups','settings'].forEach(x => $(x+'Tab').classList.toggle('hidden', x !== name));
+  ['dashboard','products','crm','assistant','conversations','orders','followups','team','settings'].forEach(x => $(x+'Tab').classList.toggle('hidden', x !== name));
   if (name === 'products') renderProducts();
   if (name === 'crm') renderCRM();
   if (name === 'conversations') renderConversations();
   if (name === 'orders') renderOrders();
   if (name === 'followups') renderFollowups();
+  if (name === 'team') loadTeam();
   if (name === 'settings') loadWhatsappSettings();
 }
 
@@ -520,6 +538,44 @@ async function deleteFollowup(id){
     await load();
     tab('followups');
   }catch(x){alert(x.message);}
+}
+
+const ROLE_LABELS = { owner:'Propriétaire', admin:'Administrateur', sales:'Commercial', viewer:'Lecture seule' };
+async function loadTeam(){
+  try{
+    const r=await api('/api/users');
+    renderTeam(r.users||[]);
+  }catch(x){ $('teamTable').innerHTML='<div class="error">'+esc(x.message)+'</div>'; }
+}
+function renderTeam(users){
+  $('teamCount').textContent='('+users.length+')';
+  const limit=data.usage?.maxUsers;
+  $('teamUsage').innerHTML = limit==null
+    ? '<span class="badge">✅ Membres illimités avec votre forfait</span>'
+    : '<span class="badge '+(users.length>=limit?'handoff':users.length>=limit-1?'hot':'')+'">'+users.length+' / '+limit+' membre(s) utilisé(s)</span>'
+      + (users.length>=limit ? '<p class="muted" style="margin-top:6px">Limite atteinte pour votre forfait actuel — passez à un forfait supérieur pour ajouter des membres.</p>' : '');
+  $('teamTable').innerHTML = users.length ? '<table><thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Actions</th></tr></thead><tbody>' +
+    users.map(u => '<tr><td><strong>'+esc(u.name)+'</strong></td><td>'+esc(u.email)+'</td><td>'+esc(ROLE_LABELS[u.role]||u.role)+'</td>' +
+      '<td><div class="actions"><button class="btn danger" onclick="deleteTeamMember(\''+u.id+'\',\''+esc(u.name).replace(/'/g,"\\'")+'\')">Retirer</button></div></td></tr>').join('') +
+    '</tbody></table>' : '<div class="empty">Aucun membre.</div>';
+}
+async function addTeamMember(e){
+  e.preventDefault();
+  const status=$('teamStatus');
+  status.innerHTML='Ajout en cours…';
+  try{
+    await api('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      name:$('tName').value.trim(), email:$('tEmail').value.trim(), password:$('tPassword').value, role:$('tRole').value
+    })});
+    $('tName').value=''; $('tEmail').value=''; $('tPassword').value='';
+    status.innerHTML='<span class="badge">✅ Membre ajouté.</span>';
+    await loadTeam();
+  }catch(x){ status.innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
+}
+async function deleteTeamMember(id,name){
+  if(!confirm('Retirer '+name+' de l\'équipe ?')) return;
+  try{ await api('/api/users/'+id,{method:'DELETE'}); await loadTeam(); }
+  catch(x){ alert(x.message); }
 }
 
 async function loadWhatsappSettings(){

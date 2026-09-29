@@ -97,7 +97,8 @@ async function dashboard(companyId) {
       aiMessages:aiUsage,
       prospectsThisMonth:prospectsThisMonth.rows[0].n,
       prospectsLimit:limits.maxProspectsPerMonth,
-      autoFollowups:limits.autoFollowups
+      autoFollowups:limits.autoFollowups,
+      maxUsers:limits.maxUsers
     },
     metrics:{
       prospects:ps.length,
@@ -624,6 +625,47 @@ async function handler(req,res) {
   if(productMatch && req.method==='DELETE') {
     const r=await query('DELETE FROM products WHERE id=$1 AND company_id=$2 RETURNING id',[productMatch[1],companyId]);
     if(!r.rows[0]) return json(res,404,{error:'Produit introuvable'});
+    return json(res,200,{ok:true});
+  }
+
+  if(req.method==='GET'&&u.pathname==='/api/users') {
+    const r=await query('SELECT id,name,email,role,created_at AS "createdAt" FROM users WHERE company_id=$1 ORDER BY created_at',[companyId]);
+    return json(res,200,{users:r.rows});
+  }
+  if(req.method==='POST'&&u.pathname==='/api/users') {
+    const b=await body(req);
+    if(!b.name||!b.email||!b.password) return json(res,400,{error:'Nom, email et mot de passe requis'});
+    if(String(b.password).length<6) return json(res,400,{error:'Le mot de passe doit contenir au moins 6 caractères'});
+    const s=await query('SELECT plan FROM subscriptions WHERE company_id=$1',[companyId]);
+    const limits=planLimits(s.rows[0]?.plan);
+    if(limits.maxUsers!=null) {
+      const count=await query('SELECT COUNT(*)::int AS n FROM users WHERE company_id=$1',[companyId]);
+      if(count.rows[0].n>=limits.maxUsers) return json(res,403,{error:"Limite de "+limits.maxUsers+" utilisateur(s) atteinte pour le forfait "+(s.rows[0]?.plan||'actuel')+". Passez à un forfait supérieur pour ajouter des membres."});
+    }
+    const email=String(b.email).trim().toLowerCase();
+    const existing=await query('SELECT id FROM users WHERE email=$1',[email]);
+    if(existing.rows[0]) return json(res,409,{error:'Cet email est déjà utilisé'});
+    const role=['owner','admin','sales','viewer'].includes(b.role) ? b.role : 'sales';
+    const h=hashPassword(String(b.password));
+    const r=await query('INSERT INTO users(company_id,email,name,role,password_hash,password_salt) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,name,email,role,created_at AS "createdAt"',[companyId,email,String(b.name).trim(),role,h.hash,h.salt]);
+    return json(res,201,{user:r.rows[0]});
+  }
+  const userMatch=u.pathname.match(/^\/api\/users\/([0-9a-f-]+)$/i);
+  if(userMatch && (req.method==='PUT'||req.method==='PATCH')) {
+    const b=await body(req);
+    const role=['owner','admin','sales','viewer'].includes(b.role) ? b.role : null;
+    if(!role && !b.name) return json(res,400,{error:'Rien à mettre à jour'});
+    const r=await query('UPDATE users SET name=COALESCE(NULLIF($1,\'\'),name),role=COALESCE($2,role) WHERE id=$3 AND company_id=$4 RETURNING id,name,email,role,created_at AS "createdAt"',[b.name||null,role,userMatch[1],companyId]);
+    if(!r.rows[0]) return json(res,404,{error:'Utilisateur introuvable'});
+    return json(res,200,{user:r.rows[0]});
+  }
+  if(userMatch && req.method==='DELETE') {
+    if(userMatch[1]===session.userId) return json(res,400,{error:'Vous ne pouvez pas vous supprimer vous-même'});
+    const count=await query('SELECT COUNT(*)::int AS n FROM users WHERE company_id=$1',[companyId]);
+    if(count.rows[0].n<=1) return json(res,400,{error:"Impossible de supprimer le dernier utilisateur de l'entreprise"});
+    const r=await query('DELETE FROM users WHERE id=$1 AND company_id=$2 RETURNING id',[userMatch[1],companyId]);
+    if(!r.rows[0]) return json(res,404,{error:'Utilisateur introuvable'});
+    await query('DELETE FROM sessions WHERE user_id=$1',[userMatch[1]]).catch(()=>{}); // révoque ses sessions actives
     return json(res,200,{ok:true});
   }
 
