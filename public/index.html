@@ -14,6 +14,8 @@ h1{margin:0;font-size:24px}.tag{opacity:.75;font-size:13px}.wrap{max-width:1180p
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 8px;border-bottom:1px solid #edf0f5;font-size:14px}th{color:#687386;font-size:12px;text-transform:uppercase}
 .actions{display:flex;gap:6px;flex-wrap:wrap}.badge{padding:5px 9px;border-radius:20px;background:#e7f7ee;color:#18794e;font-size:12px;font-weight:700;display:inline-block}.hot{background:#fff0e0;color:#b54708}.cold{background:#eef2f6;color:#536071}.handoff{background:#fee4e2;color:#b42318}
 .auto{background:#eef2ff;color:#3538cd}.manual{background:#eef2f6;color:#536071}.overdue{background:#fee4e2;color:#b42318}.cancelledRow{opacity:.55}.cancelledRow td{text-decoration:line-through}.cancelledRow td:last-child{text-decoration:none}
+.usageBar{height:10px;border-radius:6px;background:#eef2f6;overflow:hidden;margin-top:6px}.usageBar>div{height:100%;border-radius:6px;background:#18794e;transition:width .3s}.usageBar.orange>div{background:#b54708}.usageBar.red>div{background:#b42318}
+.usageBlink{animation:usageBlink 1s step-start infinite}@keyframes usageBlink{50%{opacity:.35}}
 form.formgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px}.formgrid .full{grid-column:1/-1}
 input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px;background:white}.chat{display:flex;gap:8px}.chat input{flex:1}.reply{margin-top:12px;background:#f0f4ff;padding:13px;border-radius:10px;min-height:22px}
 .login{max-width:430px;margin:45px auto}.login h2{margin-top:0}.login input{display:block;margin:10px 0}.error{color:#b42318;margin-top:10px}.success{color:#18794e;margin-top:10px}.hidden{display:none}.empty{padding:28px;text-align:center;color:#687386}
@@ -115,6 +117,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <div class="panel"><h3>Réponse automatique par IA</h3>
 <p class="muted">Quand cette option est activée, VENDIA répond automatiquement aux messages WhatsApp entrants 24h/24, en s'appuyant sur votre catalogue et le ton défini pour votre entreprise. Les demandes sensibles (réclamation, litige, ou demande explicite d'un conseiller) ne sont jamais traitées par l'IA : un accusé de réception est envoyé au client et l'action reste visible dans l'onglet Relances pour un traitement humain.</p>
 <label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="aiAutoReplyToggle" onchange="toggleAiAutoReply()"> Activer la réponse automatique par IA</label>
+<div id="aiUsagePanel" style="margin-top:14px"></div>
 </div></section>
 
 <section id="settingsTab" class="hidden">
@@ -263,11 +266,38 @@ function tab(name) {
 }
 
 function renderAll() {
-  renderDashboard(); renderProducts(); renderCRM(); renderConversations(); renderOrders(); renderFollowups(); populateProspectSelects(); initAiAutoReplyToggle();
+  renderDashboard(); renderProducts(); renderCRM(); renderConversations(); renderOrders(); renderFollowups(); populateProspectSelects(); initAiAutoReplyToggle(); renderAiUsagePanel();
 }
 function initAiAutoReplyToggle() {
   const el=$('aiAutoReplyToggle'); if(!el) return;
   el.checked = data.company?.aiAutoReplyEnabled !== false;
+}
+// Compteur de quota de réponses IA (forfaits limités type Starter) : barre +
+// badge qui passe au orange sous 50 restantes puis au rouge clignotant sous
+// 15, plus un message d'avertissement au franchissement des paliers clés
+// (moitié du quota, 20, 10, 5 puis épuisé).
+function renderAiUsagePanel() {
+  const el=$('aiUsagePanel'); if(!el) return;
+  const u=data.usage?.aiMessages;
+  if(!u) { el.innerHTML=''; return; }
+  if(u.limit==null) {
+    el.innerHTML='<span class="badge">✅ Réponses IA illimitées avec votre forfait</span>';
+    return;
+  }
+  const pct=u.limit>0 ? Math.max(0,Math.min(100,(u.remaining/u.limit)*100)) : 0;
+  let barClass='', badgeClass='badge', blink='';
+  if(u.remaining<=15) { barClass='red'; badgeClass='badge handoff'; blink=' usageBlink'; }
+  else if(u.remaining<=50) { barClass='orange'; badgeClass='badge hot'; }
+  let banner='';
+  if(u.remaining<=0) banner="🚫 Quota de réponses IA épuisé pour ce mois-ci. Les nouveaux messages ne recevront plus de réponse automatique jusqu'au renouvellement — envisagez un forfait supérieur si besoin.";
+  else if(u.remaining<=5) banner='🔴 Il ne vous reste plus que '+u.remaining+' réponse'+(u.remaining>1?'s':'')+' IA ce mois-ci !';
+  else if(u.remaining<=10) banner='⚠️ Il ne vous reste plus que 10 réponses IA ce mois-ci.';
+  else if(u.remaining<=20) banner='⚠️ Attention, il ne vous reste que 20 réponses IA ce mois-ci.';
+  else if(u.remaining<=Math.floor(u.limit/2)) banner='⚠️ Vous avez atteint la moitié de votre quota mensuel de réponses IA ('+u.remaining+'/'+u.limit+' restantes).';
+  el.innerHTML =
+    '<span class="'+badgeClass+blink+'">'+u.remaining+' / '+u.limit+' réponses IA restantes ce mois-ci</span>'+
+    '<div class="usageBar '+barClass+'"><div style="width:'+pct+'%"></div></div>'+
+    (banner ? '<p class="muted" style="margin-top:8px">'+esc(banner)+'</p>' : '');
 }
 async function toggleAiAutoReply() {
   const enabled=$('aiAutoReplyToggle').checked;
@@ -298,7 +328,8 @@ function renderDashboard() {
     '<div class="actions"><span class="badge">🔥 Chauds: '+(m.hot||0)+'</span>' +
     '<span class="badge hot">🟠 Tièdes: '+(m.warm||0)+'</span>' +
     '<span class="badge cold">❄️ Froids: '+(m.cold||0)+'</span></div>' +
-    '<p class="muted">Produits: '+(m.products||0)+' · Stock faible: '+(m.lowStock||0)+'</p>';
+    '<p class="muted">Produits: '+(m.products||0)+' · Stock faible: '+(m.lowStock||0)+'</p>' +
+    (data.usage ? '<p class="muted">Prospects ce mois : '+data.usage.prospectsThisMonth+(data.usage.prospectsLimit!=null?' / '+data.usage.prospectsLimit:' (illimité)')+'</p>' : '');
   $('recentProducts').innerHTML = (data.products||[]).slice(0,5).map(p =>
     '<div style="padding:10px 0;border-bottom:1px solid #eee"><strong>'+esc(p.name)+'</strong><br>' +
     '<span class="muted">'+money(p.price)+' · Stock: '+p.stock+'</span></div>'

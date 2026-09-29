@@ -79,6 +79,12 @@ async function dashboard(companyId) {
     query('SELECT plan,status,monthly_price AS "monthlyPrice",next_billing_at AS "nextBillingAt" FROM subscriptions WHERE company_id=$1',[companyId])
   ]);
   const ps=prospects.rows, os=orders.rows;
+  const plan=subscription.rows[0]?.plan;
+  const limits=planLimits(plan);
+  const [aiUsage,prospectsThisMonth]=await Promise.all([
+    getAiUsage(companyId,plan),
+    query("SELECT COUNT(*)::int AS n FROM prospects WHERE company_id=$1 AND created_at >= date_trunc('month', now())",[companyId])
+  ]);
   return {
     company:company.rows[0],
     products:products.rows,
@@ -87,6 +93,12 @@ async function dashboard(companyId) {
     conversations:conversations.rows,
     followups:followups.rows,
     subscription:subscription.rows[0],
+    usage:{
+      aiMessages:aiUsage,
+      prospectsThisMonth:prospectsThisMonth.rows[0].n,
+      prospectsLimit:limits.maxProspectsPerMonth,
+      autoFollowups:limits.autoFollowups
+    },
     metrics:{
       prospects:ps.length,
       hot:ps.filter(x=>x.score>=70).length,
@@ -193,6 +205,10 @@ async function cancelAutoFollowups(companyId, prospectId, reason) {
 
 async function syncAutoFollowup(companyId, prospectId, nextAction) {
   if (!companyId || !prospectId || !nextAction) return;
+  const s = await query('SELECT plan FROM subscriptions WHERE company_id=$1',[companyId]);
+  if (!planLimits(s.rows[0]?.plan).autoFollowups) {
+    return cancelAutoFollowups(companyId, prospectId, "Relances automatiques non incluses dans le forfait actuel");
+  }
   const delayMs = AUTO_FOLLOWUP_DELAYS_MS[nextAction.action];
   if (!delayMs) {
     return cancelAutoFollowups(companyId, prospectId, "Action immédiate requise (" + nextAction.action + ") — relance automatique inutile");
@@ -257,6 +273,38 @@ async function sendWhatsAppMessage(company, toPhone, text) {
   } catch (e) {
     return { error: 'Connexion à WhatsApp impossible : ' + e.message };
   }
+}
+
+// Définition des forfaits VENDIA. C'est ici (et uniquement ici) que se
+// décide ce que chaque palier autorise — la table 'subscriptions' ne stocke
+// que le nom du plan choisi par l'entreprise, jamais ses limites : changer
+// une limite ne demande donc qu'une modification de cet objet.
+// aiMessagesLimit / maxProspectsPerMonth / maxUsers = null signifie illimité.
+const PLAN_LIMITS = {
+  Starter:  { monthlyPrice: 10000, maxProspectsPerMonth: 100, maxUsers: 1,    aiAutoReply: true, aiMessagesLimit: 100, autoFollowups: false, prioritySupport: false },
+  Business: { monthlyPrice: 25000, maxProspectsPerMonth: 300, maxUsers: 3,    aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: false },
+  Pro:      { monthlyPrice: 50000, maxProspectsPerMonth: null, maxUsers: null, aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: true  },
+};
+const planLimits = plan => PLAN_LIMITS[plan] || PLAN_LIMITS.Starter;
+
+// Lit (et réinitialise si la période mensuelle glissante est écoulée) le
+// quota de réponses IA d'une entreprise. Pas de tâche de fond nécessaire :
+// la réinitialisation se fait paresseusement, à la prochaine lecture/écriture
+// après l'échéance — comme la purge des sessions expirées plus haut.
+async function getAiUsage(companyId, plan) {
+  const limit = planLimits(plan).aiMessagesLimit;
+  const r = await query('SELECT ai_messages_used AS "used",ai_usage_reset_at AS "resetAt" FROM subscriptions WHERE company_id=$1',[companyId]);
+  let row = r.rows[0] || { used: 0, resetAt: null };
+  if (!row.resetAt || new Date(row.resetAt) <= new Date()) {
+    const newReset = new Date(Date.now() + 30*24*60*60*1000);
+    await query('UPDATE subscriptions SET ai_messages_used=0,ai_usage_reset_at=$1 WHERE company_id=$2',[newReset.toISOString(),companyId]).catch(()=>{});
+    row = { used: 0, resetAt: newReset.toISOString() };
+  }
+  const remaining = limit==null ? null : Math.max(0, limit - row.used);
+  return { used: row.used, limit, remaining, resetAt: row.resetAt };
+}
+async function incrementAiUsage(companyId) {
+  await query('UPDATE subscriptions SET ai_messages_used=ai_messages_used+1 WHERE company_id=$1',[companyId]).catch(()=>{});
 }
 
 // Génère une réponse WhatsApp via l'API Anthropic (Claude), ancrée dans le
@@ -427,7 +475,7 @@ async function handler(req,res) {
           const messages=Array.isArray(value.messages)?value.messages:[];
           console.log('[webhook] change field=%s phoneNumberId=%s messages=%d',change.field,phoneNumberId,messages.length);
           if(!phoneNumberId||!messages.length) continue; // accusés de statut (lu/livré) ou métadonnées seules : rien à faire
-          const c=await query('SELECT id,name,sector,ai_name AS "aiName",ai_tone AS "aiTone",ai_language AS "aiLanguage",ai_rules AS "aiRules",ai_auto_reply_enabled AS "aiAutoReplyEnabled" FROM companies WHERE whatsapp_phone_number_id=$1',[phoneNumberId]);
+          const c=await query('SELECT c.id,c.name,c.sector,c.ai_name AS "aiName",c.ai_tone AS "aiTone",c.ai_language AS "aiLanguage",c.ai_rules AS "aiRules",c.ai_auto_reply_enabled AS "aiAutoReplyEnabled",s.plan AS "plan" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id WHERE c.whatsapp_phone_number_id=$1',[phoneNumberId]);
           const companyRow=c.rows[0];
           const targetCompanyId=companyRow?.id;
           if(!targetCompanyId) { console.error('Webhook WhatsApp: aucune entreprise pour phone_number_id',phoneNumberId); continue; }
@@ -453,16 +501,23 @@ async function handler(req,res) {
             // traite pas le sujet : un accusé de réception est envoyé et la main
             // reste chez l'humain (l'action recommandée reste visible dans
             // l'onglet Relances, comme avant).
-            if(companyRow.aiAutoReplyEnabled!==false) {
+            const limits=planLimits(companyRow.plan);
+            if(companyRow.aiAutoReplyEnabled!==false && limits.aiAutoReply) {
               try {
                 let replyText;
                 if(ingestResult.nextAction?.action==='handoff') {
                   replyText="Merci pour votre message 🙏 Je transmets tout de suite à un membre de notre équipe qui revient vers vous rapidement.";
                 } else {
-                  const prospectRow=ingestResult.prospectId ? (await query('SELECT status,need FROM prospects WHERE id=$1',[ingestResult.prospectId])).rows[0] : null;
-                  const productsRows=(await query('SELECT name,category,price,stock FROM products WHERE company_id=$1 ORDER BY created_at',[targetCompanyId])).rows;
-                  const historyRows=(await query('SELECT direction,body FROM messages WHERE conversation_id=$1 ORDER BY created_at DESC LIMIT 12',[conversationRow.id])).rows.reverse();
-                  replyText=await generateAiReply(companyRow,prospectRow,productsRows,historyRows);
+                  const usage=await getAiUsage(targetCompanyId,companyRow.plan);
+                  if(usage.remaining!==null && usage.remaining<=0) {
+                    console.warn('[ai-reply] quota IA epuise companyId=%s plan=%s',targetCompanyId,companyRow.plan);
+                  } else {
+                    const prospectRow=ingestResult.prospectId ? (await query('SELECT status,need FROM prospects WHERE id=$1',[ingestResult.prospectId])).rows[0] : null;
+                    const productsRows=(await query('SELECT name,category,price,stock FROM products WHERE company_id=$1 ORDER BY created_at',[targetCompanyId])).rows;
+                    const historyRows=(await query('SELECT direction,body FROM messages WHERE conversation_id=$1 ORDER BY created_at DESC LIMIT 12',[conversationRow.id])).rows.reverse();
+                    replyText=await generateAiReply(companyRow,prospectRow,productsRows,historyRows);
+                    if(replyText) await incrementAiUsage(targetCompanyId);
+                  }
                 }
                 if(replyText) await ingestMessage(targetCompanyId,conversationRow.id,conversationRow,{body:replyText,direction:'out'});
               } catch(e) {
@@ -731,6 +786,8 @@ async function ensureMigrations() {
        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
      )`,
     'CREATE INDEX IF NOT EXISTS sessions_expires_idx ON sessions(expires_at)',
+    'ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS ai_messages_used INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS ai_usage_reset_at TIMESTAMPTZ NOT NULL DEFAULT now()',
   ];
   for (const stmt of statements) {
     try { await query(stmt); } catch(e) { console.error('[migrations] echec:',stmt.split('\n')[0],e.message); }

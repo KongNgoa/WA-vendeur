@@ -151,8 +151,14 @@ CREATE TABLE subscriptions (
   provider_subscription_id TEXT,
   started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   next_billing_at TIMESTAMPTZ,
-  cancelled_at TIMESTAMPTZ
+  cancelled_at TIMESTAMPTZ,
+  ai_messages_used INTEGER NOT NULL DEFAULT 0,
+  ai_usage_reset_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Lot "forfaits avec limites" — idempotent. Pour appliquer uniquement cet
+-- ajout sur la base de production existante, utiliser scripts/migrate-add-plan-limits.js.
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS ai_messages_used INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS ai_usage_reset_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
 CREATE TABLE webhook_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
