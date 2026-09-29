@@ -13,6 +13,7 @@ CREATE TABLE companies (
   whatsapp_phone_number_id TEXT,
   whatsapp_access_token TEXT,
   whatsapp_verify_token TEXT,
+  ai_auto_reply_enabled BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 -- Lot "envoi WhatsApp réel" (phase 3, Meta WhatsApp Cloud API) — idempotent pour
@@ -22,6 +23,19 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS whatsapp_phone_number_id TEXT;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS whatsapp_access_token TEXT;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS whatsapp_verify_token TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS companies_whatsapp_phone_idx ON companies(whatsapp_phone_number_id) WHERE whatsapp_phone_number_id IS NOT NULL;
+-- Lot "sessions persistées + réponse IA automatique" — idempotent. Pour
+-- appliquer uniquement cet ajout sur la base de production existante, utiliser
+-- scripts/migrate-add-sessions-and-ai-reply.js.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS ai_auto_reply_enabled BOOLEAN NOT NULL DEFAULT true;
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS sessions_expires_idx ON sessions(expires_at);
 
 CREATE TABLE users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

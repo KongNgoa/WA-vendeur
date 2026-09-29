@@ -111,6 +111,10 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <div class="chat"><button class="btn primary" onclick="ask()">Analyser la demande</button></div>
 <div class="reply" id="reply">Bonjour 👋 Je suis Julie. Posez-moi une question.</div>
 <div id="qualification" style="margin-top:12px"></div>
+</div>
+<div class="panel"><h3>Réponse automatique par IA</h3>
+<p class="muted">Quand cette option est activée, VENDIA répond automatiquement aux messages WhatsApp entrants 24h/24, en s'appuyant sur votre catalogue et le ton défini pour votre entreprise. Les demandes sensibles (réclamation, litige, ou demande explicite d'un conseiller) ne sont jamais traitées par l'IA : un accusé de réception est envoyé au client et l'action reste visible dans l'onglet Relances pour un traitement humain.</p>
+<label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="aiAutoReplyToggle" onchange="toggleAiAutoReply()"> Activer la réponse automatique par IA</label>
 </div></section>
 
 <section id="settingsTab" class="hidden">
@@ -233,6 +237,7 @@ async function login() {
 }
 
 function logout() {
+  api('/api/logout',{method:'POST'}).catch(()=>{});
   token = ''; localStorage.removeItem('wa_token');
   showLogin('Vous êtes déconnecté.');
 }
@@ -258,7 +263,18 @@ function tab(name) {
 }
 
 function renderAll() {
-  renderDashboard(); renderProducts(); renderCRM(); renderConversations(); renderOrders(); renderFollowups(); populateProspectSelects();
+  renderDashboard(); renderProducts(); renderCRM(); renderConversations(); renderOrders(); renderFollowups(); populateProspectSelects(); initAiAutoReplyToggle();
+}
+function initAiAutoReplyToggle() {
+  const el=$('aiAutoReplyToggle'); if(!el) return;
+  el.checked = data.company?.aiAutoReplyEnabled !== false;
+}
+async function toggleAiAutoReply() {
+  const enabled=$('aiAutoReplyToggle').checked;
+  try {
+    await api('/api/settings/ai',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({autoReplyEnabled:enabled})});
+    if(data.company) data.company.aiAutoReplyEnabled=enabled;
+  } catch(x) { alert(x.message); $('aiAutoReplyToggle').checked=!enabled; }
 }
 function populateProspectSelects() {
   ['vProspect','oProspect','fProspect','aiProspect'].forEach(id => {

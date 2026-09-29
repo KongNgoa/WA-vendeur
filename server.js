@@ -7,14 +7,49 @@ import { query, transaction, closeDatabase } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
-const sessions = new Map();
 const DEMO_EMAIL = process.env.DEMO_EMAIL || 'demo@wavendeur.local';
 const DEMO_PASSWORD = process.env.DEMO_PASSWORD || 'demo1234';
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001';
 const json = (res,status,data) => { res.writeHead(status, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY','Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type, Authorization','Access-Control-Allow-Methods':'GET,POST,PUT,PATCH,DELETE,OPTIONS'}); res.end(JSON.stringify(data)); };
 const body = async req => { let s=''; for await (const c of req) s += c; if (s.length > 1000000) throw new Error('Payload trop volumineux'); return s ? JSON.parse(s) : {}; };
+const rawBody = async req => { let s=''; for await (const c of req) s += c; if (s.length > 1000000) throw new Error('Payload trop volumineux'); return s; };
 const hashPassword = (password,salt=crypto.randomBytes(16).toString('hex')) => ({salt,hash:crypto.scryptSync(password,salt,64).toString('hex')});
 const verifyPassword = (password,salt,expected) => crypto.timingSafeEqual(Buffer.from(hashPassword(password,salt).hash,'hex'),Buffer.from(expected,'hex'));
 const token = () => crypto.randomBytes(32).toString('hex');
+
+// Sessions persistées en base (table 'sessions') plutôt qu'en mémoire du
+// process : sans ça, chaque redéploiement (fréquent sur Railway) déconnectait
+// tout le monde instantanément et sans prévenir.
+async function createSession(userId, companyId) {
+  const t = token();
+  await query('INSERT INTO sessions(token,user_id,company_id,expires_at) VALUES($1,$2,$3,now() + interval \'24 hours\')', [t, userId, companyId]);
+  query('DELETE FROM sessions WHERE expires_at < now()').catch(() => {}); // purge opportuniste, pas besoin de cron pour ce volume
+  return t;
+}
+async function getSession(t) {
+  if (!t) return null;
+  const r = await query('SELECT user_id AS "userId",company_id AS "companyId" FROM sessions WHERE token=$1 AND expires_at > now()', [t]);
+  return r.rows[0] || null;
+}
+async function deleteSession(t) {
+  if (!t) return;
+  await query('DELETE FROM sessions WHERE token=$1', [t]).catch(() => {});
+}
+
+// Vérifie que le POST du webhook vient bien de Meta (HMAC-SHA256 du corps
+// brut avec le secret de l'App, comparé en temps constant) plutôt que
+// d'accepter n'importe quelle requête pointant vers cette URL publique.
+// Si META_APP_SECRET n'est pas encore configuré, on laisse passer en journalisant
+// un avertissement (pour ne pas casser le webhook existant avant la mise à jour
+// de la variable d'environnement), mais ça doit être corrigé rapidement.
+function verifyMetaSignature(req, raw) {
+  const secret = process.env.META_APP_SECRET;
+  if (!secret) { console.warn('[webhook] META_APP_SECRET non configuré — vérification de signature désactivée (à corriger)'); return true; }
+  const header = req.headers['x-hub-signature-256'] || '';
+  const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(raw).digest('hex');
+  const a = Buffer.from(header), b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 
 async function ensureDemo() {
   return transaction(async client => {
@@ -35,7 +70,7 @@ async function ensureDemo() {
 
 async function dashboard(companyId) {
   const [company,products,prospects,orders,conversations,followups,subscription] = await Promise.all([
-    query('SELECT id,name,sector,ai_name AS "aiName",ai_tone AS "aiTone" FROM companies WHERE id=$1',[companyId]),
+    query('SELECT id,name,sector,ai_name AS "aiName",ai_tone AS "aiTone",ai_auto_reply_enabled AS "aiAutoReplyEnabled" FROM companies WHERE id=$1',[companyId]),
     query('SELECT id,name,category,price,stock,created_at AS "createdAt" FROM products WHERE company_id=$1 ORDER BY created_at DESC',[companyId]),
     query('SELECT id,name,phone,need,value,score,status,order_intent AS "orderIntent",last_contact AS "lastContact",next_action AS "nextAction",next_action_priority AS "nextActionPriority",next_action_reason AS "nextActionReason",next_action_at AS "nextActionAt",created_at AS "createdAt" FROM prospects WHERE company_id=$1 ORDER BY score DESC,created_at DESC',[companyId]),
     query('SELECT o.id,o.order_number AS number,p.name AS client,o.amount,o.status,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC',[companyId]),
@@ -224,6 +259,61 @@ async function sendWhatsAppMessage(company, toPhone, text) {
   }
 }
 
+// Génère une réponse WhatsApp via l'API Anthropic (Claude), ancrée dans le
+// catalogue et le ton propres à l'entreprise. Ne lève jamais d'exception vers
+// l'appelant : renvoie null si la clé API est absente ou si l'appel échoue
+// (l'appelant journalise et laisse simplement la conversation sans réponse
+// automatique pour ce message — comportement dégradé, jamais bloquant).
+async function generateAiReply(company, prospect, products, history) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) { console.warn('[ai-reply] ANTHROPIC_API_KEY non configuré — réponse automatique désactivée'); return null; }
+
+  const catalogue = (products||[]).length
+    ? products.map(p=>'- '+p.name+(p.category?' ('+p.category+')':'')+' : '+Number(p.price).toLocaleString('fr-FR')+' FCFA, stock '+p.stock).join('\n')
+    : 'Aucun produit renseigné pour le moment — ne propose aucun article précis, demande ce que le client recherche.';
+
+  const systemPrompt = [
+    'Tu es '+(company.aiName||'l\'assistant commercial')+' de l\'entreprise "'+company.name+'"'+(company.sector?' (secteur : '+company.sector+')':'')+', et tu réponds aux clients sur WhatsApp.',
+    'Ton de voix : '+(company.aiTone||'professionnel et chaleureux')+'. Réponds toujours en '+(company.aiLanguage||'français')+'.',
+    company.aiRules ? 'Consignes spécifiques de l\'entreprise à respecter : '+company.aiRules : null,
+    'Catalogue actuel :\n'+catalogue,
+    prospect ? 'Fiche du client en cours — statut commercial : '+(prospect.status||'inconnu')+', besoin exprimé jusqu\'ici : '+(prospect.need||'non précisé')+'.' : null,
+    'Règles impératives :',
+    '- Réponds de façon brève et naturelle, comme un vrai message WhatsApp (1 à 3 phrases courtes, pas de markdown, pas de listes à puces, pas de formule d\'email).',
+    '- N\'invente jamais un prix, un produit ou une disponibilité qui n\'est pas dans le catalogue ci-dessus.',
+    '- Si tu ne peux pas répondre avec certitude, dis que tu vérifies et reviens vers le client, sans inventer de réponse.',
+    '- Ne révèle jamais que tu es une intelligence artificielle, sauf si le client le demande explicitement.',
+  ].filter(Boolean).join('\n\n');
+
+  const raw = (history||[]).filter(m=>m.body && m.body.trim()).map(m=>({role: m.direction==='in'?'user':'assistant', content:m.body}));
+  const messages=[];
+  for (const m of raw) {
+    if (messages.length && messages[messages.length-1].role===m.role) messages[messages.length-1].content += '\n' + m.content;
+    else messages.push({...m});
+  }
+  while (messages.length && messages[0].role!=='user') messages.shift();
+  if (!messages.length || messages[messages.length-1].role!=='user') return null; // rien de neuf à répondre
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'x-api-key':apiKey, 'anthropic-version':'2023-06-01' },
+      body: JSON.stringify({ model: ANTHROPIC_MODEL, max_tokens: 300, system: systemPrompt, messages })
+    });
+    if (!resp.ok) {
+      const errText = await resp.text().catch(()=>'');
+      console.error('[ai-reply] erreur API Anthropic %s: %s', resp.status, errText.slice(0,300));
+      return null;
+    }
+    const data = await resp.json();
+    const text = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('').trim();
+    return text || null;
+  } catch(e) {
+    console.error('[ai-reply] echec appel API Anthropic:', e.message);
+    return null;
+  }
+}
+
 // N'envoie réellement que si (a) l'entreprise a configuré ses identifiants
 // WhatsApp, (b) la conversation est un fil WhatsApp avec un numéro connu.
 // Sinon, renvoie null (aucun envoi, comportement inchangé).
@@ -295,8 +385,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.6.0',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.6.0'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.7.0',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.7.0'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
 
@@ -321,7 +411,12 @@ async function handler(req,res) {
     // erreur de traitement sans jamais la répercuter dans la réponse HTTP.
     console.log('[webhook] POST received, content-length=%s',req.headers['content-length']);
     try {
-      const b=await body(req);
+      const raw=await rawBody(req);
+      if(!verifyMetaSignature(req,raw)) {
+        console.error('[webhook] signature invalide — requête rejetée');
+        res.writeHead(403,{'Content-Type':'text/plain'}); return res.end('Forbidden');
+      }
+      const b=raw?JSON.parse(raw):{};
       const entries=Array.isArray(b.entry)?b.entry:[];
       console.log('[webhook] POST parsed — %d entry(ies)',entries.length);
       for(const entry of entries) {
@@ -332,8 +427,9 @@ async function handler(req,res) {
           const messages=Array.isArray(value.messages)?value.messages:[];
           console.log('[webhook] change field=%s phoneNumberId=%s messages=%d',change.field,phoneNumberId,messages.length);
           if(!phoneNumberId||!messages.length) continue; // accusés de statut (lu/livré) ou métadonnées seules : rien à faire
-          const c=await query('SELECT id FROM companies WHERE whatsapp_phone_number_id=$1',[phoneNumberId]);
-          const targetCompanyId=c.rows[0]?.id;
+          const c=await query('SELECT id,name,sector,ai_name AS "aiName",ai_tone AS "aiTone",ai_language AS "aiLanguage",ai_rules AS "aiRules",ai_auto_reply_enabled AS "aiAutoReplyEnabled" FROM companies WHERE whatsapp_phone_number_id=$1',[phoneNumberId]);
+          const companyRow=c.rows[0];
+          const targetCompanyId=companyRow?.id;
           if(!targetCompanyId) { console.error('Webhook WhatsApp: aucune entreprise pour phone_number_id',phoneNumberId); continue; }
           console.log('[webhook] routing %d message(s) to companyId=%s',messages.length,targetCompanyId);
           const contact=(value.contacts||[])[0];
@@ -348,7 +444,31 @@ async function handler(req,res) {
               const created=await query('INSERT INTO conversations(company_id,prospect_id,channel,external_contact) VALUES($1,NULL,\'whatsapp\',$2) RETURNING id,prospect_id AS "prospectId",external_contact AS phone,channel',[targetCompanyId,from]);
               conversationRow=created.rows[0];
             }
-            await ingestMessage(targetCompanyId,conversationRow.id,conversationRow,{body:text,direction:'in',phone:from,name:contactName,providerMessageId:msg.id||null});
+            const ingestResult=await ingestMessage(targetCompanyId,conversationRow.id,conversationRow,{body:text,direction:'in',phone:from,name:contactName,providerMessageId:msg.id||null});
+
+            // Réponse automatique par IA (24h/24) : déclenchée uniquement sur un
+            // message WhatsApp entrant réel — jamais sur un envoi sortant — donc
+            // aucun risque de boucle. Si un transfert humain est requis
+            // (réclamation, litige, demande explicite d'un conseiller), l'IA ne
+            // traite pas le sujet : un accusé de réception est envoyé et la main
+            // reste chez l'humain (l'action recommandée reste visible dans
+            // l'onglet Relances, comme avant).
+            if(companyRow.aiAutoReplyEnabled!==false) {
+              try {
+                let replyText;
+                if(ingestResult.nextAction?.action==='handoff') {
+                  replyText="Merci pour votre message 🙏 Je transmets tout de suite à un membre de notre équipe qui revient vers vous rapidement.";
+                } else {
+                  const prospectRow=ingestResult.prospectId ? (await query('SELECT status,need FROM prospects WHERE id=$1',[ingestResult.prospectId])).rows[0] : null;
+                  const productsRows=(await query('SELECT name,category,price,stock FROM products WHERE company_id=$1 ORDER BY created_at',[targetCompanyId])).rows;
+                  const historyRows=(await query('SELECT direction,body FROM messages WHERE conversation_id=$1 ORDER BY created_at DESC LIMIT 12',[conversationRow.id])).rows.reverse();
+                  replyText=await generateAiReply(companyRow,prospectRow,productsRows,historyRows);
+                }
+                if(replyText) await ingestMessage(targetCompanyId,conversationRow.id,conversationRow,{body:replyText,direction:'out'});
+              } catch(e) {
+                console.error('[ai-reply] echec reponse automatique companyId=%s conversationId=%s erreur=%s',targetCompanyId,conversationRow.id,e.message);
+              }
+            }
           }
         }
       }
@@ -365,17 +485,28 @@ async function handler(req,res) {
     const r=await query('SELECT u.id,u.name,u.email,u.company_id,u.password_hash,u.password_salt,c.name AS company_name FROM users u JOIN companies c ON c.id=u.company_id WHERE u.email=$1',[b.email]);
     const user=r.rows[0];
     if(!user||!verifyPassword(String(b.password||''),user.password_salt,user.password_hash)) return json(res,401,{error:'Identifiants incorrects'});
-    const t=token(); sessions.set(t,{userId:user.id,companyId:user.company_id,expires:Date.now()+86400000});
+    const t=await createSession(user.id,user.company_id);
     return json(res,200,{token:t,user:{id:user.id,name:user.name,email:user.email,companyId:user.company_id,company:user.company_name}});
   }
 
+  if(req.method==='POST'&&u.pathname==='/api/logout') {
+    await deleteSession((req.headers.authorization||'').replace(/^Bearer\s+/i,''));
+    return json(res,200,{ok:true});
+  }
+
   const auth=(req.headers.authorization||'').replace(/^Bearer\s+/i,'');
-  const session=sessions.get(auth);
-  if(!session||session.expires<Date.now()) return json(res,401,{error:'Authentification requise'});
+  const session=await getSession(auth);
+  if(!session) return json(res,401,{error:'Authentification requise'});
   const companyId=session.companyId;
 
   if(req.method==='GET'&&u.pathname==='/api/bootstrap') return json(res,200,await dashboard(companyId));
   if(req.method==='GET'&&u.pathname==='/api/dashboard') return json(res,200,await dashboard(companyId));
+
+  if(req.method==='PATCH'&&u.pathname==='/api/settings/ai') {
+    const b=await body(req);
+    await query('UPDATE companies SET ai_auto_reply_enabled=$1 WHERE id=$2',[Boolean(b.autoReplyEnabled),companyId]);
+    return json(res,200,{ok:true});
+  }
 
   if(req.method==='GET'&&u.pathname==='/api/settings/whatsapp') {
     let c=await query('SELECT whatsapp_phone_number_id AS "phoneNumberId",whatsapp_access_token AS "accessToken",whatsapp_verify_token AS "verifyToken" FROM companies WHERE id=$1',[companyId]);
@@ -587,5 +718,5 @@ async function handler(req,res) {
 }
 
 const server=http.createServer((req,res)=>handler(req,res).catch(e=>{console.error(e);json(res,500,{error:'Erreur serveur'});}));
-server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.6.0 listening on ${PORT}`));
+server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.7.0 listening on ${PORT}`));
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});
