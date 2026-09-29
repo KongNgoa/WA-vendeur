@@ -387,7 +387,7 @@ function renderConversations(){
   const list=$('conversationList');
   list.innerHTML=data.conversations.length
     ? data.conversations.map(c=>'<div class="panel" style="box-shadow:none;border:1px solid #edf0f5"><strong>'+esc(c.prospect||'Contact')+'</strong> · '+esc(c.phone||'—')+'<div class="muted">'+esc(c.channel||'whatsapp')+'</div>'+
-      (c.messages||[]).map(m=>'<div style="padding:8px;margin-top:6px;background:'+(m.direction==='in'?'#f5f7fb':'#f0f4ff')+';border-radius:8px"><b>'+(m.direction==='in'?'Client':'VENDIA')+':</b> '+esc(m.body)+'</div>').join('')+
+      (c.messages||[]).map(m=>'<div style="padding:8px;margin-top:6px;background:'+(m.direction==='in'?'#f5f7fb':'#f0f4ff')+';border-radius:8px"><b>'+(m.direction==='in'?'Client':'VENDIA')+':</b> '+esc(m.body)+(m.providerError?'<div style="color:#c0392b;font-size:.85em;margin-top:4px">⚠ Échec envoi WhatsApp : '+esc(m.providerError)+'</div>':'')+'</div>').join('')+
       '<form onsubmit="sendMessage(event,\''+c.id+'\')" class="conversation-form" style="display:flex;gap:8px;margin-top:10px"><input placeholder="Répondre au client" required><button class="btn primary">Envoyer</button></form></div>').join('')
     : '<div class="empty">Aucune conversation.</div>';
 }

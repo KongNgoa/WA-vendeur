@@ -284,6 +284,7 @@ async function ingestMessage(companyId, conversationId, conv, b) {
   } else if (direction==='out') {
     const sendResult=await maybeSendWhatsApp(companyId,conv,text);
     if(sendResult) {
+      if(sendResult.error) console.error('[whatsapp-send] echec envoi companyId=%s conversationId=%s erreur=%s',companyId,conversationId,sendResult.error);
       const updated=await query('UPDATE messages SET provider_message_id=COALESCE($1,provider_message_id),provider_error=$2 WHERE id=$3 RETURNING provider_message_id AS "providerMessageId",provider_error AS "providerError"',[sendResult.providerMessageId||null,sendResult.error||null,messageRow.id]);
       Object.assign(messageRow,updated.rows[0]);
     }
@@ -524,7 +525,7 @@ async function handler(req,res) {
   }
   if(req.method==='GET'&&u.pathname==='/api/conversations') {
     const r=await query(`SELECT c.id,c.channel,c.external_contact AS phone,c.prospect_id AS "prospectId",p.name AS prospect, c.created_at AS "createdAt",
-      COALESCE(json_agg(json_build_object('id',m.id,'direction',m.direction,'body',m.body,'createdAt',m.created_at) ORDER BY m.created_at) FILTER (WHERE m.id IS NOT NULL),'[]') AS messages
+      COALESCE(json_agg(json_build_object('id',m.id,'direction',m.direction,'body',m.body,'createdAt',m.created_at,'providerError',m.provider_error) ORDER BY m.created_at) FILTER (WHERE m.id IS NOT NULL),'[]') AS messages
       FROM conversations c LEFT JOIN prospects p ON p.id=c.prospect_id LEFT JOIN messages m ON m.conversation_id=c.id
       WHERE c.company_id=$1 GROUP BY c.id,p.name ORDER BY MAX(m.created_at) DESC NULLS LAST,c.created_at DESC`,[companyId]);
     return json(res,200,{conversations:r.rows});
