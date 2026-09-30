@@ -38,4 +38,9 @@ Rapport quotidien (20h, heure du Cameroun) envoyé par email à chaque administr
 - **Le testeur "Assistant commercial IA" utilise désormais le vrai moteur Claude** (comme sur WhatsApp) quand `ANTHROPIC_API_KEY` est configurée, au lieu d'une réponse de secours à mots-clés — un badge indique clairement quel moteur a répondu, pratique pour vérifier qu'une clé fonctionne sans passer par WhatsApp.
 - **Logo VENDIA intégré** : favicon, icône d'app et en-tête des 4 pages publiques, avec la palette de couleurs de la marque (bleu → vert en dégradé, fond marine) reprise pour les boutons principaux et onglets actifs.
 
+## Interface bilingue et IA multilingue (1.10.3)
+- **Tableau de bord entreprise (`/`) disponible en français et en anglais**, avec un sélecteur FR/EN dans l'en-tête (préférence mémorisée sur l'appareil). Toute l'interface visible — navigation, formulaires, tableaux, statuts, messages — est traduite ; les valeurs enregistrées en base (statuts, etc.) restent en français en interne pour ne rien casser côté serveur, seul l'affichage change.
+- **Les réponses de l'IA s'adaptent automatiquement à la langue du client** : l'assistant détecte la langue du dernier message reçu sur WhatsApp (français, anglais, ou autre) et répond dans cette même langue, au lieu d'imposer une langue fixe. La langue configurée dans "Personnalité de l'IA" ne sert plus que de repli si la langue du message est ambiguë.
+- Le super-admin (`/superadmin.html`), la page d'inscription (`/signup.html`) et la politique de confidentialité restent en français pour l'instant (usage interne / à traduire dans une prochaine étape si besoin).
+
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.

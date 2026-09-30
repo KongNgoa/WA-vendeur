@@ -25,191 +25,192 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 8px
 form.formgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px}.formgrid .full{grid-column:1/-1}
 input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px;background:white}.chat{display:flex;gap:8px}.chat input{flex:1}.reply{margin-top:12px;background:#f0f4ff;padding:13px;border-radius:10px;min-height:22px}
 .login{max-width:430px;margin:45px auto}.login h2{margin-top:0}.login input{display:block;margin:10px 0}.error{color:#b42318;margin-top:10px}.success{color:#18794e;margin-top:10px}.hidden{display:none}.empty{padding:28px;text-align:center;color:#687386}
+.langSwitch{display:flex;border:1px solid #ffffff33;border-radius:8px;overflow:hidden}.langSwitch button{border:0;background:transparent;color:#fff;opacity:.6;padding:6px 10px;font-weight:700;font-size:12px;cursor:pointer;border-radius:0}.langSwitch button.active{opacity:1;background:#ffffff26}
 @media(max-width:800px){.stats{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}form.formgrid{grid-template-columns:1fr}.hero h2{font-size:25px}header{padding:15px 18px}}
 </style>
 </head>
 <body>
-<header><div class="brand"><img src="assets/logo-mark-112.png" alt="VENDIA"><div><h1>VENDIA <span id="companyNameTag" class="tag"></span></h1><div class="tag">Le commercial IA qui travaille pour vous 24h/24</div></div></div><div class="actions"><span class="badge">BÊTA</span><button class="btn" style="margin-left:8px" onclick="logout()">Déconnexion</button></div></header>
+<header><div class="brand"><img src="assets/logo-mark-112.png" alt="VENDIA"><div><h1>VENDIA <span id="companyNameTag" class="tag"></span></h1><div class="tag" data-i18n="tagline">Le commercial IA qui travaille pour vous 24h/24</div></div></div><div class="actions" style="align-items:center"><div class="langSwitch" id="langSwitch"><button data-lang="fr" onclick="setLang('fr')">FR</button><button data-lang="en" onclick="setLang('en')">EN</button></div><span class="badge" data-i18n="beta_badge">BÊTA</span><button class="btn" style="margin-left:8px" onclick="logout()" data-i18n="logout_btn">Déconnexion</button></div></header>
 <main class="wrap">
 <section id="login" class="login">
-<h2>Connexion</h2><p class="muted">Connectez-vous pour accéder à votre espace commercial.</p>
-<input id="email" type="email" value="demo@wavendeur.local" placeholder="Email"><input id="password" type="password" value="demo1234" placeholder="Mot de passe">
-<button class="btn primary" onclick="login()">Se connecter</button>
-<div style="margin-top:10px;display:flex;justify-content:space-between"><a href="#" onclick="showForgotPassword(event)" class="muted">Mot de passe oublié ?</a><a href="/signup.html" class="muted">Créer un compte</a></div>
+<h2 data-i18n="login_title">Connexion</h2><p class="muted" data-i18n="login_subtitle">Connectez-vous pour accéder à votre espace commercial.</p>
+<input id="email" type="email" value="demo@wavendeur.local" placeholder="Email" data-i18n-placeholder="placeholder_email"><input id="password" type="password" value="demo1234" placeholder="Mot de passe" data-i18n-placeholder="placeholder_password">
+<button class="btn primary" onclick="login()" data-i18n="login_btn">Se connecter</button>
+<div style="margin-top:10px;display:flex;justify-content:space-between"><a href="#" onclick="showForgotPassword(event)" class="muted" data-i18n="forgot_password_link">Mot de passe oublié ?</a><a href="/signup.html" class="muted" data-i18n="create_account_link">Créer un compte</a></div>
 <div id="loginMsg"></div>
 </section>
 
 <section id="forgotPassword" class="login hidden">
-<h2>Mot de passe oublié</h2><p class="muted">Indiquez votre email : si un compte existe, un lien de réinitialisation valable 1 heure vous sera envoyé.</p>
-<input id="forgotEmail" type="email" placeholder="Email">
-<button class="btn primary" onclick="submitForgotPassword()">Envoyer le lien</button>
-<div style="margin-top:10px"><a href="#" onclick="showLogin()" class="muted">Retour à la connexion</a></div>
+<h2 data-i18n="forgot_title">Mot de passe oublié</h2><p class="muted" data-i18n="forgot_subtitle">Indiquez votre email : si un compte existe, un lien de réinitialisation valable 1 heure vous sera envoyé.</p>
+<input id="forgotEmail" type="email" placeholder="Email" data-i18n-placeholder="placeholder_email">
+<button class="btn primary" onclick="submitForgotPassword()" data-i18n="forgot_send_btn">Envoyer le lien</button>
+<div style="margin-top:10px"><a href="#" onclick="showLogin()" class="muted" data-i18n="back_to_login">Retour à la connexion</a></div>
 <div id="forgotMsg" style="margin-top:10px"></div>
 </section>
 
 <section id="resetPassword" class="login hidden">
-<h2>Nouveau mot de passe</h2><p class="muted">Choisissez un nouveau mot de passe (6 caractères minimum).</p>
-<input id="resetPasswordInput" type="password" placeholder="Nouveau mot de passe">
-<button class="btn primary" onclick="submitResetPassword()">Enregistrer</button>
+<h2 data-i18n="reset_title">Nouveau mot de passe</h2><p class="muted" data-i18n="reset_subtitle">Choisissez un nouveau mot de passe (6 caractères minimum).</p>
+<input id="resetPasswordInput" type="password" placeholder="Nouveau mot de passe" data-i18n-placeholder="placeholder_new_password">
+<button class="btn primary" onclick="submitResetPassword()" data-i18n="save_btn">Enregistrer</button>
 <div id="resetMsg" style="margin-top:10px"></div>
 </section>
 
 <section id="app" class="hidden">
-<div class="hero"><h2>Votre entreprise gagne un commercial IA.</h2><p class="muted">Pilotez vos produits, prospects et performances depuis un seul espace.</p></div>
+<div class="hero"><h2 data-i18n="hero_title">Votre entreprise gagne un commercial IA.</h2><p class="muted" data-i18n="hero_subtitle">Pilotez vos produits, prospects et performances depuis un seul espace.</p></div>
 <nav class="nav">
-<button class="active" data-tab="dashboard" onclick="tab('dashboard')">📊 Tableau de bord</button>
-<button data-tab="products" onclick="tab('products')">📦 Produits</button>
-<button data-tab="crm" onclick="tab('crm')">👥 CRM</button>
-<button data-tab="conversations" onclick="tab('conversations')">💬 Conversations</button><button data-tab="orders" onclick="tab('orders')">🛒 Commandes</button><button data-tab="followups" onclick="tab('followups')">🔁 Relances</button><button data-tab="assistant" onclick="tab('assistant')">🤖 Assistant IA</button><button data-tab="team" onclick="tab('team')">👥 Équipe</button><button data-tab="settings" onclick="tab('settings')">⚙️ Réglages WhatsApp</button>
+<button class="active" data-tab="dashboard" onclick="tab('dashboard')">📊 <span data-i18n="nav_dashboard">Tableau de bord</span></button>
+<button data-tab="products" onclick="tab('products')">📦 <span data-i18n="nav_products">Produits</span></button>
+<button data-tab="crm" onclick="tab('crm')">👥 <span data-i18n="nav_crm">CRM</span></button>
+<button data-tab="conversations" onclick="tab('conversations')">💬 <span data-i18n="nav_conversations">Conversations</span></button><button data-tab="orders" onclick="tab('orders')">🛒 <span data-i18n="nav_orders">Commandes</span></button><button data-tab="followups" onclick="tab('followups')">🔁 <span data-i18n="nav_followups">Relances</span></button><button data-tab="assistant" onclick="tab('assistant')">🤖 <span data-i18n="nav_assistant">Assistant IA</span></button><button data-tab="team" onclick="tab('team')">👥 <span data-i18n="nav_team">Équipe</span></button><button data-tab="settings" onclick="tab('settings')">⚙️ <span data-i18n="nav_settings">Réglages WhatsApp</span></button>
 </nav>
 
 <section id="dashboardTab">
 <div class="stats">
-<div class="stat"><div class="muted">Prospects</div><div class="num" id="mProspects">0</div></div>
-<div class="stat"><div class="muted">Prospects chauds</div><div class="num" id="mHot">0</div></div>
-<div class="stat"><div class="muted">Commandes</div><div class="num" id="mOrders">0</div></div>
-<div class="stat"><div class="muted">CA commandes</div><div class="num" id="mRevenue">0 FCFA</div></div>
-<div class="stat"><div class="muted">Relances à traiter</div><div class="num" id="mFollowups">0</div></div>
+<div class="stat"><div class="muted" data-i18n="stat_prospects">Prospects</div><div class="num" id="mProspects">0</div></div>
+<div class="stat"><div class="muted" data-i18n="stat_hot_prospects">Prospects chauds</div><div class="num" id="mHot">0</div></div>
+<div class="stat"><div class="muted" data-i18n="nav_orders">Commandes</div><div class="num" id="mOrders">0</div></div>
+<div class="stat"><div class="muted" data-i18n="stat_revenue">CA commandes</div><div class="num" id="mRevenue">0 FCFA</div></div>
+<div class="stat"><div class="muted" data-i18n="stat_followups_due">Relances à traiter</div><div class="num" id="mFollowups">0</div></div>
 </div>
 <div class="grid">
-<div class="panel"><h3>État commercial</h3><div id="commercialState"></div></div>
-<div class="panel"><h3>Catalogue récent</h3><div id="recentProducts"></div></div>
+<div class="panel"><h3 data-i18n="panel_commercial_state">État commercial</h3><div id="commercialState"></div></div>
+<div class="panel"><h3 data-i18n="panel_recent_catalog">Catalogue récent</h3><div id="recentProducts"></div></div>
 </div>
 </section>
 
 <section id="productsTab" class="hidden">
-<div class="panel"><h3>Ajouter un produit</h3>
+<div class="panel"><h3 data-i18n="products_add_title">Ajouter un produit</h3>
 <form class="formgrid" onsubmit="saveProduct(event)">
-<input id="pName" placeholder="Nom du produit" required><input id="pCategory" placeholder="Catégorie">
-<input id="pPrice" type="number" min="0" placeholder="Prix (FCFA)" required><input id="pStock" type="number" min="0" placeholder="Stock" value="0">
-<div class="full"><button class="btn primary">Ajouter au catalogue</button></div></form>
+<input id="pName" placeholder="Nom du produit" required data-i18n-placeholder="placeholder_product_name"><input id="pCategory" placeholder="Catégorie" data-i18n-placeholder="placeholder_category">
+<input id="pPrice" type="number" min="0" placeholder="Prix (FCFA)" required data-i18n-placeholder="placeholder_price"><input id="pStock" type="number" min="0" placeholder="Stock" value="0" data-i18n-placeholder="placeholder_stock">
+<div class="full"><button class="btn primary" data-i18n="btn_add_to_catalog">Ajouter au catalogue</button></div></form>
 </div>
-<div class="panel"><h3>Catalogue <span class="muted" id="productCount"></span></h3><div id="productTable"></div></div>
+<div class="panel"><h3 data-i18n="products_catalog_title">Catalogue</h3> <span class="muted" id="productCount"></span><div id="productTable"></div></div>
 </section>
 
 <section id="crmTab" class="hidden">
-<div class="panel"><h3>Ajouter un prospect</h3>
+<div class="panel"><h3 data-i18n="crm_add_title">Ajouter un prospect</h3>
 <form class="formgrid" onsubmit="saveProspect(event)">
-<input id="cName" placeholder="Nom du prospect"><input id="cPhone" placeholder="Téléphone">
-<input id="cNeed" placeholder="Besoin"><input id="cValue" type="number" min="0" placeholder="Valeur potentielle (FCFA)">
-<input id="cScore" type="number" min="0" max="100" placeholder="Score 0–100" value="50">
-<select id="cStatus"><option>Nouveau</option><option>À contacter</option><option>En discussion</option><option>Gagné</option><option>Perdu</option></select>
-<div class="full"><button class="btn primary">Ajouter au CRM</button></div></form>
+<input id="cName" placeholder="Nom du prospect" data-i18n-placeholder="placeholder_prospect_name"><input id="cPhone" placeholder="Téléphone" data-i18n-placeholder="placeholder_phone">
+<input id="cNeed" placeholder="Besoin" data-i18n-placeholder="placeholder_need"><input id="cValue" type="number" min="0" placeholder="Valeur potentielle (FCFA)" data-i18n-placeholder="placeholder_value">
+<input id="cScore" type="number" min="0" max="100" placeholder="Score 0–100" value="50" data-i18n-placeholder="placeholder_score">
+<select id="cStatus"><option value="Nouveau" data-i18n="status_nouveau">Nouveau</option><option value="À contacter" data-i18n="status_a_contacter">À contacter</option><option value="En discussion" data-i18n="status_en_discussion">En discussion</option><option value="Gagné" data-i18n="status_gagne">Gagné</option><option value="Perdu" data-i18n="status_perdu">Perdu</option></select>
+<div class="full"><button class="btn primary" data-i18n="btn_add_to_crm">Ajouter au CRM</button></div></form>
 </div>
-<div class="panel"><h3>Prospects <span class="muted" id="crmCount"></span></h3><div id="crmTable"></div></div>
+<div class="panel"><h3 data-i18n="nav_crm">Prospects</h3> <span class="muted" id="crmCount"></span><div id="crmTable"></div></div>
 <div id="prospectModal" style="position:fixed;inset:0;background:#0008;z-index:100;display:none;align-items:center;justify-content:center;padding:18px">
 <div style="background:white;border-radius:18px;max-width:620px;width:100%;max-height:90vh;overflow:auto;padding:22px;box-shadow:0 20px 60px #0004">
-<div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><div><h3 id="modalProspectName" style="margin:0">Prospect</h3><div class="muted" id="modalProspectPhone"></div></div><button class="btn" onclick="closeProspectModal()">Fermer</button></div>
+<div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><div><h3 id="modalProspectName" style="margin:0">Prospect</h3><div class="muted" id="modalProspectPhone"></div></div><button class="btn" onclick="closeProspectModal()" data-i18n="btn_close">Fermer</button></div>
 <div id="modalProspectBody" style="margin-top:18px"></div></div></div>
 </section>
 
 <section id="conversationsTab" class="hidden">
-<div class="panel"><h3>Conversations</h3>
+<div class="panel"><h3 data-i18n="nav_conversations">Conversations</h3>
 <form class="formgrid" onsubmit="saveConversation(event)">
-<input id="vPhone" placeholder="Téléphone / contact" required><select id="vProspect"><option value="">Associer à un prospect (optionnel)</option></select>
-<div class="full"><button class="btn primary">Nouvelle conversation</button></div></form>
+<input id="vPhone" placeholder="Téléphone / contact" required data-i18n-placeholder="placeholder_phone_contact"><select id="vProspect"><option value="" data-i18n="option_associate_prospect">Associer à un prospect (optionnel)</option></select>
+<div class="full"><button class="btn primary" data-i18n="btn_new_conversation">Nouvelle conversation</button></div></form>
 <div id="conversationList"></div></div>
 </section>
 <section id="ordersTab" class="hidden">
-<div class="panel"><h3>Nouvelle commande</h3>
+<div class="panel"><h3 data-i18n="orders_new_title">Nouvelle commande</h3>
 <form class="formgrid" onsubmit="saveOrder(event)">
-<select id="oProspect" required><option value="">Choisir le prospect</option></select>
-<input id="oAmount" type="number" min="0" placeholder="Montant (FCFA)" required>
-<select id="oStatus"><option>En attente</option><option>Confirmée</option><option>En préparation</option><option>Livrée</option><option>Annulée</option></select>
-<div class="full"><button class="btn primary">Créer la commande</button></div></form></div>
-<div class="panel"><h3>Commandes <span class="muted" id="orderCount"></span></h3><div id="orderTable"></div></div>
+<select id="oProspect" required><option value="" data-i18n="option_choose_prospect">Choisir le prospect</option></select>
+<input id="oAmount" type="number" min="0" placeholder="Montant (FCFA)" required data-i18n-placeholder="placeholder_amount">
+<select id="oStatus"><option value="En attente" data-i18n="ostatus_en_attente">En attente</option><option value="Confirmée" data-i18n="ostatus_confirmee">Confirmée</option><option value="En préparation" data-i18n="ostatus_en_preparation">En préparation</option><option value="Livrée" data-i18n="ostatus_livree">Livrée</option><option value="Annulée" data-i18n="ostatus_annulee">Annulée</option></select>
+<div class="full"><button class="btn primary" data-i18n="btn_create_order">Créer la commande</button></div></form></div>
+<div class="panel"><h3 data-i18n="nav_orders">Commandes</h3> <span class="muted" id="orderCount"></span><div id="orderTable"></div></div>
 </section>
 <section id="followupsTab" class="hidden">
-<div class="panel"><h3>Programmer une relance</h3>
+<div class="panel"><h3 data-i18n="followups_schedule_title">Programmer une relance</h3>
 <form class="formgrid" onsubmit="saveFollowup(event)">
-<select id="fProspect" required><option value="">Choisir le prospect</option></select>
-<input id="fDue" type="datetime-local" required><input id="fText" class="full" placeholder="Message de relance" required>
-<div class="full"><button class="btn primary">Programmer</button></div></form></div>
-<div class="panel"><h3>Relances <span class="muted" id="followupCount"></span></h3>
-<p class="muted">Une relance auto (🤖) est envoyée automatiquement au client par WhatsApp dès son échéance — aucune action requise. « Envoyée » = relance déjà partie.</p>
+<select id="fProspect" required><option value="" data-i18n="option_choose_prospect">Choisir le prospect</option></select>
+<input id="fDue" type="datetime-local" required><input id="fText" class="full" placeholder="Message de relance" required data-i18n-placeholder="placeholder_followup_message">
+<div class="full"><button class="btn primary" data-i18n="btn_schedule">Programmer</button></div></form></div>
+<div class="panel"><h3 data-i18n="nav_followups">Relances</h3> <span class="muted" id="followupCount"></span>
+<p class="muted" data-i18n="followups_auto_note">Une relance auto (🤖) est envoyée automatiquement au client par WhatsApp dès son échéance — aucune action requise. « Envoyée » = relance déjà partie.</p>
 <div id="followupTable"></div></div>
-<div class="panel"><h3>Rendez-vous <span class="muted" id="appointmentCount"></span></h3>
-<p class="muted">Détectés automatiquement dans les conversations WhatsApp (livraison, démonstration, appel…). « Proposé » = intention détectée sans jour/heure précis — à clarifier avec le client.</p>
+<div class="panel"><h3 data-i18n="appointments_title">Rendez-vous</h3> <span class="muted" id="appointmentCount"></span>
+<p class="muted" data-i18n="appointments_note">Détectés automatiquement dans les conversations WhatsApp (livraison, démonstration, appel…). « Proposé » = intention détectée sans jour/heure précis — à clarifier avec le client.</p>
 <div id="appointmentTable"></div></div>
 </section>
 <section id="assistantTab" class="hidden">
-<div class="panel"><h3>Personnalité de l'assistant IA</h3>
-<p class="muted">Le nom, le ton et la langue utilisés par l'IA pour répondre à vos clients sur WhatsApp — et dans le test ci-dessous.</p>
+<div class="panel"><h3 data-i18n="ai_personality_title">Personnalité de l'assistant IA</h3>
+<p class="muted" data-i18n="ai_personality_desc">Le nom, le ton et la langue utilisés par l'IA pour répondre à vos clients sur WhatsApp — et dans le test ci-dessous.</p>
 <form class="formgrid" onsubmit="saveAiSettings(event)">
-<input id="aiNameInput" placeholder="Nom de l'IA (ex. Toussaint, Julie, Assistant Boutique)" maxlength="60">
-<input id="aiToneInput" placeholder="Ton (ex. Professionnel et chaleureux)" maxlength="120">
-<input id="aiLanguageInput" placeholder="Langue (ex. Français)" maxlength="40">
-<div class="full"><textarea id="aiRulesInput" rows="3" placeholder="Consignes spécifiques à respecter (optionnel) — ex. toujours proposer la livraison, ne jamais donner de remise sans validation…" maxlength="2000" style="width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px;font-family:inherit"></textarea></div>
-<div class="full"><button class="btn primary">Enregistrer</button></div>
+<input id="aiNameInput" placeholder="Nom de l'IA (ex. Toussaint, Julie, Assistant Boutique)" maxlength="60" data-i18n-placeholder="placeholder_ai_name">
+<input id="aiToneInput" placeholder="Ton (ex. Professionnel et chaleureux)" maxlength="120" data-i18n-placeholder="placeholder_ai_tone">
+<input id="aiLanguageInput" placeholder="Langue (ex. Français)" maxlength="40" data-i18n-placeholder="placeholder_ai_language">
+<div class="full"><textarea id="aiRulesInput" rows="3" placeholder="Consignes spécifiques à respecter (optionnel) — ex. toujours proposer la livraison, ne jamais donner de remise sans validation…" maxlength="2000" style="width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px;font-family:inherit" data-i18n-placeholder="placeholder_ai_rules"></textarea></div>
+<div class="full"><button class="btn primary" data-i18n="save_btn">Enregistrer</button></div>
 </form>
 <div id="aiSettingsStatus" style="margin-top:10px"></div>
 </div>
-<div class="panel"><h3>Assistant commercial IA</h3><p class="muted">Testez une réponse client basée sur votre catalogue et mesurez l’intention d’achat.</p>
+<div class="panel"><h3 data-i18n="assistant_test_title">Assistant commercial IA</h3><p class="muted" data-i18n="assistant_test_desc">Testez une réponse client basée sur votre catalogue et mesurez l'intention d'achat.</p>
 <div class="formgrid">
-<select id="aiProspect"><option value="">Analyser sans prospect</option></select>
-<input id="q" placeholder="Ex. Je veux la Nike Air Max, vous livrez à Odza ?">
+<select id="aiProspect"><option value="" data-i18n="option_analyze_no_prospect">Analyser sans prospect</option></select>
+<input id="q" placeholder="Ex. Je veux la Nike Air Max, vous livrez à Odza ?" data-i18n-placeholder="placeholder_test_question">
 </div>
-<div class="chat"><button class="btn primary" onclick="ask()">Analyser la demande</button></div>
-<div class="reply" id="reply">Bonjour 👋 Posez une question test.</div>
+<div class="chat"><button class="btn primary" onclick="ask()" data-i18n="btn_analyze">Analyser la demande</button></div>
+<div class="reply" id="reply" data-i18n="default_reply_placeholder">Bonjour 👋 Posez une question test.</div>
 <div id="qualification" style="margin-top:12px"></div>
 </div>
-<div class="panel"><h3>Réponse automatique par IA</h3>
-<p class="muted">Quand cette option est activée, VENDIA répond automatiquement aux messages WhatsApp entrants 24h/24, en s'appuyant sur votre catalogue et le ton défini pour votre entreprise. Les demandes sensibles (réclamation, litige, ou demande explicite d'un conseiller) ne sont jamais traitées par l'IA : un accusé de réception est envoyé au client et l'action reste visible dans l'onglet Relances pour un traitement humain.</p>
-<label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="aiAutoReplyToggle" onchange="toggleAiAutoReply()"> Activer la réponse automatique par IA</label>
+<div class="panel"><h3 data-i18n="auto_reply_title">Réponse automatique par IA</h3>
+<p class="muted" data-i18n="auto_reply_desc">Quand cette option est activée, VENDIA répond automatiquement aux messages WhatsApp entrants 24h/24, en s'appuyant sur votre catalogue et le ton défini pour votre entreprise. Les demandes sensibles (réclamation, litige, ou demande explicite d'un conseiller) ne sont jamais traitées par l'IA : un accusé de réception est envoyé au client et l'action reste visible dans l'onglet Relances pour un traitement humain.</p>
+<label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="aiAutoReplyToggle" onchange="toggleAiAutoReply()"> <span data-i18n="label_enable_auto_reply">Activer la réponse automatique par IA</span></label>
 <div id="aiUsagePanel" style="margin-top:14px"></div>
 </div></section>
 
 <section id="teamTab" class="hidden">
-<div class="panel"><h3>Équipe <span class="muted" id="teamCount"></span></h3>
-<p class="muted">👑 L'administrateur de l'équipe peut ajouter ou retirer des membres, et transférer ce rôle à quelqu'un d'autre. Nombre d'administrateurs simultanés selon le forfait : Starter/Business = 1, Pro = jusqu'à 3.</p>
+<div class="panel"><h3 data-i18n="nav_team">Équipe</h3> <span class="muted" id="teamCount"></span>
+<p class="muted" data-i18n="team_note">👑 L'administrateur de l'équipe peut ajouter ou retirer des membres, et transférer ce rôle à quelqu'un d'autre. Nombre d'administrateurs simultanés selon le forfait : Starter/Business = 1, Pro = jusqu'à 3.</p>
 <div id="teamUsage" style="margin-bottom:12px"></div>
 <div id="teamTable"></div>
 </div>
-<div class="panel hidden" id="addMemberPanel"><h3>Ajouter un membre</h3>
+<div class="panel hidden" id="addMemberPanel"><h3 data-i18n="team_add_member_title">Ajouter un membre</h3>
 <form class="formgrid" onsubmit="addTeamMember(event)">
-<input id="tName" placeholder="Nom complet" required>
-<input id="tEmail" type="email" placeholder="Email" required>
-<input id="tPassword" type="password" placeholder="Mot de passe (min. 6 caractères)" required>
-<select id="tRole"><option value="admin">Responsable</option><option value="sales" selected>Commercial</option><option value="viewer">Lecture seule</option></select>
-<div class="full"><button class="btn primary">Ajouter</button></div>
+<input id="tName" placeholder="Nom complet" required data-i18n-placeholder="placeholder_full_name">
+<input id="tEmail" type="email" placeholder="Email" required data-i18n-placeholder="placeholder_email">
+<input id="tPassword" type="password" placeholder="Mot de passe (min. 6 caractères)" required data-i18n-placeholder="placeholder_password_min6">
+<select id="tRole"><option value="admin" data-i18n="role_admin">Responsable</option><option value="sales" selected data-i18n="role_sales">Commercial</option><option value="viewer" data-i18n="role_viewer">Lecture seule</option></select>
+<div class="full"><button class="btn primary" data-i18n="btn_add">Ajouter</button></div>
 </form>
 <div id="teamStatus" style="margin-top:10px"></div>
 </div>
-<div class="panel"><h3>Mon compte</h3>
-<p class="muted">Changer mon mot de passe (rester connecté).</p>
+<div class="panel"><h3 data-i18n="my_account_title">Mon compte</h3>
+<p class="muted" data-i18n="my_account_note">Changer mon mot de passe (rester connecté).</p>
 <form class="formgrid" onsubmit="changeMyPassword(event)">
-<input id="meCurrentPassword" type="password" placeholder="Mot de passe actuel" required>
-<input id="meNewPassword" type="password" placeholder="Nouveau mot de passe (min. 6 caractères)" required>
-<div class="full"><button class="btn primary">Changer le mot de passe</button></div>
+<input id="meCurrentPassword" type="password" placeholder="Mot de passe actuel" required data-i18n-placeholder="placeholder_current_password">
+<input id="meNewPassword" type="password" placeholder="Nouveau mot de passe (min. 6 caractères)" required data-i18n-placeholder="placeholder_new_password_min6">
+<div class="full"><button class="btn primary" data-i18n="btn_change_password">Changer le mot de passe</button></div>
 </form>
 <div id="meStatus" style="margin-top:10px"></div>
 </div>
 </section>
 
 <section id="settingsTab" class="hidden">
-<div class="panel"><h3>Connexion WhatsApp (Meta Cloud API)</h3>
-<p class="muted">Renseigne les identifiants obtenus dans ton compte Meta Business (App WhatsApp → Configuration de l'API). Tant que ces champs sont vides, VENDIA fonctionne comme avant : les messages restent enregistrés dans le CRM mais ne sont pas envoyés sur WhatsApp.</p>
+<div class="panel"><h3 data-i18n="whatsapp_conn_title">Connexion WhatsApp (Meta Cloud API)</h3>
+<p class="muted" data-i18n="whatsapp_conn_desc">Renseigne les identifiants obtenus dans ton compte Meta Business (App WhatsApp → Configuration de l'API). Tant que ces champs sont vides, VENDIA fonctionne comme avant : les messages restent enregistrés dans le CRM mais ne sont pas envoyés sur WhatsApp.</p>
 <form class="formgrid" onsubmit="saveWhatsappSettings(event)">
-<input id="wPhoneNumberId" placeholder="ID du numéro de téléphone (Phone Number ID)">
-<input id="wAccessToken" type="password" placeholder="Jeton d'accès (Access Token)">
-<div class="full"><button class="btn primary">Enregistrer</button> <button type="button" class="btn" onclick="testWhatsappSettings()">Tester la connexion</button></div>
+<input id="wPhoneNumberId" placeholder="ID du numéro de téléphone (Phone Number ID)" data-i18n-placeholder="placeholder_phone_number_id">
+<input id="wAccessToken" type="password" placeholder="Jeton d'accès (Access Token)" data-i18n-placeholder="placeholder_access_token">
+<div class="full"><button class="btn primary" data-i18n="save_btn">Enregistrer</button> <button type="button" class="btn" onclick="testWhatsappSettings()" data-i18n="btn_test_connection">Tester la connexion</button></div>
 </form>
 <div id="wStatus" style="margin-top:10px"></div>
 </div>
-<div class="panel"><h3>À configurer côté Meta</h3>
-<p class="muted">Dans la configuration du webhook de ton App Meta, colle ces deux valeurs :</p>
+<div class="panel"><h3 data-i18n="meta_config_title">À configurer côté Meta</h3>
+<p class="muted" data-i18n="meta_config_desc">Dans la configuration du webhook de ton App Meta, colle ces deux valeurs :</p>
 <div class="formgrid">
-<div class="full"><label class="muted">URL de rappel (Callback URL)</label><input id="wWebhookUrl" readonly onclick="this.select()"></div>
-<div class="full"><label class="muted">Jeton de vérification (Verify Token)</label><input id="wVerifyToken" readonly onclick="this.select()"></div>
+<div class="full"><label class="muted" data-i18n="label_callback_url">URL de rappel (Callback URL)</label><input id="wWebhookUrl" readonly onclick="this.select()"></div>
+<div class="full"><label class="muted" data-i18n="label_verify_token">Jeton de vérification (Verify Token)</label><input id="wVerifyToken" readonly onclick="this.select()"></div>
 </div>
-<p class="muted">Coche l'abonnement au champ <strong>messages</strong> pour que les messages WhatsApp entrants arrivent automatiquement dans le CRM.</p>
+<p class="muted" id="metaConfigNote"></p>
 </div>
-<div class="panel"><h3>Paiement mobile money (vos clients)</h3>
-<p class="muted">Vos propres numéros Orange Money / MTN Mobile Money pour encaisser <strong>vos</strong> clients — distincts de votre abonnement VENDIA. Une fois renseignés, l'assistant IA les indique automatiquement au client quand il confirme une commande.</p>
+<div class="panel"><h3 data-i18n="payment_title">Paiement mobile money (vos clients)</h3>
+<p class="muted" id="paymentDesc"></p>
 <form class="formgrid" onsubmit="savePaymentSettings(event)">
-<input id="pOrangeMoney" placeholder="Numéro Orange Money (ex. +237 6XX XXX XXX)">
-<input id="pMtnMomo" placeholder="Numéro MTN Mobile Money (ex. +237 6XX XXX XXX)">
-<div class="full"><button class="btn primary">Enregistrer</button></div>
+<input id="pOrangeMoney" placeholder="Numéro Orange Money (ex. +237 6XX XXX XXX)" data-i18n-placeholder="placeholder_orange_money">
+<input id="pMtnMomo" placeholder="Numéro MTN Mobile Money (ex. +237 6XX XXX XXX)" data-i18n-placeholder="placeholder_mtn_momo">
+<div class="full"><button class="btn primary" data-i18n="save_btn">Enregistrer</button></div>
 </form>
 <div id="pStatus" style="margin-top:10px"></div>
 </div>
@@ -217,22 +218,267 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 </main>
 
 <script>
+// --- i18n --------------------------------------------------------------
+const I18N = {
+fr: {
+  tagline:"Le commercial IA qui travaille pour vous 24h/24", beta_badge:"BÊTA", logout_btn:"Déconnexion",
+  login_title:"Connexion", login_subtitle:"Connectez-vous pour accéder à votre espace commercial.",
+  placeholder_email:"Email", placeholder_password:"Mot de passe", login_btn:"Se connecter",
+  forgot_password_link:"Mot de passe oublié ?", create_account_link:"Créer un compte",
+  forgot_title:"Mot de passe oublié", forgot_subtitle:"Indiquez votre email : si un compte existe, un lien de réinitialisation valable 1 heure vous sera envoyé.",
+  forgot_send_btn:"Envoyer le lien", back_to_login:"Retour à la connexion",
+  reset_title:"Nouveau mot de passe", reset_subtitle:"Choisissez un nouveau mot de passe (6 caractères minimum).",
+  placeholder_new_password:"Nouveau mot de passe", save_btn:"Enregistrer",
+  hero_title:"Votre entreprise gagne un commercial IA.", hero_subtitle:"Pilotez vos produits, prospects et performances depuis un seul espace.",
+  nav_dashboard:"Tableau de bord", nav_products:"Produits", nav_crm:"CRM", nav_conversations:"Conversations",
+  nav_orders:"Commandes", nav_followups:"Relances", nav_assistant:"Assistant IA", nav_team:"Équipe", nav_settings:"Réglages WhatsApp",
+  stat_prospects:"Prospects", stat_hot_prospects:"Prospects chauds", stat_revenue:"CA commandes", stat_followups_due:"Relances à traiter",
+  panel_commercial_state:"État commercial", panel_recent_catalog:"Catalogue récent",
+  dash_hot:"🔥 Chauds", dash_warm:"🟠 Tièdes", dash_cold:"❄️ Froids", dash_products:"Produits", dash_low_stock:"Stock faible",
+  dash_prospects_month:"Prospects ce mois", dash_unlimited:"illimité", empty_products_dash:"Aucun produit.", stock_label:"Stock",
+  products_add_title:"Ajouter un produit", placeholder_product_name:"Nom du produit", placeholder_category:"Catégorie",
+  placeholder_price:"Prix (FCFA)", placeholder_stock:"Stock", btn_add_to_catalog:"Ajouter au catalogue",
+  products_catalog_title:"Catalogue", th_product:"Produit", th_category:"Catégorie", th_price:"Prix", th_stock:"Stock", th_actions:"Actions",
+  btn_edit:"Modifier", btn_delete:"Supprimer", empty_products:"Aucun produit dans le catalogue.",
+  prompt_product_name:"Nom du produit", prompt_price_fcfa:"Prix en FCFA", prompt_stock:"Stock", prompt_category:"Catégorie",
+  confirm_delete_product:"Supprimer ce produit du catalogue ?",
+  crm_add_title:"Ajouter un prospect", placeholder_prospect_name:"Nom du prospect", placeholder_phone:"Téléphone",
+  placeholder_need:"Besoin", placeholder_value:"Valeur potentielle (FCFA)", placeholder_score:"Score 0–100",
+  status_nouveau:"Nouveau", status_a_contacter:"À contacter", status_en_discussion:"En discussion", status_gagne:"Gagné", status_perdu:"Perdu",
+  btn_add_to_crm:"Ajouter au CRM", th_prospect:"Prospect", th_need:"Besoin", th_score:"Score", th_status:"Statut",
+  th_recommended_action:"Action recommandée", th_value:"Valeur", btn_view:"Voir", empty_crm:"Aucun prospect. Ajoutez votre premier contact.",
+  modal_default_prospect:"Prospect", btn_close:"Fermer", phone_not_set:"Téléphone non renseigné", label_score:"Score",
+  badge_order_intent:"🛒 Intention d'achat", value_not_set:"Non renseigné", label_potential_value:"Valeur potentielle",
+  btn_analyze_request:"🤖 Analyser une demande",
+  prompt_name:"Nom", prompt_phone:"Téléphone", prompt_need:"Besoin", prompt_score:"Score 0–100", prompt_status:"Statut", prompt_value_fcfa:"Valeur potentielle en FCFA",
+  confirm_delete_prospect:"Supprimer ce prospect du CRM ?",
+  placeholder_phone_contact:"Téléphone / contact", option_associate_prospect:"Associer à un prospect (optionnel)",
+  btn_new_conversation:"Nouvelle conversation", empty_conversations:"Aucune conversation.", label_client:"Client",
+  whatsapp_send_failed_prefix:"⚠ Échec envoi WhatsApp :", placeholder_reply_client:"Répondre au client", btn_send:"Envoyer",
+  orders_new_title:"Nouvelle commande", option_choose_prospect:"Choisir le prospect", placeholder_amount:"Montant (FCFA)",
+  ostatus_en_attente:"En attente", ostatus_confirmee:"Confirmée", ostatus_en_preparation:"En préparation", ostatus_livree:"Livrée", ostatus_annulee:"Annulée",
+  btn_create_order:"Créer la commande", th_number:"N°", th_client:"Client", th_amount:"Montant", empty_orders:"Aucune commande.",
+  followups_schedule_title:"Programmer une relance", placeholder_followup_message:"Message de relance", btn_schedule:"Programmer",
+  followups_auto_note:"Une relance auto (🤖) est envoyée automatiquement au client par WhatsApp dès son échéance — aucune action requise. « Envoyée » = relance déjà partie.",
+  th_due:"Échéance", th_message:"Message", th_origin:"Origine", th_action:"Action", origin_auto:"🤖 Auto", origin_manual:"✍️ Manuel",
+  status_overdue:"En retard", fstatus_programmee:"Programmée", fstatus_envoyee:"Envoyée", fstatus_annulee:"Annulée",
+  empty_followups:"Aucune relance programmée.", confirm_delete_followup:"Supprimer cette relance ?",
+  appointments_title:"Rendez-vous", appointments_note:"Détectés automatiquement dans les conversations WhatsApp (livraison, démonstration, appel…). « Proposé » = intention détectée sans jour/heure précis — à clarifier avec le client.",
+  th_type:"Type", th_datetime:"Date/heure", to_be_determined:"À préciser",
+  astatus_propose:"Proposé", astatus_confirme:"Confirmé", astatus_annule:"Annulé", default_appointment_type:"Rendez-vous",
+  btn_cancel:"Annuler", empty_appointments:"Aucun rendez-vous détecté pour le moment.", confirm_cancel_appointment:"Annuler ce rendez-vous ?",
+  ai_personality_title:"Personnalité de l'assistant IA", ai_personality_desc:"Le nom, le ton et la langue utilisés par l'IA pour répondre à vos clients sur WhatsApp — et dans le test ci-dessous.",
+  placeholder_ai_name:"Nom de l'IA (ex. Toussaint, Julie, Assistant Boutique)", placeholder_ai_tone:"Ton (ex. Professionnel et chaleureux)",
+  placeholder_ai_language:"Langue (ex. Français)", placeholder_ai_rules:"Consignes spécifiques à respecter (optionnel) — ex. toujours proposer la livraison, ne jamais donner de remise sans validation…",
+  ai_personality_saved:"✅ Personnalité enregistrée.",
+  assistant_test_title:"Assistant commercial IA", assistant_test_desc:"Testez une réponse client basée sur votre catalogue et mesurez l'intention d'achat.",
+  option_analyze_no_prospect:"Analyser sans prospect", placeholder_test_question:"Ex. Je veux la Nike Air Max, vous livrez à Odza ?",
+  btn_analyze:"Analyser la demande", default_reply_placeholder:"Bonjour 👋 Posez une question test.", loading_analyzing:"Analyse en cours…",
+  badge_claude_real:"✅ Réponse Claude (IA réelle)", fallback_badge_nokey:"⚠️ Mode secours — clé IA non configurée", fallback_badge_error:"⚠️ Mode secours — IA momentanément indisponible",
+  qualification_title:"Qualification automatique", no_signal_detected:"Aucun signal particulier détecté.",
+  recommended_action_title:"Action recommandée", label_priority:"Priorité", btn_handoff:"Passer à un humain", btn_schedule_followup:"Programmer la relance",
+  action_answer_qualify:"💬 Répondre et qualifier", action_propose_order:"🛒 Proposer la commande", action_follow_up_soon:"⏱️ Relance rapprochée",
+  action_follow_up:"🔁 Programmer une relance", action_nurture:"🌱 Nurturing / relance différée", action_handoff:"🧑\u200d💼 Transfert à un humain",
+  action_default:"Action à définir", priority_dash:"—",
+  alert_handoff_note:"Aucun transfert automatique n'est encore connecté : ceci programme une tâche de suivi interne à traiter au plus vite. Vérifiez et validez.",
+  quick_followup_transfer_prefix:"🧑\u200d💼 Transfert humain :", quick_followup_relance_prefix:"Relance :",
+  auto_reply_title:"Réponse automatique par IA", auto_reply_desc:"Quand cette option est activée, VENDIA répond automatiquement aux messages WhatsApp entrants 24h/24, en s'appuyant sur votre catalogue et le ton défini pour votre entreprise. Les demandes sensibles (réclamation, litige, ou demande explicite d'un conseiller) ne sont jamais traitées par l'IA : un accusé de réception est envoyé au client et l'action reste visible dans l'onglet Relances pour un traitement humain.",
+  label_enable_auto_reply:"Activer la réponse automatique par IA",
+  usage_unlimited:"✅ Réponses IA illimitées avec votre forfait", usage_remaining_of:"réponses IA restantes ce mois-ci",
+  usage_banner_exhausted:"🚫 Quota de réponses IA épuisé pour ce mois-ci. Les nouveaux messages ne recevront plus de réponse automatique jusqu'au renouvellement — envisagez un forfait supérieur si besoin.",
+  usage_banner_5:"🔴 Il ne vous reste plus que {n} réponse{s} IA ce mois-ci !",
+  usage_banner_10:"⚠️ Il ne vous reste plus que 10 réponses IA ce mois-ci.",
+  usage_banner_20:"⚠️ Attention, il ne vous reste que 20 réponses IA ce mois-ci.",
+  usage_banner_half:"⚠️ Vous avez atteint la moitié de votre quota mensuel de réponses IA ({n}/{t} restantes).",
+  team_note:"👑 L'administrateur de l'équipe peut ajouter ou retirer des membres, et transférer ce rôle à quelqu'un d'autre. Nombre d'administrateurs simultanés selon le forfait : Starter/Business = 1, Pro = jusqu'à 3.",
+  team_unlimited:"✅ Membres illimités avec votre forfait", team_members_used:"membre(s) utilisé(s)",
+  team_limit_reached:"Limite atteinte pour votre forfait actuel — passez à un forfait supérieur pour ajouter des membres.", team_admins:"administrateur(s)",
+  th_name:"Nom", th_email:"Email", th_role:"Rôle",
+  role_owner:"👑 Administrateur", role_admin:"Responsable", role_sales:"Commercial", role_viewer:"Lecture seule",
+  you_suffix:"(vous)", btn_transfer_admin:"Transférer l'administration", btn_reset_password:"Réinitialiser le mot de passe",
+  btn_remove:"Retirer", empty_team:"Aucun membre.",
+  team_add_member_title:"Ajouter un membre", placeholder_full_name:"Nom complet", placeholder_password_min6:"Mot de passe (min. 6 caractères)",
+  btn_add:"Ajouter", loading_adding:"Ajout en cours…", member_added:"✅ Membre ajouté.",
+  confirm_remove_member:"Retirer {name} de l'équipe ?", confirm_transfer_admin:"Transférer les droits d'administration à {name} ?",
+  alert_admin_transferred:"Administration transférée à {name}. Votre forfait ne permettant qu'un seul administrateur à la fois, vous êtes désormais Responsable.",
+  confirm_reset_member_password:"Réinitialiser le mot de passe de {name} ? Un nouveau mot de passe temporaire sera généré.",
+  alert_temp_password:"Nouveau mot de passe temporaire pour {name} :\n\n{pwd}\n\nCommuniquez-le lui directement (WhatsApp, téléphone…) — il ne sera plus affiché ensuite.",
+  my_account_title:"Mon compte", my_account_note:"Changer mon mot de passe (rester connecté).",
+  placeholder_current_password:"Mot de passe actuel", placeholder_new_password_min6:"Nouveau mot de passe (min. 6 caractères)",
+  btn_change_password:"Changer le mot de passe", loading_saving:"Enregistrement…", password_changed_msg:"✅ Mot de passe changé.",
+  whatsapp_conn_title:"Connexion WhatsApp (Meta Cloud API)", whatsapp_conn_desc:"Renseigne les identifiants obtenus dans ton compte Meta Business (App WhatsApp → Configuration de l'API). Tant que ces champs sont vides, VENDIA fonctionne comme avant : les messages restent enregistrés dans le CRM mais ne sont pas envoyés sur WhatsApp.",
+  placeholder_phone_number_id:"ID du numéro de téléphone (Phone Number ID)", placeholder_access_token:"Jeton d'accès (Access Token)",
+  btn_test_connection:"Tester la connexion", loading_testing:"Test en cours…",
+  whatsapp_configured:"✅ WhatsApp configuré", whatsapp_not_configured:"⚪ WhatsApp non configuré — les messages restent en mode démo",
+  token_saved_prefix:"Jeton enregistré", token_saved_suffix:"— laisser vide pour ne pas le changer",
+  whatsapp_saved_alert:"Réglages WhatsApp enregistrés.", whatsapp_fill_both:"Renseigne l'ID du numéro ET le jeton d'accès pour enregistrer.",
+  test_success_prefix:"✅ Connexion réussie —", test_verified_number:"numéro vérifié", test_fail_prefix:"❌", test_fail_default:"Échec de connexion",
+  meta_config_title:"À configurer côté Meta", meta_config_desc:"Dans la configuration du webhook de ton App Meta, colle ces deux valeurs :",
+  label_callback_url:"URL de rappel (Callback URL)", label_verify_token:"Jeton de vérification (Verify Token)",
+  meta_config_note:"Coche l'abonnement au champ messages pour que les messages WhatsApp entrants arrivent automatiquement dans le CRM.",
+  payment_title:"Paiement mobile money (vos clients)", payment_desc:"Vos propres numéros Orange Money / MTN Mobile Money pour encaisser vos clients — distincts de votre abonnement VENDIA. Une fois renseignés, l'assistant IA les indique automatiquement au client quand il confirme une commande.",
+  placeholder_orange_money:"Numéro Orange Money (ex. +237 6XX XXX XXX)", placeholder_mtn_momo:"Numéro MTN Mobile Money (ex. +237 6XX XXX XXX)",
+  payment_saved_msg:"✅ Numéros enregistrés.",
+  loading_login:"Connexion…", loading_sending:"Envoi en cours…",
+  session_expired:"Session expirée. Veuillez vous reconnecter.", logged_out:"Vous êtes déconnecté.", generic_error:"Erreur serveur",
+  password_reset_success:"Mot de passe changé avec succès. Connectez-vous.", min6_chars:"6 caractères minimum.",
+  forgot_password_sent_default:"Si un compte existe avec cet email, un lien a été envoyé.",
+  invalid_or_expired_link:"Lien invalide ou expiré", invalid_credentials:"Identifiants incorrects",
+  qualification_hot:"Chaud", qualification_warm:"Tiède", qualification_cold:"Froid",
+},
+en: {
+  tagline:"The AI sales rep working for you 24/7", beta_badge:"BETA", logout_btn:"Log out",
+  login_title:"Log in", login_subtitle:"Log in to access your sales dashboard.",
+  placeholder_email:"Email", placeholder_password:"Password", login_btn:"Log in",
+  forgot_password_link:"Forgot password?", create_account_link:"Create an account",
+  forgot_title:"Forgot password", forgot_subtitle:"Enter your email: if an account exists, a reset link valid for 1 hour will be sent to you.",
+  forgot_send_btn:"Send link", back_to_login:"Back to login",
+  reset_title:"New password", reset_subtitle:"Choose a new password (6 characters minimum).",
+  placeholder_new_password:"New password", save_btn:"Save",
+  hero_title:"Your business just gained an AI sales rep.", hero_subtitle:"Manage your products, leads and performance from one place.",
+  nav_dashboard:"Dashboard", nav_products:"Products", nav_crm:"CRM", nav_conversations:"Conversations",
+  nav_orders:"Orders", nav_followups:"Follow-ups", nav_assistant:"AI Assistant", nav_team:"Team", nav_settings:"WhatsApp Settings",
+  stat_prospects:"Leads", stat_hot_prospects:"Hot leads", stat_revenue:"Order revenue", stat_followups_due:"Follow-ups due",
+  panel_commercial_state:"Sales overview", panel_recent_catalog:"Recent catalog",
+  dash_hot:"🔥 Hot", dash_warm:"🟠 Warm", dash_cold:"❄️ Cold", dash_products:"Products", dash_low_stock:"Low stock",
+  dash_prospects_month:"Leads this month", dash_unlimited:"unlimited", empty_products_dash:"No products.", stock_label:"Stock",
+  products_add_title:"Add a product", placeholder_product_name:"Product name", placeholder_category:"Category",
+  placeholder_price:"Price (FCFA)", placeholder_stock:"Stock", btn_add_to_catalog:"Add to catalog",
+  products_catalog_title:"Catalog", th_product:"Product", th_category:"Category", th_price:"Price", th_stock:"Stock", th_actions:"Actions",
+  btn_edit:"Edit", btn_delete:"Delete", empty_products:"No products in the catalog yet.",
+  prompt_product_name:"Product name", prompt_price_fcfa:"Price in FCFA", prompt_stock:"Stock", prompt_category:"Category",
+  confirm_delete_product:"Delete this product from the catalog?",
+  crm_add_title:"Add a lead", placeholder_prospect_name:"Lead name", placeholder_phone:"Phone",
+  placeholder_need:"Need", placeholder_value:"Potential value (FCFA)", placeholder_score:"Score 0–100",
+  status_nouveau:"New", status_a_contacter:"To contact", status_en_discussion:"In discussion", status_gagne:"Won", status_perdu:"Lost",
+  btn_add_to_crm:"Add to CRM", th_prospect:"Lead", th_need:"Need", th_score:"Score", th_status:"Status",
+  th_recommended_action:"Recommended action", th_value:"Value", btn_view:"View", empty_crm:"No leads yet. Add your first contact.",
+  modal_default_prospect:"Lead", btn_close:"Close", phone_not_set:"No phone number", label_score:"Score",
+  badge_order_intent:"🛒 Purchase intent", value_not_set:"Not set", label_potential_value:"Potential value",
+  btn_analyze_request:"🤖 Analyze a request",
+  prompt_name:"Name", prompt_phone:"Phone", prompt_need:"Need", prompt_score:"Score 0–100", prompt_status:"Status", prompt_value_fcfa:"Potential value in FCFA",
+  confirm_delete_prospect:"Delete this lead from the CRM?",
+  placeholder_phone_contact:"Phone / contact", option_associate_prospect:"Link to a lead (optional)",
+  btn_new_conversation:"New conversation", empty_conversations:"No conversations yet.", label_client:"Client",
+  whatsapp_send_failed_prefix:"⚠ WhatsApp send failed:", placeholder_reply_client:"Reply to the client", btn_send:"Send",
+  orders_new_title:"New order", option_choose_prospect:"Choose a lead", placeholder_amount:"Amount (FCFA)",
+  ostatus_en_attente:"Pending", ostatus_confirmee:"Confirmed", ostatus_en_preparation:"Preparing", ostatus_livree:"Delivered", ostatus_annulee:"Cancelled",
+  btn_create_order:"Create order", th_number:"No.", th_client:"Client", th_amount:"Amount", empty_orders:"No orders yet.",
+  followups_schedule_title:"Schedule a follow-up", placeholder_followup_message:"Follow-up message", btn_schedule:"Schedule",
+  followups_auto_note:"An automatic follow-up (🤖) is sent to the client on WhatsApp as soon as it's due — no action needed. \"Sent\" = the follow-up already went out.",
+  th_due:"Due", th_message:"Message", th_origin:"Origin", th_action:"Action", origin_auto:"🤖 Auto", origin_manual:"✍️ Manual",
+  status_overdue:"Overdue", fstatus_programmee:"Scheduled", fstatus_envoyee:"Sent", fstatus_annulee:"Cancelled",
+  empty_followups:"No follow-ups scheduled.", confirm_delete_followup:"Delete this follow-up?",
+  appointments_title:"Appointments", appointments_note:"Automatically detected in WhatsApp conversations (delivery, demo, call…). \"Proposed\" = intent detected without a precise day/time — needs to be confirmed with the client.",
+  th_type:"Type", th_datetime:"Date/time", to_be_determined:"To confirm",
+  astatus_propose:"Proposed", astatus_confirme:"Confirmed", astatus_annule:"Cancelled", default_appointment_type:"Appointment",
+  btn_cancel:"Cancel", empty_appointments:"No appointments detected yet.", confirm_cancel_appointment:"Cancel this appointment?",
+  ai_personality_title:"AI assistant personality", ai_personality_desc:"The name, tone and language your AI uses to reply to your clients on WhatsApp — and in the test below.",
+  placeholder_ai_name:"AI name (e.g. Toussaint, Julie, Shop Assistant)", placeholder_ai_tone:"Tone (e.g. Professional and warm)",
+  placeholder_ai_language:"Language (e.g. English)", placeholder_ai_rules:"Specific rules to follow (optional) — e.g. always offer delivery, never give a discount without approval…",
+  ai_personality_saved:"✅ Personality saved.",
+  assistant_test_title:"AI sales assistant", assistant_test_desc:"Test a client reply based on your catalog and measure purchase intent.",
+  option_analyze_no_prospect:"Analyze without a lead", placeholder_test_question:"E.g. I want the Nike Air Max, do you deliver to Odza?",
+  btn_analyze:"Analyze request", default_reply_placeholder:"Hello 👋 Ask a test question.", loading_analyzing:"Analyzing…",
+  badge_claude_real:"✅ Claude reply (real AI)", fallback_badge_nokey:"⚠️ Fallback mode — AI key not configured", fallback_badge_error:"⚠️ Fallback mode — AI temporarily unavailable",
+  qualification_title:"Automatic qualification", no_signal_detected:"No particular signal detected.",
+  recommended_action_title:"Recommended action", label_priority:"Priority", btn_handoff:"Hand off to a human", btn_schedule_followup:"Schedule follow-up",
+  action_answer_qualify:"💬 Reply and qualify", action_propose_order:"🛒 Propose the order", action_follow_up_soon:"⏱️ Follow up soon",
+  action_follow_up:"🔁 Schedule a follow-up", action_nurture:"🌱 Nurture / delayed follow-up", action_handoff:"🧑\u200d💼 Hand off to a human",
+  action_default:"Action to define", priority_dash:"—",
+  alert_handoff_note:"No automatic handoff is connected yet: this schedules an internal follow-up task to handle as soon as possible. Please review and confirm.",
+  quick_followup_transfer_prefix:"🧑\u200d💼 Human handoff:", quick_followup_relance_prefix:"Follow-up:",
+  auto_reply_title:"Automatic AI reply", auto_reply_desc:"When this is enabled, VENDIA automatically replies to incoming WhatsApp messages 24/7, using your catalog and the tone set for your business. Sensitive requests (complaints, disputes, or an explicit request for a human) are never handled by the AI: the client gets an acknowledgement and the request stays visible under Follow-ups for human handling.",
+  label_enable_auto_reply:"Enable automatic AI reply",
+  usage_unlimited:"✅ Unlimited AI replies with your plan", usage_remaining_of:"AI replies left this month",
+  usage_banner_exhausted:"🚫 AI reply quota used up for this month. New messages won't get an automatic reply until renewal — consider upgrading your plan if needed.",
+  usage_banner_5:"🔴 Only {n} AI repl{s} left this month!",
+  usage_banner_10:"⚠️ Only 10 AI replies left this month.",
+  usage_banner_20:"⚠️ Careful, only 20 AI replies left this month.",
+  usage_banner_half:"⚠️ You've used half your monthly AI reply quota ({n}/{t} remaining).",
+  team_note:"👑 The team admin can add or remove members, and transfer this role to someone else. Number of simultaneous admins depends on the plan: Starter/Business = 1, Pro = up to 3.",
+  team_unlimited:"✅ Unlimited members with your plan", team_members_used:"member(s) used",
+  team_limit_reached:"Limit reached for your current plan — upgrade to add more members.", team_admins:"admin(s)",
+  th_name:"Name", th_email:"Email", th_role:"Role",
+  role_owner:"👑 Admin", role_admin:"Manager", role_sales:"Sales rep", role_viewer:"Read only",
+  you_suffix:"(you)", btn_transfer_admin:"Transfer admin rights", btn_reset_password:"Reset password",
+  btn_remove:"Remove", empty_team:"No members yet.",
+  team_add_member_title:"Add a member", placeholder_full_name:"Full name", placeholder_password_min6:"Password (min. 6 characters)",
+  btn_add:"Add", loading_adding:"Adding…", member_added:"✅ Member added.",
+  confirm_remove_member:"Remove {name} from the team?", confirm_transfer_admin:"Transfer admin rights to {name}?",
+  alert_admin_transferred:"Admin rights transferred to {name}. Since your plan only allows one admin at a time, you are now a Manager.",
+  confirm_reset_member_password:"Reset {name}'s password? A new temporary password will be generated.",
+  alert_temp_password:"New temporary password for {name}:\n\n{pwd}\n\nShare it with them directly (WhatsApp, phone…) — it won't be shown again.",
+  my_account_title:"My account", my_account_note:"Change my password (stay logged in).",
+  placeholder_current_password:"Current password", placeholder_new_password_min6:"New password (min. 6 characters)",
+  btn_change_password:"Change password", loading_saving:"Saving…", password_changed_msg:"✅ Password changed.",
+  whatsapp_conn_title:"WhatsApp connection (Meta Cloud API)", whatsapp_conn_desc:"Enter the credentials from your Meta Business account (WhatsApp App → API Setup). While these fields are empty, VENDIA works as before: messages are still logged in the CRM but not sent on WhatsApp.",
+  placeholder_phone_number_id:"Phone Number ID", placeholder_access_token:"Access Token",
+  btn_test_connection:"Test connection", loading_testing:"Testing…",
+  whatsapp_configured:"✅ WhatsApp configured", whatsapp_not_configured:"⚪ WhatsApp not configured — messages stay in demo mode",
+  token_saved_prefix:"Token saved", token_saved_suffix:"— leave blank to keep it unchanged",
+  whatsapp_saved_alert:"WhatsApp settings saved.", whatsapp_fill_both:"Enter BOTH the phone number ID and the access token to save.",
+  test_success_prefix:"✅ Connection successful —", test_verified_number:"number verified", test_fail_prefix:"❌", test_fail_default:"Connection failed",
+  meta_config_title:"To configure on Meta's side", meta_config_desc:"In your Meta App's webhook configuration, paste these two values:",
+  label_callback_url:"Callback URL", label_verify_token:"Verify Token",
+  meta_config_note:"Subscribe to the messages field so incoming WhatsApp messages arrive automatically in the CRM.",
+  payment_title:"Mobile money payment (your clients)", payment_desc:"Your own Orange Money / MTN Mobile Money numbers to collect payment from your clients — separate from your VENDIA subscription. Once set, the AI assistant automatically shares them with the client when they confirm an order.",
+  placeholder_orange_money:"Orange Money number (e.g. +237 6XX XXX XXX)", placeholder_mtn_momo:"MTN Mobile Money number (e.g. +237 6XX XXX XXX)",
+  payment_saved_msg:"✅ Numbers saved.",
+  loading_login:"Logging in…", loading_sending:"Sending…",
+  session_expired:"Session expired. Please log in again.", logged_out:"You are logged out.", generic_error:"Server error",
+  password_reset_success:"Password changed successfully. Please log in.", min6_chars:"6 characters minimum.",
+  forgot_password_sent_default:"If an account exists with this email, a link has been sent.",
+  invalid_or_expired_link:"Invalid or expired link", invalid_credentials:"Incorrect credentials",
+  qualification_hot:"Hot", qualification_warm:"Warm", qualification_cold:"Cold",
+}
+};
+let lang = localStorage.getItem('vendia_lang') || 'fr';
+function t(key){ const v=(I18N[lang]&&I18N[lang][key])!=null?I18N[lang][key]:(I18N.fr[key]!=null?I18N.fr[key]:key); return v; }
+function tf(key, vars){ let s=t(key); Object.keys(vars||{}).forEach(k=>{ s=s.split('{'+k+'}').join(vars[k]); }); return s; }
+function applyI18n(){
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-i18n]').forEach(el=>{ el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el=>{ el.placeholder = t(el.dataset.i18nPlaceholder); });
+  document.querySelectorAll('#langSwitch button').forEach(b=>b.classList.toggle('active', b.dataset.lang===lang));
+  const md=$('metaConfigNote'); if(md) md.textContent=t('meta_config_note');
+  const pd=$('paymentDesc'); if(pd) pd.textContent=t('payment_desc');
+}
+let currentTab='dashboard';
+function setLang(l){
+  if(lang===l) return;
+  lang=l; localStorage.setItem('vendia_lang', l);
+  applyI18n();
+  if(!$('app').classList.contains('hidden')) { renderAll(); tab(currentTab); }
+}
+// Traduction d'un statut STOCKÉ tel quel (valeur française conservée pour le
+// backend/API) : n'affecte jamais la valeur envoyée au serveur, seulement le
+// libellé affiché. raw peut être n'importe quelle valeur (y compris du texte
+// libre saisi via prompt()) — si elle n'est pas reconnue, affichée telle quelle.
+const STATUS_KEY_MAP = { 'Nouveau':'status_nouveau','À contacter':'status_a_contacter','En discussion':'status_en_discussion','Gagné':'status_gagne','Perdu':'status_perdu',
+  'En attente':'ostatus_en_attente','Confirmée':'ostatus_confirmee','En préparation':'ostatus_en_preparation','Livrée':'ostatus_livree','Annulée':'ostatus_annulee',
+  'Programmée':'fstatus_programmee','Envoyée':'fstatus_envoyee',
+  'Proposé':'astatus_propose','Confirmé':'astatus_confirme','Annulé':'astatus_annule',
+  'Chaud':'qualification_hot','Tiède':'qualification_warm','Froid':'qualification_cold' };
+function statusLabel(raw){ const key=STATUS_KEY_MAP[raw]; return key ? t(key) : (raw||''); }
+
 let token = localStorage.getItem('wa_token') || '';
 let data = {products:[], prospects:[], orders:[], followups:[], appointments:[], conversations:[], metrics:{}}; let activeConversation=null;
 
 const $ = id => document.getElementById(id);
 const esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const money = n => Number(n || 0).toLocaleString('fr-FR') + ' FCFA';
+const dateFmt = d => d ? new Date(d).toLocaleString(lang==='en'?'en-GB':'fr-FR') : '—';
 
-const ACTION_LABELS = {
-  answer_and_qualify: '💬 Répondre et qualifier',
-  propose_order: '🛒 Proposer la commande',
-  follow_up_soon: '⏱️ Relance rapprochée',
-  follow_up: '🔁 Programmer une relance',
-  nurture: '🌱 Nurturing / relance différée',
-  handoff: '🧑\u200d💼 Transfert à un humain',
+const ACTION_KEYS = {
+  answer_and_qualify: 'action_answer_qualify',
+  propose_order: 'action_propose_order',
+  follow_up_soon: 'action_follow_up_soon',
+  follow_up: 'action_follow_up',
+  nurture: 'action_nurture',
+  handoff: 'action_handoff',
 };
-const actionLabel = a => ACTION_LABELS[a] || (a || 'Action à définir');
+const actionLabel = a => ACTION_KEYS[a] ? t(ACTION_KEYS[a]) : (a || t('action_default'));
 const actionClass = (action, priority) => action === 'handoff' ? 'handoff' : priority === 'high' ? 'hot' : priority === 'low' ? 'cold' : '';
 
 // Rend le panneau "Action recommandée" + les deux boutons demandés par le dossier :
@@ -245,14 +491,14 @@ function renderNextAction(na, prospectId) {
   const buttons = [];
   if (prospectId) {
     if (na.action === 'handoff') {
-      buttons.push('<button class="btn danger" onclick="quickFollowup(\''+prospectId+'\',\'🧑\u200d💼 Transfert humain : '+esc(na.reason).replace(/'/g,"\\'")+'\',true)">Passer à un humain</button>');
+      buttons.push('<button class="btn danger" onclick="quickFollowup(\''+prospectId+'\',\''+t('quick_followup_transfer_prefix')+' '+esc(na.reason).replace(/'/g,"\\'")+'\',true)">'+t('btn_handoff')+'</button>');
     } else if (['follow_up_soon','follow_up','nurture'].includes(na.action)) {
-      buttons.push('<button class="btn" onclick="quickFollowup(\''+prospectId+'\',\'Relance : '+esc(na.reason).replace(/'/g,"\\'")+'\',false)">Programmer la relance</button>');
+      buttons.push('<button class="btn" onclick="quickFollowup(\''+prospectId+'\',\''+t('quick_followup_relance_prefix')+' '+esc(na.reason).replace(/'/g,"\\'")+'\',false)">'+t('btn_schedule_followup')+'</button>');
     }
   }
-  return '<div class="panel" style="box-shadow:none;border:1px solid #edf0f5;margin:12px 0 0"><strong>Action recommandée</strong>' +
+  return '<div class="panel" style="box-shadow:none;border:1px solid #edf0f5;margin:12px 0 0"><strong>'+t('recommended_action_title')+'</strong>' +
     '<div style="margin-top:8px" class="actions"><span class="badge '+cls+'">'+esc(actionLabel(na.action))+'</span>' +
-    '<span class="badge '+(na.priority==='high'?'hot':na.priority==='low'?'cold':'')+'">Priorité: '+esc(na.priority||'—')+'</span></div>' +
+    '<span class="badge '+(na.priority==='high'?'hot':na.priority==='low'?'cold':'')+'">'+t('label_priority')+': '+esc(na.priority||t('priority_dash'))+'</span></div>' +
     '<div class="muted" style="margin-top:6px">'+esc(na.reason||'')+'</div>' +
     (buttons.length ? '<div class="actions" style="margin-top:10px">'+buttons.join('')+'</div>' : '') +
     '</div>';
@@ -268,7 +514,7 @@ function quickFollowup(prospectId, presetText, isHandoff) {
   const due = new Date(Date.now() + (isHandoff ? 15 : 60) * 60000);
   due.setSeconds(0,0);
   $('fDue').value = due.toISOString().slice(0,16);
-  if (isHandoff) alert('Aucun transfert automatique n’est encore connecté : ceci programme une tâche de suivi interne à traiter au plus vite. Vérifiez et validez.');
+  if (isHandoff) alert(t('alert_handoff_note'));
   $('fText').focus();
 }
 
@@ -279,10 +525,10 @@ async function api(path, options = {}) {
   try { d = await r.json(); } catch {}
   if (r.status === 401) {
     token = ''; localStorage.removeItem('wa_token');
-    showLogin('Session expirée. Veuillez vous reconnecter.');
-    throw new Error('Session expirée');
+    showLogin(t('session_expired'));
+    throw new Error(t('session_expired'));
   }
-  if (!r.ok) throw new Error(d.error || 'Erreur serveur');
+  if (!r.ok) throw new Error(d.error || t('generic_error'));
   return d;
 }
 
@@ -302,11 +548,11 @@ function showForgotPassword(e) {
 }
 async function submitForgotPassword() {
   const msg=$('forgotMsg');
-  msg.className='muted'; msg.textContent='Envoi en cours…';
+  msg.className='muted'; msg.textContent=t('loading_sending');
   try {
     const r=await fetch('/api/forgot-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:$('forgotEmail').value.trim()})});
     const d=await r.json();
-    msg.className='success'; msg.textContent=d.message||'Si un compte existe avec cet email, un lien a été envoyé.';
+    msg.className='success'; msg.textContent=d.message||t('forgot_password_sent_default');
   } catch(e) { msg.className='error'; msg.textContent=e.message; }
 }
 function showResetPassword() {
@@ -319,20 +565,20 @@ async function submitResetPassword() {
   const params=new URLSearchParams(location.search);
   const resetToken=params.get('resetToken');
   const password=$('resetPasswordInput').value;
-  if (!password || password.length<6) { msg.className='error'; msg.textContent='6 caractères minimum.'; return; }
-  msg.className='muted'; msg.textContent='Enregistrement…';
+  if (!password || password.length<6) { msg.className='error'; msg.textContent=t('min6_chars'); return; }
+  msg.className='muted'; msg.textContent=t('loading_saving');
   try {
     const r=await fetch('/api/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:resetToken,password})});
     const d=await r.json();
-    if (!r.ok) throw new Error(d.error||'Lien invalide ou expiré');
+    if (!r.ok) throw new Error(d.error||t('invalid_or_expired_link'));
     history.replaceState(null,'','/');
-    showLogin('Mot de passe changé avec succès. Connectez-vous.');
+    showLogin(t('password_reset_success'));
   } catch(e) { msg.className='error'; msg.textContent=e.message; }
 }
 
 async function login() {
   const msg = $('loginMsg');
-  msg.className = ''; msg.textContent = 'Connexion…';
+  msg.className = ''; msg.textContent = t('loading_login');
   try {
     const r = await fetch('/api/login', {
       method:'POST',
@@ -340,7 +586,7 @@ async function login() {
       body:JSON.stringify({email:$('email').value.trim(), password:$('password').value})
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || 'Identifiants incorrects');
+    if (!r.ok) throw new Error(d.error || t('invalid_credentials'));
     token = d.token;
     localStorage.setItem('wa_token', token);
     $('login').classList.add('hidden');
@@ -354,7 +600,7 @@ async function login() {
 function logout() {
   api('/api/logout',{method:'POST'}).catch(()=>{});
   token = ''; localStorage.removeItem('wa_token');
-  showLogin('Vous êtes déconnecté.');
+  showLogin(t('logged_out'));
 }
 
 async function load() {
@@ -367,6 +613,7 @@ async function load() {
 }
 
 function tab(name) {
+  currentTab=name;
   document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   ['dashboard','products','crm','assistant','conversations','orders','followups','team','settings'].forEach(x => $(x+'Tab').classList.toggle('hidden', x !== name));
   if (name === 'products') renderProducts();
@@ -396,7 +643,7 @@ function renderAiUsagePanel() {
   const u=data.usage?.aiMessages;
   if(!u) { el.innerHTML=''; return; }
   if(u.limit==null) {
-    el.innerHTML='<span class="badge">✅ Réponses IA illimitées avec votre forfait</span>';
+    el.innerHTML='<span class="badge">'+t('usage_unlimited')+'</span>';
     return;
   }
   const pct=u.limit>0 ? Math.max(0,Math.min(100,(u.remaining/u.limit)*100)) : 0;
@@ -404,13 +651,13 @@ function renderAiUsagePanel() {
   if(u.remaining<=15) { barClass='red'; badgeClass='badge handoff'; blink=' usageBlink'; }
   else if(u.remaining<=50) { barClass='orange'; badgeClass='badge hot'; }
   let banner='';
-  if(u.remaining<=0) banner="🚫 Quota de réponses IA épuisé pour ce mois-ci. Les nouveaux messages ne recevront plus de réponse automatique jusqu'au renouvellement — envisagez un forfait supérieur si besoin.";
-  else if(u.remaining<=5) banner='🔴 Il ne vous reste plus que '+u.remaining+' réponse'+(u.remaining>1?'s':'')+' IA ce mois-ci !';
-  else if(u.remaining<=10) banner='⚠️ Il ne vous reste plus que 10 réponses IA ce mois-ci.';
-  else if(u.remaining<=20) banner='⚠️ Attention, il ne vous reste que 20 réponses IA ce mois-ci.';
-  else if(u.remaining<=Math.floor(u.limit/2)) banner='⚠️ Vous avez atteint la moitié de votre quota mensuel de réponses IA ('+u.remaining+'/'+u.limit+' restantes).';
+  if(u.remaining<=0) banner=t('usage_banner_exhausted');
+  else if(u.remaining<=5) banner=tf('usage_banner_5',{n:u.remaining,s:u.remaining>1?(lang==='en'?'ies':'s'):(lang==='en'?'y':'')});
+  else if(u.remaining<=10) banner=t('usage_banner_10');
+  else if(u.remaining<=20) banner=t('usage_banner_20');
+  else if(u.remaining<=Math.floor(u.limit/2)) banner=tf('usage_banner_half',{n:u.remaining,t:u.limit});
   el.innerHTML =
-    '<span class="'+badgeClass+blink+'">'+u.remaining+' / '+u.limit+' réponses IA restantes ce mois-ci</span>'+
+    '<span class="'+badgeClass+blink+'">'+u.remaining+' / '+u.limit+' '+t('usage_remaining_of')+'</span>'+
     '<div class="usageBar '+barClass+'"><div style="width:'+pct+'%"></div></div>'+
     (banner ? '<p class="muted" style="margin-top:8px">'+esc(banner)+'</p>' : '');
 }
@@ -425,8 +672,8 @@ function populateProspectSelects() {
   ['vProspect','oProspect','fProspect','aiProspect'].forEach(id => {
     const el=$(id); if(!el) return;
     const current=el.value;
-    const first=id==='vProspect' ? '<option value="">Associer à un prospect (optionnel)</option>' : id==='aiProspect' ? '<option value="">Analyser sans prospect</option>' : '<option value="">Choisir le prospect</option>';
-    el.innerHTML=first+(data.prospects||[]).map(p=>'<option value="'+p.id+'">'+esc(p.name||p.phone||'Prospect')+' · '+esc(p.phone||'')+'</option>').join('');
+    const first=id==='vProspect' ? '<option value="">'+t('option_associate_prospect')+'</option>' : id==='aiProspect' ? '<option value="">'+t('option_analyze_no_prospect')+'</option>' : '<option value="">'+t('option_choose_prospect')+'</option>';
+    el.innerHTML=first+(data.prospects||[]).map(p=>'<option value="'+p.id+'">'+esc(p.name||p.phone||t('modal_default_prospect'))+' · '+esc(p.phone||'')+'</option>').join('');
     if(current && [...el.options].some(o=>o.value===current)) el.value=current;
   });
 }
@@ -440,34 +687,34 @@ function renderDashboard() {
   const pendingFollowups = (data.followups||[]).filter(f => f.status === 'Programmée').length;
   $('mFollowups').textContent = pendingFollowups;
   $('commercialState').innerHTML =
-    '<div class="actions"><span class="badge">🔥 Chauds: '+(m.hot||0)+'</span>' +
-    '<span class="badge hot">🟠 Tièdes: '+(m.warm||0)+'</span>' +
-    '<span class="badge cold">❄️ Froids: '+(m.cold||0)+'</span></div>' +
-    '<p class="muted">Produits: '+(m.products||0)+' · Stock faible: '+(m.lowStock||0)+'</p>' +
-    (data.usage ? '<p class="muted">Prospects ce mois : '+data.usage.prospectsThisMonth+(data.usage.prospectsLimit!=null?' / '+data.usage.prospectsLimit:' (illimité)')+'</p>' : '');
+    '<div class="actions"><span class="badge">'+t('dash_hot')+': '+(m.hot||0)+'</span>' +
+    '<span class="badge hot">'+t('dash_warm')+': '+(m.warm||0)+'</span>' +
+    '<span class="badge cold">'+t('dash_cold')+': '+(m.cold||0)+'</span></div>' +
+    '<p class="muted">'+t('dash_products')+': '+(m.products||0)+' · '+t('dash_low_stock')+': '+(m.lowStock||0)+'</p>' +
+    (data.usage ? '<p class="muted">'+t('dash_prospects_month')+' : '+data.usage.prospectsThisMonth+(data.usage.prospectsLimit!=null?' / '+data.usage.prospectsLimit:' ('+t('dash_unlimited')+')')+'</p>' : '');
   $('recentProducts').innerHTML = (data.products||[]).slice(0,5).map(p =>
     '<div style="padding:10px 0;border-bottom:1px solid #eee"><strong>'+esc(p.name)+'</strong><br>' +
-    '<span class="muted">'+money(p.price)+' · Stock: '+p.stock+'</span></div>'
-  ).join('') || '<div class="empty">Aucun produit.</div>';
+    '<span class="muted">'+money(p.price)+' · '+t('stock_label')+': '+p.stock+'</span></div>'
+  ).join('') || '<div class="empty">'+t('empty_products_dash')+'</div>';
 }
 
 function renderProducts() {
   $('productCount').textContent = '('+data.products.length+')';
-  $('productTable').innerHTML = data.products.length ? '<table><thead><tr><th>Produit</th><th>Catégorie</th><th>Prix</th><th>Stock</th><th>Actions</th></tr></thead><tbody>' +
+  $('productTable').innerHTML = data.products.length ? '<table><thead><tr><th>'+t('th_product')+'</th><th>'+t('th_category')+'</th><th>'+t('th_price')+'</th><th>'+t('th_stock')+'</th><th>'+t('th_actions')+'</th></tr></thead><tbody>' +
     data.products.map(p => '<tr><td><strong>'+esc(p.name)+'</strong></td><td>'+esc(p.category||'—')+'</td><td>'+money(p.price)+'</td><td>'+p.stock+'</td><td><div class="actions">' +
-    '<button class="btn" data-edit-product="'+p.id+'">Modifier</button><button class="btn danger" data-delete-product="'+p.id+'">Supprimer</button></div></td></tr>').join('') +
-    '</tbody></table>' : '<div class="empty">Aucun produit dans le catalogue.</div>';
+    '<button class="btn" data-edit-product="'+p.id+'">'+t('btn_edit')+'</button><button class="btn danger" data-delete-product="'+p.id+'">'+t('btn_delete')+'</button></div></td></tr>').join('') +
+    '</tbody></table>' : '<div class="empty">'+t('empty_products')+'</div>';
 }
 
 function renderCRM() {
   $('crmCount').textContent = '('+data.prospects.length+')';
-  $('crmTable').innerHTML = data.prospects.length ? '<table><thead><tr><th>Prospect</th><th>Besoin</th><th>Score</th><th>Statut</th><th>Action recommandée</th><th>Valeur</th><th>Actions</th></tr></thead><tbody>' +
-    data.prospects.map(p => '<tr><td><strong>'+esc(p.name||'Sans nom')+'</strong><br><span class="muted">'+esc(p.phone||'—')+'</span></td><td>'+esc(p.need||'—')+'</td>' +
-    '<td><span class="badge '+(p.score>=70?'hot':p.score<40?'cold':'')+'">'+p.score+'/100</span></td><td>'+esc(p.status||'Nouveau')+'</td>' +
+  $('crmTable').innerHTML = data.prospects.length ? '<table><thead><tr><th>'+t('th_prospect')+'</th><th>'+t('th_need')+'</th><th>'+t('th_score')+'</th><th>'+t('th_status')+'</th><th>'+t('th_recommended_action')+'</th><th>'+t('th_value')+'</th><th>'+t('th_actions')+'</th></tr></thead><tbody>' +
+    data.prospects.map(p => '<tr><td><strong>'+esc(p.name||t('empty_crm').split('.')[0])+'</strong><br><span class="muted">'+esc(p.phone||'—')+'</span></td><td>'+esc(p.need||'—')+'</td>' +
+    '<td><span class="badge '+(p.score>=70?'hot':p.score<40?'cold':'')+'">'+p.score+'/100</span></td><td>'+esc(statusLabel(p.status||'Nouveau'))+'</td>' +
     '<td>'+(p.nextAction?'<span class="badge '+actionClass(p.nextAction,p.nextActionPriority)+'">'+esc(actionLabel(p.nextAction))+'</span>':'<span class="muted">—</span>')+'</td>' +
     '<td>'+money(p.value)+'</td><td><div class="actions">' +
-    '<button class="btn primary" data-view-prospect="'+p.id+'">Voir</button><button class="btn" data-edit-prospect="'+p.id+'">Modifier</button><button class="btn danger" data-delete-prospect="'+p.id+'">Supprimer</button></div></td></tr>').join('') +
-    '</tbody></table>' : '<div class="empty">Aucun prospect. Ajoutez votre premier contact.</div>';
+    '<button class="btn primary" data-view-prospect="'+p.id+'">'+t('btn_view')+'</button><button class="btn" data-edit-prospect="'+p.id+'">'+t('btn_edit')+'</button><button class="btn danger" data-delete-prospect="'+p.id+'">'+t('btn_delete')+'</button></div></td></tr>').join('') +
+    '</tbody></table>' : '<div class="empty">'+t('empty_crm')+'</div>';
 }
 
 async function saveProduct(e) {
@@ -483,10 +730,10 @@ async function saveProduct(e) {
 
 async function editProduct(id) {
   const p = data.products.find(x=>x.id===id); if(!p) return;
-  const name=prompt('Nom du produit',p.name); if(name===null)return;
-  const price=prompt('Prix en FCFA',p.price); if(price===null)return;
-  const stock=prompt('Stock',p.stock); if(stock===null)return;
-  const category=prompt('Catégorie',p.category||''); if(category===null)return;
+  const name=prompt(t('prompt_product_name'),p.name); if(name===null)return;
+  const price=prompt(t('prompt_price_fcfa'),p.price); if(price===null)return;
+  const stock=prompt(t('prompt_stock'),p.stock); if(stock===null)return;
+  const category=prompt(t('prompt_category'),p.category||''); if(category===null)return;
   try {
     await api('/api/products/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,price:Number(price),stock:Number(stock),category})});
     await load(); tab('products');
@@ -494,7 +741,7 @@ async function editProduct(id) {
 }
 
 async function deleteProduct(id) {
-  if(!confirm('Supprimer ce produit du catalogue ?')) return;
+  if(!confirm(t('confirm_delete_product'))) return;
   try { await api('/api/products/'+id,{method:'DELETE'}); await load(); tab('products'); }
   catch(e){alert(e.message);}
 }
@@ -512,12 +759,12 @@ async function saveProspect(e) {
 
 function viewProspect(id){
   const p=data.prospects.find(x=>x.id===id); if(!p)return;
-  $('modalProspectName').textContent=p.name||'Prospect sans nom';
-  $('modalProspectPhone').textContent=p.phone||'Téléphone non renseigné';
+  $('modalProspectName').textContent=p.name||t('modal_default_prospect');
+  $('modalProspectPhone').textContent=p.phone||t('phone_not_set');
   const cls=Number(p.score)>=70?'hot':Number(p.score)<40?'cold':'';
-  $('modalProspectBody').innerHTML='<div class="actions"><span class="badge '+cls+'">Score: '+esc(p.score||0)+'/100</span><span class="badge">'+esc(p.status||'Nouveau')+'</span>'+(p.orderIntent?'<span class="badge">🛒 Intention d’achat</span>':'')+'</div><div class="grid" style="margin-top:16px"><div><div class="muted">Besoin</div><strong>'+esc(p.need||'Non renseigné')+'</strong></div><div><div class="muted">Valeur potentielle</div><strong>'+money(p.value)+'</strong></div></div>' +
+  $('modalProspectBody').innerHTML='<div class="actions"><span class="badge '+cls+'">'+t('label_score')+': '+esc(p.score||0)+'/100</span><span class="badge">'+esc(statusLabel(p.status||'Nouveau'))+'</span>'+(p.orderIntent?'<span class="badge">'+t('badge_order_intent')+'</span>':'')+'</div><div class="grid" style="margin-top:16px"><div><div class="muted">'+t('th_need')+'</div><strong>'+esc(p.need||t('value_not_set'))+'</strong></div><div><div class="muted">'+t('label_potential_value')+'</div><strong>'+money(p.value)+'</strong></div></div>' +
     (p.nextAction ? renderNextAction({action:p.nextAction,priority:p.nextActionPriority,reason:p.nextActionReason}, p.id) : '') +
-    '<div style="margin-top:18px"><button class="btn primary" onclick="goToAssistantFromProspect(\''+p.id+'\')">🤖 Analyser une demande</button></div>';
+    '<div style="margin-top:18px"><button class="btn primary" onclick="goToAssistantFromProspect(\''+p.id+'\')">'+t('btn_analyze_request')+'</button></div>';
   $('prospectModal').style.display='flex';
 }
 function closeProspectModal(){ $('prospectModal').style.display='none'; }
@@ -526,12 +773,12 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeProspectModal()
 
 async function editProspect(id) {
   const p=data.prospects.find(x=>x.id===id); if(!p)return;
-  const name=prompt('Nom',p.name||''); if(name===null)return;
-  const phone=prompt('Téléphone',p.phone||''); if(phone===null)return;
-  const need=prompt('Besoin',p.need||''); if(need===null)return;
-  const score=prompt('Score 0–100',p.score); if(score===null)return;
-  const status=prompt('Statut',p.status||'Nouveau'); if(status===null)return;
-  const value=prompt('Valeur potentielle en FCFA',p.value||0); if(value===null)return;
+  const name=prompt(t('prompt_name'),p.name||''); if(name===null)return;
+  const phone=prompt(t('prompt_phone'),p.phone||''); if(phone===null)return;
+  const need=prompt(t('prompt_need'),p.need||''); if(need===null)return;
+  const score=prompt(t('prompt_score'),p.score); if(score===null)return;
+  const status=prompt(t('prompt_status'),p.status||'Nouveau'); if(status===null)return;
+  const value=prompt(t('prompt_value_fcfa'),p.value||0); if(value===null)return;
   try {
     await api('/api/prospects/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,phone,need,score:Number(score),status,value:Number(value),orderIntent:p.orderIntent})});
     await load(); tab('crm');
@@ -539,7 +786,7 @@ async function editProspect(id) {
 }
 
 async function deleteProspect(id) {
-  if(!confirm('Supprimer ce prospect du CRM ?')) return;
+  if(!confirm(t('confirm_delete_prospect'))) return;
   try { await api('/api/prospects/'+id,{method:'DELETE'}); await load(); tab('crm'); }
   catch(e){alert(e.message);}
 }
@@ -548,10 +795,10 @@ async function deleteProspect(id) {
 function renderConversations(){
   const list=$('conversationList');
   list.innerHTML=data.conversations.length
-    ? data.conversations.map(c=>'<div class="panel" style="box-shadow:none;border:1px solid #edf0f5"><strong>'+esc(c.prospect||'Contact')+'</strong> · '+esc(c.phone||'—')+'<div class="muted">'+esc(c.channel||'whatsapp')+'</div>'+
-      (c.messages||[]).map(m=>'<div style="padding:8px;margin-top:6px;background:'+(m.direction==='in'?'#f5f7fb':'#f0f4ff')+';border-radius:8px"><b>'+(m.direction==='in'?'Client':'VENDIA')+':</b> '+esc(m.body)+(m.providerError?'<div style="color:#c0392b;font-size:.85em;margin-top:4px">⚠ Échec envoi WhatsApp : '+esc(m.providerError)+'</div>':'')+'</div>').join('')+
-      '<form onsubmit="sendMessage(event,\''+c.id+'\')" class="conversation-form" style="display:flex;gap:8px;margin-top:10px"><input placeholder="Répondre au client" required><button class="btn primary">Envoyer</button></form></div>').join('')
-    : '<div class="empty">Aucune conversation.</div>';
+    ? data.conversations.map(c=>'<div class="panel" style="box-shadow:none;border:1px solid #edf0f5"><strong>'+esc(c.prospect||t('label_client'))+'</strong> · '+esc(c.phone||'—')+'<div class="muted">'+esc(c.channel||'whatsapp')+'</div>'+
+      (c.messages||[]).map(m=>'<div style="padding:8px;margin-top:6px;background:'+(m.direction==='in'?'#f5f7fb':'#f0f4ff')+';border-radius:8px"><b>'+(m.direction==='in'?t('label_client'):'VENDIA')+':</b> '+esc(m.body)+(m.providerError?'<div style="color:#c0392b;font-size:.85em;margin-top:4px">'+t('whatsapp_send_failed_prefix')+' '+esc(m.providerError)+'</div>':'')+'</div>').join('')+
+      '<form onsubmit="sendMessage(event,\''+c.id+'\')" class="conversation-form" style="display:flex;gap:8px;margin-top:10px"><input placeholder="'+t('placeholder_reply_client')+'" required><button class="btn primary">'+t('btn_send')+'</button></form></div>').join('')
+    : '<div class="empty">'+t('empty_conversations')+'</div>';
 }
 async function saveConversation(e){
   e.preventDefault();
@@ -585,10 +832,10 @@ async function loadConversations(){
 function renderOrders(){
   $('orderCount').textContent='('+(data.orders||[]).length+')';
   $('orderTable').innerHTML=(data.orders||[]).length
-    ? '<table><thead><tr><th>N°</th><th>Client</th><th>Montant</th><th>Statut</th></tr></thead><tbody>'+
-      data.orders.map(o=>'<tr><td><strong>'+esc(o.number)+'</strong></td><td>'+esc(o.client||'—')+'</td><td>'+money(o.amount)+'</td><td>'+esc(o.status)+'</td></tr>').join('')+
+    ? '<table><thead><tr><th>'+t('th_number')+'</th><th>'+t('th_client')+'</th><th>'+t('th_amount')+'</th><th>'+t('th_status')+'</th></tr></thead><tbody>'+
+      data.orders.map(o=>'<tr><td><strong>'+esc(o.number)+'</strong></td><td>'+esc(o.client||'—')+'</td><td>'+money(o.amount)+'</td><td>'+esc(statusLabel(o.status))+'</td></tr>').join('')+
       '</tbody></table>'
-    : '<div class="empty">Aucune commande.</div>';
+    : '<div class="empty">'+t('empty_orders')+'</div>';
 }
 async function saveOrder(e){
   e.preventDefault();
@@ -605,17 +852,17 @@ async function saveOrder(e){
 function renderFollowups(){
   $('followupCount').textContent='('+(data.followups||[]).length+')';
   $('followupTable').innerHTML=(data.followups||[]).length
-    ? '<table><thead><tr><th>Prospect</th><th>Échéance</th><th>Message</th><th>Origine</th><th>Statut</th><th>Action</th></tr></thead><tbody>'+
+    ? '<table><thead><tr><th>'+t('th_prospect')+'</th><th>'+t('th_due')+'</th><th>'+t('th_message')+'</th><th>'+t('th_origin')+'</th><th>'+t('th_status')+'</th><th>'+t('th_action')+'</th></tr></thead><tbody>'+
       data.followups.map(f=>{
         const isAuto=f.source==='auto';
         const isCancelled=f.status==='Annulée';
         const isOverdue=!isCancelled&&f.status==='Programmée'&&f.dueAt&&new Date(f.dueAt).getTime()<Date.now();
-        const originBadge='<span class="badge '+(isAuto?'auto':'manual')+'">'+(isAuto?'🤖 Auto':'✍️ Manuel')+'</span>';
-        const statusBadge=isOverdue?'<span class="badge overdue">En retard</span>':esc(f.status)+(isCancelled&&f.cancelledReason?' — '+esc(f.cancelledReason):'');
-        return '<tr'+(isCancelled?' class="cancelledRow"':'')+'><td>'+esc(f.prospect||f.prospectId)+'</td><td>'+esc(f.dueAt?new Date(f.dueAt).toLocaleString('fr-FR'):'—')+'</td><td>'+esc(f.text||'—')+'</td><td>'+originBadge+'</td><td>'+statusBadge+'</td><td><button class="btn danger" data-delete-followup="'+f.id+'">Supprimer</button></td></tr>';
+        const originBadge='<span class="badge '+(isAuto?'auto':'manual')+'">'+(isAuto?t('origin_auto'):t('origin_manual'))+'</span>';
+        const statusBadge=isOverdue?'<span class="badge overdue">'+t('status_overdue')+'</span>':esc(statusLabel(f.status))+(isCancelled&&f.cancelledReason?' — '+esc(f.cancelledReason):'');
+        return '<tr'+(isCancelled?' class="cancelledRow"':'')+'><td>'+esc(f.prospect||f.prospectId)+'</td><td>'+esc(dateFmt(f.dueAt))+'</td><td>'+esc(f.text||'—')+'</td><td>'+originBadge+'</td><td>'+statusBadge+'</td><td><button class="btn danger" data-delete-followup="'+f.id+'">'+t('btn_delete')+'</button></td></tr>';
       }).join('')+
       '</tbody></table>'
-    : '<div class="empty">Aucune relance programmée.</div>';
+    : '<div class="empty">'+t('empty_followups')+'</div>';
 }
 async function saveFollowup(e){
   e.preventDefault();
@@ -629,7 +876,7 @@ async function saveFollowup(e){
   }catch(x){alert(x.message);}
 }
 async function deleteFollowup(id){
-  if(!confirm('Supprimer cette relance ?'))return;
+  if(!confirm(t('confirm_delete_followup')))return;
   try{
     await api('/api/followups/'+id,{method:'DELETE'});
     await load();
@@ -637,7 +884,8 @@ async function deleteFollowup(id){
   }catch(x){alert(x.message);}
 }
 
-const ROLE_LABELS = { owner:'👑 Administrateur', admin:'Responsable', sales:'Commercial', viewer:'Lecture seule' };
+const ROLE_KEYS = { owner:'role_owner', admin:'role_admin', sales:'role_sales', viewer:'role_viewer' };
+const roleLabel = r => t(ROLE_KEYS[r]||'') || r;
 let me = null;
 async function loadTeam(){
   try{
@@ -654,69 +902,69 @@ function renderTeam(users){
   const ownerCount=users.filter(u=>u.role==='owner').length;
   const maxAdmins=data.usage?.maxAdmins;
   $('teamUsage').innerHTML = (limit==null
-    ? '<span class="badge">✅ Membres illimités avec votre forfait</span>'
-    : '<span class="badge '+(users.length>=limit?'handoff':users.length>=limit-1?'hot':'')+'">'+users.length+' / '+limit+' membre(s) utilisé(s)</span>'
-      + (users.length>=limit ? '<p class="muted" style="margin-top:6px">Limite atteinte pour votre forfait actuel — passez à un forfait supérieur pour ajouter des membres.</p>' : ''))
-    + (maxAdmins!=null ? ' <span class="badge">'+ownerCount+' / '+maxAdmins+' administrateur(s)</span>' : '');
-  $('teamTable').innerHTML = users.length ? '<table><thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Actions</th></tr></thead><tbody>' +
+    ? '<span class="badge">'+t('team_unlimited')+'</span>'
+    : '<span class="badge '+(users.length>=limit?'handoff':users.length>=limit-1?'hot':'')+'">'+users.length+' / '+limit+' '+t('team_members_used')+'</span>'
+      + (users.length>=limit ? '<p class="muted" style="margin-top:6px">'+t('team_limit_reached')+'</p>' : ''))
+    + (maxAdmins!=null ? ' <span class="badge">'+ownerCount+' / '+maxAdmins+' '+t('team_admins')+'</span>' : '');
+  $('teamTable').innerHTML = users.length ? '<table><thead><tr><th>'+t('th_name')+'</th><th>'+t('th_email')+'</th><th>'+t('th_role')+'</th><th>'+t('th_actions')+'</th></tr></thead><tbody>' +
     users.map(u => {
       const isSelf = u.id===me?.id;
       const actions=[];
       if (isOwner && u.role!=='owner') {
-        actions.push('<button class="btn" onclick="transferAdmin(\''+u.id+'\',\''+esc(u.name).replace(/'/g,"\\'")+'\')">Transférer l\'administration</button>');
-        actions.push('<button class="btn" onclick="resetMemberPassword(\''+u.id+'\',\''+esc(u.name).replace(/'/g,"\\'")+'\')">Réinitialiser le mot de passe</button>');
-        actions.push('<button class="btn danger" onclick="deleteTeamMember(\''+u.id+'\',\''+esc(u.name).replace(/'/g,"\\'")+'\')">Retirer</button>');
+        actions.push('<button class="btn" onclick="transferAdmin(\''+u.id+'\',\''+esc(u.name).replace(/'/g,"\\'")+'\')">'+t('btn_transfer_admin')+'</button>');
+        actions.push('<button class="btn" onclick="resetMemberPassword(\''+u.id+'\',\''+esc(u.name).replace(/'/g,"\\'")+'\')">'+t('btn_reset_password')+'</button>');
+        actions.push('<button class="btn danger" onclick="deleteTeamMember(\''+u.id+'\',\''+esc(u.name).replace(/'/g,"\\'")+'\')">'+t('btn_remove')+'</button>');
       } else if (isOwner && u.role==='owner' && !isSelf) {
-        actions.push('<button class="btn danger" onclick="deleteTeamMember(\''+u.id+'\',\''+esc(u.name).replace(/'/g,"\\'")+'\')">Retirer</button>');
+        actions.push('<button class="btn danger" onclick="deleteTeamMember(\''+u.id+'\',\''+esc(u.name).replace(/'/g,"\\'")+'\')">'+t('btn_remove')+'</button>');
       }
-      return '<tr><td><strong>'+esc(u.name)+'</strong>'+(isSelf?' <span class="muted">(vous)</span>':'')+'</td><td>'+esc(u.email)+'</td><td>'+esc(ROLE_LABELS[u.role]||u.role)+'</td>' +
+      return '<tr><td><strong>'+esc(u.name)+'</strong>'+(isSelf?' <span class="muted">'+t('you_suffix')+'</span>':'')+'</td><td>'+esc(u.email)+'</td><td>'+esc(roleLabel(u.role))+'</td>' +
         '<td><div class="actions">'+(actions.join('')||'<span class="muted">—</span>')+'</div></td></tr>';
     }).join('') +
-    '</tbody></table>' : '<div class="empty">Aucun membre.</div>';
+    '</tbody></table>' : '<div class="empty">'+t('empty_team')+'</div>';
 }
 async function addTeamMember(e){
   e.preventDefault();
   const status=$('teamStatus');
-  status.innerHTML='Ajout en cours…';
+  status.innerHTML=t('loading_adding');
   try{
     await api('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       name:$('tName').value.trim(), email:$('tEmail').value.trim(), password:$('tPassword').value, role:$('tRole').value
     })});
     $('tName').value=''; $('tEmail').value=''; $('tPassword').value='';
-    status.innerHTML='<span class="badge">✅ Membre ajouté.</span>';
+    status.innerHTML='<span class="badge">'+t('member_added')+'</span>';
     await loadTeam();
   }catch(x){ status.innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
 }
 async function deleteTeamMember(id,name){
-  if(!confirm('Retirer '+name+' de l\'équipe ?')) return;
+  if(!confirm(tf('confirm_remove_member',{name}))) return;
   try{ await api('/api/users/'+id,{method:'DELETE'}); await loadTeam(); }
   catch(x){ alert(x.message); }
 }
 async function transferAdmin(id,name){
-  if(!confirm('Transférer les droits d\'administration à '+name+' ?')) return;
+  if(!confirm(tf('confirm_transfer_admin',{name}))) return;
   try{
     const r=await api('/api/users/'+id+'/transfer-admin',{method:'POST'});
     await loadTeam();
-    if(r.selfDemoted) alert('Administration transférée à '+name+'. Votre forfait ne permettant qu\'un seul administrateur à la fois, vous êtes désormais Responsable.');
+    if(r.selfDemoted) alert(tf('alert_admin_transferred',{name}));
   }catch(x){ alert(x.message); }
 }
 async function resetMemberPassword(id,name){
-  if(!confirm('Réinitialiser le mot de passe de '+name+' ? Un nouveau mot de passe temporaire sera généré.')) return;
+  if(!confirm(tf('confirm_reset_member_password',{name}))) return;
   try{
     const r=await api('/api/users/'+id+'/reset-password',{method:'POST'});
-    alert('Nouveau mot de passe temporaire pour '+name+' :\n\n'+r.tempPassword+'\n\nCommuniquez-le lui directement (WhatsApp, téléphone…) — il ne sera plus affiché ensuite.');
+    alert(tf('alert_temp_password',{name,pwd:r.tempPassword}));
   }catch(x){ alert(x.message); }
 }
 async function changeMyPassword(e){
   e.preventDefault();
   const status=$('meStatus');
-  status.innerHTML='Enregistrement…';
+  status.innerHTML=t('loading_saving');
   try{
     await api('/api/me/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       currentPassword:$('meCurrentPassword').value, newPassword:$('meNewPassword').value
     })});
     $('meCurrentPassword').value=''; $('meNewPassword').value='';
-    status.innerHTML='<span class="badge">✅ Mot de passe changé.</span>';
+    status.innerHTML='<span class="badge">'+t('password_changed_msg')+'</span>';
   }catch(x){ status.innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
 }
 
@@ -725,30 +973,30 @@ async function loadWhatsappSettings(){
     const s=await api('/api/settings/whatsapp');
     $('wPhoneNumberId').value=s.phoneNumberId||'';
     $('wAccessToken').value='';
-    $('wAccessToken').placeholder=s.accessTokenSet?('Jeton enregistré ('+s.accessTokenPreview+') — laisser vide pour ne pas le changer'):'Jeton d\'accès (Access Token)';
+    $('wAccessToken').placeholder=s.accessTokenSet?(t('token_saved_prefix')+' ('+s.accessTokenPreview+') '+t('token_saved_suffix')):t('placeholder_access_token');
     $('wWebhookUrl').value=s.webhookUrl;
     $('wVerifyToken').value=s.verifyToken;
-    $('wStatus').innerHTML='<span class="badge '+(s.configured?'':'cold')+'">'+(s.configured?'✅ WhatsApp configuré':'⚪ WhatsApp non configuré — les messages restent en mode démo')+'</span>';
+    $('wStatus').innerHTML='<span class="badge '+(s.configured?'':'cold')+'">'+(s.configured?t('whatsapp_configured'):t('whatsapp_not_configured'))+'</span>';
   }catch(x){ $('wStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
 }
 async function saveWhatsappSettings(e){
   e.preventDefault();
   const phoneNumberId=$('wPhoneNumberId').value.trim();
   const accessToken=$('wAccessToken').value.trim();
-  if(!phoneNumberId||!accessToken){ alert('Renseigne l\'ID du numéro ET le jeton d\'accès pour enregistrer.'); return; }
+  if(!phoneNumberId||!accessToken){ alert(t('whatsapp_fill_both')); return; }
   try{
     await api('/api/settings/whatsapp',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({phoneNumberId,accessToken})});
     await loadWhatsappSettings();
-    alert('Réglages WhatsApp enregistrés.');
+    alert(t('whatsapp_saved_alert'));
   }catch(x){alert(x.message);}
 }
 async function testWhatsappSettings(){
-  $('wStatus').innerHTML='Test en cours…';
+  $('wStatus').innerHTML=t('loading_testing');
   try{
     const r=await api('/api/settings/whatsapp/test',{method:'POST'});
     $('wStatus').innerHTML=r.ok
-      ? '<span class="badge">✅ Connexion réussie — '+esc(r.verifiedName||r.displayPhoneNumber||'numéro vérifié')+'</span>'
-      : '<span class="error">❌ '+esc(r.error||'Échec de connexion')+'</span>';
+      ? '<span class="badge">'+t('test_success_prefix')+' '+esc(r.verifiedName||r.displayPhoneNumber||t('test_verified_number'))+'</span>'
+      : '<span class="error">'+t('test_fail_prefix')+' '+esc(r.error||t('test_fail_default'))+'</span>';
   }catch(x){ $('wStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
 }
 
@@ -765,7 +1013,7 @@ async function savePaymentSettings(e){
     await api('/api/settings/payment',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       orangeMoney:$('pOrangeMoney').value.trim(), mtnMomo:$('pMtnMomo').value.trim()
     })});
-    $('pStatus').innerHTML='<span class="badge">✅ Numéros enregistrés.</span>';
+    $('pStatus').innerHTML='<span class="badge">'+t('payment_saved_msg')+'</span>';
   }catch(x){ $('pStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
 }
 
@@ -786,28 +1034,27 @@ async function saveAiSettings(e){
       aiLanguage:$('aiLanguageInput').value.trim(), aiRules:$('aiRulesInput').value.trim(),
       autoReplyEnabled: data.company?.aiAutoReplyEnabled !== false
     })});
-    $('aiSettingsStatus').innerHTML='<span class="badge">✅ Personnalité enregistrée.</span>';
+    $('aiSettingsStatus').innerHTML='<span class="badge">'+t('ai_personality_saved')+'</span>';
     if(data.company){ data.company.aiName=$('aiNameInput').value.trim(); }
   }catch(x){ $('aiSettingsStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
 }
 
-const APPOINTMENT_STATUS_CLASS = { 'Confirmé':'', 'Proposé':'cold', 'Annulé':'handoff' };
 function renderAppointments(){
   const list=data.appointments||[];
   $('appointmentCount').textContent='('+list.length+')';
   $('appointmentTable').innerHTML=list.length
-    ? '<table><thead><tr><th>Prospect</th><th>Type</th><th>Date/heure</th><th>Statut</th><th>Action</th></tr></thead><tbody>'+
+    ? '<table><thead><tr><th>'+t('th_prospect')+'</th><th>'+t('th_type')+'</th><th>'+t('th_datetime')+'</th><th>'+t('th_status')+'</th><th>'+t('th_action')+'</th></tr></thead><tbody>'+
       list.map(a=>{
-        const cls=APPOINTMENT_STATUS_CLASS[a.status]||'';
-        return '<tr><td>'+esc(a.prospect||a.prospectId||'—')+'</td><td>'+esc(a.type||'Rendez-vous')+'</td><td>'+esc(a.scheduledAt?new Date(a.scheduledAt).toLocaleString('fr-FR'):'À préciser')+'</td><td><span class="badge '+cls+'">'+esc(a.status)+'</span></td><td>'+
-          (a.status!=='Annulé' ? '<button class="btn danger" onclick="cancelAppointment(\''+a.id+'\')">Annuler</button>' : '')+
+        const cls=a.status==='Proposé'?'cold':a.status==='Annulé'?'handoff':'';
+        return '<tr><td>'+esc(a.prospect||a.prospectId||'—')+'</td><td>'+esc(a.type&&a.type!=='Rendez-vous'?a.type:t('default_appointment_type'))+'</td><td>'+esc(a.scheduledAt?dateFmt(a.scheduledAt):t('to_be_determined'))+'</td><td><span class="badge '+cls+'">'+esc(statusLabel(a.status))+'</span></td><td>'+
+          (a.status!=='Annulé' ? '<button class="btn danger" onclick="cancelAppointment(\''+a.id+'\')">'+t('btn_cancel')+'</button>' : '')+
           '</td></tr>';
       }).join('')+
       '</tbody></table>'
-    : '<div class="empty">Aucun rendez-vous détecté pour le moment.</div>';
+    : '<div class="empty">'+t('empty_appointments')+'</div>';
 }
 async function cancelAppointment(id){
-  if(!confirm('Annuler ce rendez-vous ?'))return;
+  if(!confirm(t('confirm_cancel_appointment')))return;
   try{
     await api('/api/appointments/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'Annulé'})});
     await load();
@@ -817,7 +1064,7 @@ async function cancelAppointment(id){
 
 async function ask() {
   const text=$('q').value.trim(); if(!text)return;
-  $('reply').textContent='Analyse en cours…';
+  $('reply').textContent=t('loading_analyzing');
   $('qualification').innerHTML='';
   try {
     const prospectId=$('aiProspect').value||null;
@@ -828,11 +1075,11 @@ async function ask() {
     ]);
     $('reply').textContent=d.reply;
     $('reply').innerHTML += d.provider==='anthropic'
-      ? ' <span class="badge" style="margin-left:6px">✅ Réponse Claude (IA réelle)</span>'
-      : ' <span class="badge hot" style="margin-left:6px">⚠️ Mode secours'+(d.aiUnavailable?' — clé IA non configurée':' — IA momentanément indisponible')+'</span>';
+      ? ' <span class="badge" style="margin-left:6px">'+t('badge_claude_real')+'</span>'
+      : ' <span class="badge hot" style="margin-left:6px">'+(d.aiUnavailable?t('fallback_badge_nokey'):t('fallback_badge_error'))+'</span>';
     const x=q.qualification;
     const cls=x.score>=70?'hot':x.score<40?'cold':'';
-    $('qualification').innerHTML='<div class="panel" style="box-shadow:none;border:1px solid #edf0f5;margin:0"><strong>Qualification automatique</strong><div style="margin-top:8px"><span class="badge '+cls+'">'+esc(x.status)+' · '+x.score+'/100</span> '+(x.orderIntent?'<span class="badge">🛒 Intention d’achat</span>':'')+'</div><div class="muted" style="margin-top:8px">'+esc(x.reasons.join(' · ')||'Aucun signal particulier détecté.')+'</div></div>' +
+    $('qualification').innerHTML='<div class="panel" style="box-shadow:none;border:1px solid #edf0f5;margin:0"><strong>'+t('qualification_title')+'</strong><div style="margin-top:8px"><span class="badge '+cls+'">'+esc(statusLabel(x.status))+' · '+x.score+'/100</span> '+(x.orderIntent?'<span class="badge">'+t('badge_order_intent')+'</span>':'')+'</div><div class="muted" style="margin-top:8px">'+esc(x.reasons.join(' · ')||t('no_signal_detected'))+'</div></div>' +
       renderNextAction(na.nextAction, prospectId);
     if(prospectId) await load();
   } catch(e){$('reply').textContent=e.message;}
@@ -849,6 +1096,7 @@ document.addEventListener('click', e => {
   const df=e.target.closest('[data-delete-followup]'); if(df){deleteFollowup(df.dataset.deleteFollowup);return;}
 });
 
+applyI18n();
 if (new URLSearchParams(location.search).get('resetToken')) {
   showResetPassword();
 } else if (token) {

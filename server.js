@@ -534,7 +534,8 @@ async function generateAiReply(company, prospect, products, history) {
 
   const systemPrompt = [
     'Tu es '+(company.aiName||'l\'assistant commercial')+' de l\'entreprise "'+company.name+'"'+(company.sector?' (secteur : '+company.sector+')':'')+', et tu réponds aux clients sur WhatsApp.',
-    'Ton de voix : '+(company.aiTone||'professionnel et chaleureux')+'. Réponds toujours en '+(company.aiLanguage||'français')+'.',
+    'Ton de voix : '+(company.aiTone||'professionnel et chaleureux')+'.',
+    'Langue : réponds TOUJOURS dans la même langue que le dernier message du client (détecte-la automatiquement à chaque message — français, anglais, ou autre). Si son message ne permet pas de déterminer la langue avec certitude (ex. juste un emoji ou un numéro), utilise '+(company.aiLanguage||'le français')+' par défaut. Ne mélange jamais deux langues dans une même réponse.',
     company.aiRules ? 'Consignes spécifiques de l\'entreprise à respecter : '+company.aiRules : null,
     'Catalogue actuel :\n'+catalogue,
     prospect ? 'Fiche du client en cours — statut commercial : '+(prospect.status||'inconnu')+', besoin exprimé jusqu\'ici : '+(prospect.need||'non précisé')+'.' : null,
@@ -647,8 +648,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.2',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.2'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.3',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.3'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -1687,6 +1688,6 @@ const server=http.createServer((req,res)=>handler(req,res).catch(e=>{console.err
 ensureMigrations().then(()=>ensureSuperAdmin()).catch(e=>console.error('[superadmin] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.2 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.3 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});
