@@ -23,13 +23,13 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 </style>
 </head>
 <body>
-<header><div><h1>VENDIA</h1><div class="tag">Le commercial IA qui travaille pour vous 24h/24</div></div><div class="actions"><span class="badge">BÊTA</span><button class="btn" style="margin-left:8px" onclick="logout()">Déconnexion</button></div></header>
+<header><div><h1>VENDIA <span id="companyNameTag" class="tag"></span></h1><div class="tag">Le commercial IA qui travaille pour vous 24h/24</div></div><div class="actions"><span class="badge">BÊTA</span><button class="btn" style="margin-left:8px" onclick="logout()">Déconnexion</button></div></header>
 <main class="wrap">
 <section id="login" class="login">
 <h2>Connexion</h2><p class="muted">Connectez-vous pour accéder à votre espace commercial.</p>
 <input id="email" type="email" value="demo@wavendeur.local" placeholder="Email"><input id="password" type="password" value="demo1234" placeholder="Mot de passe">
 <button class="btn primary" onclick="login()">Se connecter</button>
-<div style="margin-top:10px"><a href="#" onclick="showForgotPassword(event)" class="muted">Mot de passe oublié ?</a></div>
+<div style="margin-top:10px;display:flex;justify-content:space-between"><a href="#" onclick="showForgotPassword(event)" class="muted">Mot de passe oublié ?</a><a href="/signup.html" class="muted">Créer un compte</a></div>
 <div id="loginMsg"></div>
 </section>
 
@@ -348,6 +348,7 @@ function tab(name) {
 }
 
 function renderAll() {
+  $('companyNameTag').textContent = data.company?.name ? '— '+data.company.name : '';
   renderDashboard(); renderProducts(); renderCRM(); renderConversations(); renderOrders(); renderFollowups(); populateProspectSelects(); initAiAutoReplyToggle(); renderAiUsagePanel();
 }
 function initAiAutoReplyToggle() {

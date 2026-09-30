@@ -47,6 +47,10 @@ input,select{width:100%;padding:10px;border:1px solid #d9deea;border-radius:10px
 <div id="ncStatus" style="margin-top:10px"></div>
 </div>
 
+<div class="panel"><h3>Validations de paiement en attente <span class="muted" id="pendingCount"></span></h3>
+<div id="pendingTable"></div>
+</div>
+
 <div class="panel"><h3>Entreprises <span class="muted" id="companyCount"></span></h3>
 <div id="companyTable"></div>
 </div>
@@ -105,10 +109,29 @@ function logout(){
 
 async function loadCompanies(){
   try{
-    const r=await api('/api/superadmin/companies');
-    companies=r.companies||[];
+    const [cr,pr]=await Promise.all([api('/api/superadmin/companies'),api('/api/superadmin/payment-requests?status=pending')]);
+    companies=cr.companies||[];
     renderCompanies();
+    renderPending(pr.paymentRequests||[]);
   }catch(e){ $('companyTable').innerHTML='<div class="error">'+esc(e.message)+'</div>'; }
+}
+function renderPending(list){
+  $('pendingCount').textContent='('+list.length+')';
+  $('pendingTable').innerHTML = list.length ? '<table><thead><tr><th>Entreprise</th><th>Forfait</th><th>Montant</th><th>Moyen</th><th>Payeur</th><th>Référence</th><th>Actions</th></tr></thead><tbody>'+
+    list.map(p=>'<tr><td><strong>'+esc(p.companyName)+'</strong></td><td>'+esc(p.plan)+'</td><td>'+money(p.amount)+'</td>'+
+      '<td>'+(p.method==='orange_money'?'🟠 Orange Money':'🟡 MTN MoMo')+'</td><td>'+esc(p.payerPhone||'—')+'</td><td>'+esc(p.reference||'—')+'</td>'+
+      '<td><div class="actions"><button class="btn primary" onclick="approvePayment(\''+p.id+'\')">Approuver</button><button class="btn danger" onclick="rejectPayment(\''+p.id+'\')">Rejeter</button></div></td></tr>').join('')+
+    '</tbody></table>' : '<div class="empty">Aucune validation en attente.</div>';
+}
+async function approvePayment(id){
+  if(!confirm('Confirmer que le paiement a bien été reçu et activer ce compte ?')) return;
+  try{ await api('/api/superadmin/payment-requests/'+id+'/approve',{method:'POST'}); await loadCompanies(); }
+  catch(x){ alert(x.message); }
+}
+async function rejectPayment(id){
+  if(!confirm('Rejeter cette demande ? Le compte restera bloqué.')) return;
+  try{ await api('/api/superadmin/payment-requests/'+id+'/reject',{method:'POST'}); await loadCompanies(); }
+  catch(x){ alert(x.message); }
 }
 function renderCompanies(){
   $('companyCount').textContent='('+companies.length+')';
@@ -116,7 +139,7 @@ function renderCompanies(){
     companies.map(c=>{
       const aiLabel = c.aiUsage.limit==null ? 'illimité' : (c.aiUsage.remaining+' / '+c.aiUsage.limit+' restantes');
       const prospectsLabel = c.prospectsThisMonth + (c.limits.maxProspectsPerMonth!=null?' / '+c.limits.maxProspectsPerMonth:' (illimité)');
-      const suspendedBadge = c.suspended ? '<span class="badge handoff">🚫 Suspendue</span>' : '<span class="badge">✅ Active</span>';
+      const suspendedBadge = c.suspended ? '<span class="badge handoff">🚫 Suspendue</span>' : (!c.approvedAt ? '<span class="badge hot">⏳ En attente de paiement</span>' : '<span class="badge">✅ Active</span>');
       return '<tr><td><strong>'+esc(c.name)+'</strong><br><span class="muted">'+esc(c.sector||'—')+'</span><br>'+suspendedBadge+'</td>'+
         '<td><select onchange="changePlan(\''+c.id+'\',this.value)">'+
           ['Starter','Business','Pro'].map(p=>'<option value="'+p+'"'+(p===c.plan?' selected':'')+'>'+p+'</option>').join('')+

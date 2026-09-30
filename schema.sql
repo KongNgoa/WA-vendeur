@@ -31,6 +31,25 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS ai_auto_reply_enabled BOOLEAN NOT
 -- idempotent. Pour appliquer uniquement cet ajout sur la base de production
 -- existante, utiliser scripts/migrate-add-superadmin-and-roles.js.
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS suspended BOOLEAN NOT NULL DEFAULT false;
+-- Lot "tunnel de paiement mobile money + rapports quotidiens" — idempotent.
+-- approved_at NULL = compte en attente de validation du paiement par le
+-- super-admin. Pour appliquer uniquement cet ajout sur la base de
+-- production existante, utiliser scripts/migrate-add-payments-and-reports.js.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS payment_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  plan TEXT NOT NULL CHECK(plan IN ('Starter','Business','Pro')),
+  method TEXT NOT NULL CHECK(method IN ('orange_money','mtn_momo')),
+  amount NUMERIC(14,2) NOT NULL,
+  payer_phone TEXT,
+  reference TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  decided_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS payment_requests_status_idx ON payment_requests(status);
 
 CREATE TABLE IF NOT EXISTS super_admins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

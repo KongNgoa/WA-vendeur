@@ -10,6 +10,11 @@ const PORT = Number(process.env.PORT || 3000);
 const DEMO_EMAIL = process.env.DEMO_EMAIL || 'demo@wavendeur.local';
 const DEMO_PASSWORD = process.env.DEMO_PASSWORD || 'demo1234';
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001';
+// Numéros mobile money du super-admin pour le tunnel de paiement en
+// libre-service (voir /api/signup) — configurables par variable
+// d'environnement pour pouvoir les changer sans redéploiement de code.
+const ORANGE_MONEY_NUMBER = process.env.ORANGE_MONEY_NUMBER || '+237691965012';
+const MTN_MOMO_NUMBER = process.env.MTN_MOMO_NUMBER || '+237672353499';
 const json = (res,status,data) => { res.writeHead(status, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY','Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type, Authorization','Access-Control-Allow-Methods':'GET,POST,PUT,PATCH,DELETE,OPTIONS'}); res.end(JSON.stringify(data)); };
 const body = async req => { let s=''; for await (const c of req) s += c; if (s.length > 1000000) throw new Error('Payload trop volumineux'); return s ? JSON.parse(s) : {}; };
 const rawBody = async req => { let s=''; for await (const c of req) s += c; if (s.length > 1000000) throw new Error('Payload trop volumineux'); return s; };
@@ -108,7 +113,7 @@ async function ensureDemo() {
     let c = await client.query('SELECT id FROM companies WHERE name=$1 LIMIT 1',['Boutique Démo Yaoundé']);
     let companyId = c.rows[0]?.id;
     if (!companyId) {
-      const r = await client.query("INSERT INTO companies(name,sector,ai_name) VALUES($1,$2,$3) RETURNING id",['Boutique Démo Yaoundé','Mode & accessoires','Julie']);
+      const r = await client.query("INSERT INTO companies(name,sector,ai_name,approved_at) VALUES($1,$2,$3,now()) RETURNING id",['Boutique Démo Yaoundé','Mode & accessoires','Julie']);
       companyId = r.rows[0].id;
       const products=[['Nike Air Max','Chaussures',25000,8],['T-shirt Premium','Vêtements',12000,17],['Jean homme','Vêtements',18000,5]];
       for (const p of products) await client.query('INSERT INTO products(company_id,name,category,price,stock) VALUES($1,$2,$3,$4,$5)',[companyId,...p]);
@@ -514,11 +519,12 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.8.0',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.8.0'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.9.0',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.9.0'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
+  if(req.method==='GET'&&u.pathname==='/signup.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/signup.html'))); }
 
   // Webhook WhatsApp (Meta Cloud API, phase 3) — appelé directement par Meta,
   // donc volontairement AVANT ensureDemo()/l'authentification par session :
@@ -557,11 +563,11 @@ async function handler(req,res) {
           const messages=Array.isArray(value.messages)?value.messages:[];
           console.log('[webhook] change field=%s phoneNumberId=%s messages=%d',change.field,phoneNumberId,messages.length);
           if(!phoneNumberId||!messages.length) continue; // accusés de statut (lu/livré) ou métadonnées seules : rien à faire
-          const c=await query('SELECT c.id,c.name,c.sector,c.ai_name AS "aiName",c.ai_tone AS "aiTone",c.ai_language AS "aiLanguage",c.ai_rules AS "aiRules",c.ai_auto_reply_enabled AS "aiAutoReplyEnabled",c.suspended,s.plan AS "plan" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id WHERE c.whatsapp_phone_number_id=$1',[phoneNumberId]);
+          const c=await query('SELECT c.id,c.name,c.sector,c.ai_name AS "aiName",c.ai_tone AS "aiTone",c.ai_language AS "aiLanguage",c.ai_rules AS "aiRules",c.ai_auto_reply_enabled AS "aiAutoReplyEnabled",c.suspended,c.approved_at AS "approvedAt",s.plan AS "plan" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id WHERE c.whatsapp_phone_number_id=$1',[phoneNumberId]);
           const companyRow=c.rows[0];
           const targetCompanyId=companyRow?.id;
           if(!targetCompanyId) { console.error('Webhook WhatsApp: aucune entreprise pour phone_number_id',phoneNumberId); continue; }
-          if(companyRow.suspended) { console.warn('[webhook] entreprise suspendue companyId=%s — message ignoré',targetCompanyId); continue; }
+          if(companyRow.suspended||!companyRow.approvedAt) { console.warn('[webhook] entreprise suspendue ou non validée companyId=%s — message ignoré',targetCompanyId); continue; }
           console.log('[webhook] routing %d message(s) to companyId=%s',messages.length,targetCompanyId);
           const contact=(value.contacts||[])[0];
           const contactName=contact?.profile?.name||null;
@@ -620,9 +626,10 @@ async function handler(req,res) {
 
   if(req.method==='POST'&&u.pathname==='/api/login') {
     const b=await body(req);
-    const r=await query('SELECT u.id,u.name,u.email,u.company_id,u.password_hash,u.password_salt,c.name AS company_name,c.suspended FROM users u JOIN companies c ON c.id=u.company_id WHERE u.email=$1',[b.email]);
+    const r=await query('SELECT u.id,u.name,u.email,u.company_id,u.password_hash,u.password_salt,c.name AS company_name,c.suspended,c.approved_at AS "approvedAt" FROM users u JOIN companies c ON c.id=u.company_id WHERE u.email=$1',[b.email]);
     const user=r.rows[0];
     if(!user||!verifyPassword(String(b.password||''),user.password_salt,user.password_hash)) return json(res,401,{error:'Identifiants incorrects'});
+    if(!user.approvedAt) return json(res,403,{error:"Votre compte est en attente de validation du paiement. Vous serez averti par email dès l'activation."});
     if(user.suspended) return json(res,403,{error:'Ce compte VENDIA est suspendu. Contactez le support.'});
     const t=await createSession(user.id,user.company_id);
     return json(res,200,{token:t,user:{id:user.id,name:user.name,email:user.email,companyId:user.company_id,company:user.company_name}});
@@ -664,6 +671,55 @@ async function handler(req,res) {
     return json(res,200,{ok:true});
   }
 
+  // Forfaits + instructions de paiement (public, utilisé par la page
+  // d'inscription en libre-service) — une seule source de vérité côté
+  // serveur (PLAN_LIMITS) pour éviter que les prix affichés divergent.
+  if(req.method==='GET'&&u.pathname==='/api/plans') {
+    const plans=Object.fromEntries(Object.entries(PLAN_LIMITS).map(([name,l])=>[name,{
+      monthlyPrice:l.monthlyPrice, maxProspectsPerMonth:l.maxProspectsPerMonth, maxUsers:l.maxUsers,
+      aiMessagesLimit:l.aiMessagesLimit, autoFollowups:l.autoFollowups, prioritySupport:l.prioritySupport
+    }]));
+    return json(res,200,{plans,payment:{orangeMoney:ORANGE_MONEY_NUMBER,mtnMomo:MTN_MOMO_NUMBER}});
+  }
+
+  // Inscription en libre-service : crée l'entreprise (nom saisi par
+  // l'administrateur, affiché ensuite dans toute l'interface de son
+  // équipe), son premier utilisateur (owner) et une demande de paiement en
+  // attente. Le compte reste bloqué (companies.approved_at NULL — voir la
+  // passerelle d'authentification plus bas) tant que le super-admin n'a pas
+  // validé la réception du paiement mobile money.
+  if(req.method==='POST'&&u.pathname==='/api/signup') {
+    const b=await body(req);
+    if(!b.companyName||!b.ownerName||!b.ownerEmail||!b.ownerPassword) return json(res,400,{error:"Nom de l'entreprise, nom, email et mot de passe requis"});
+    if(String(b.ownerPassword).length<6) return json(res,400,{error:'Le mot de passe doit contenir au moins 6 caractères'});
+    const plan=['Starter','Business','Pro'].includes(b.plan) ? b.plan : 'Starter';
+    if(!['orange_money','mtn_momo'].includes(b.paymentMethod)) return json(res,400,{error:'Choisissez un moyen de paiement (Orange Money ou MTN Mobile Money)'});
+    if(!b.payerPhone||!b.reference) return json(res,400,{error:'Numéro payeur et référence de la transaction requis pour la validation'});
+    const email=String(b.ownerEmail).trim().toLowerCase();
+    const existingUser=await query('SELECT id FROM users WHERE email=$1',[email]);
+    if(existingUser.rows[0]) return json(res,409,{error:'Cet email est déjà utilisé'});
+    const amount=planLimits(plan).monthlyPrice;
+    const result=await transaction(async client=>{
+      const c=await client.query('INSERT INTO companies(name,sector) VALUES($1,$2) RETURNING id',[String(b.companyName).trim(),b.sector||null]);
+      const newCompanyId=c.rows[0].id;
+      await client.query('INSERT INTO subscriptions(company_id,plan,status,monthly_price) VALUES($1,$2,$3,$4)',[newCompanyId,plan,'trial',amount]);
+      const h=hashPassword(String(b.ownerPassword));
+      await client.query('INSERT INTO users(company_id,email,name,role,password_hash,password_salt) VALUES($1,$2,$3,\'owner\',$4,$5)',[newCompanyId,email,String(b.ownerName).trim(),h.hash,h.salt]);
+      const pr=await client.query('INSERT INTO payment_requests(company_id,plan,method,amount,payer_phone,reference) VALUES($1,$2,$3,$4,$5,$6) RETURNING id',[newCompanyId,plan,b.paymentMethod,amount,String(b.payerPhone).trim(),String(b.reference).trim()]);
+      return {companyId:newCompanyId,paymentRequestId:pr.rows[0].id};
+    });
+    await sendEmail(process.env.SUPERADMIN_EMAIL||'', 'VENDIA — Nouvelle demande d\'activation en attente',
+      '<p>Nouvelle inscription à valider :</p><ul>'+
+      '<li>Entreprise : '+escHtml(b.companyName)+'</li>'+
+      '<li>Forfait : '+escHtml(plan)+' ('+amount+' FCFA)</li>'+
+      '<li>Propriétaire : '+escHtml(b.ownerName)+' — '+escHtml(email)+'</li>'+
+      '<li>Moyen de paiement : '+(b.paymentMethod==='orange_money'?'Orange Money':'MTN Mobile Money')+'</li>'+
+      '<li>Numéro payeur : '+escHtml(b.payerPhone)+'</li>'+
+      '<li>Référence : '+escHtml(b.reference)+'</li></ul>'+
+      '<p>Validez depuis le panneau super-admin : /superadmin.html</p>');
+    return json(res,201,{ok:true,companyId:result.companyId,message:"Compte créé. Il sera activé dès que votre paiement aura été validé — vous serez averti par email."});
+  }
+
   // --- Super-admin : compte séparé des entreprises clientes, vision et
   // contrôle sur l'ensemble de VENDIA (voir ensureSuperAdmin). Routes
   // entièrement indépendantes de l'authentification par entreprise
@@ -687,7 +743,7 @@ async function handler(req,res) {
     if(!saSession||!saSession.superAdminId) return json(res,401,{error:'Authentification super-admin requise'});
 
     if(req.method==='GET'&&u.pathname==='/api/superadmin/companies') {
-      const rows=(await query(`SELECT c.id,c.name,c.sector,c.suspended,c.created_at AS "createdAt",s.plan,s.status,s.monthly_price AS "monthlyPrice" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id ORDER BY c.created_at DESC`)).rows;
+      const rows=(await query(`SELECT c.id,c.name,c.sector,c.suspended,c.approved_at AS "approvedAt",c.created_at AS "createdAt",s.plan,s.status,s.monthly_price AS "monthlyPrice" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id ORDER BY c.created_at DESC`)).rows;
       const withUsage=await Promise.all(rows.map(async c=>{
         const [usage,userCount,prospectsCount]=await Promise.all([
           getAiUsage(c.id,c.plan),
@@ -708,9 +764,11 @@ async function handler(req,res) {
       if(existingUser.rows[0]) return json(res,409,{error:'Cet email est déjà utilisé'});
       const plan=['Starter','Business','Pro'].includes(b.plan) ? b.plan : 'Starter';
       const result=await transaction(async client=>{
-        const c=await client.query('INSERT INTO companies(name,sector) VALUES($1,$2) RETURNING id',[String(b.name).trim(),b.sector||null]);
+        // Créée directement par le super-admin : approuvée d'emblée, pas de
+        // passage par le tunnel de paiement (Jean se porte garant lui-même).
+        const c=await client.query('INSERT INTO companies(name,sector,approved_at) VALUES($1,$2,now()) RETURNING id',[String(b.name).trim(),b.sector||null]);
         const newCompanyId=c.rows[0].id;
-        await client.query('INSERT INTO subscriptions(company_id,plan,status,monthly_price) VALUES($1,$2,$3,$4)',[newCompanyId,plan,'trial',planLimits(plan).monthlyPrice]);
+        await client.query('INSERT INTO subscriptions(company_id,plan,status,monthly_price) VALUES($1,$2,$3,$4)',[newCompanyId,plan,'active',planLimits(plan).monthlyPrice]);
         const h=hashPassword(String(b.ownerPassword));
         const nu=await client.query('INSERT INTO users(company_id,email,name,role,password_hash,password_salt) VALUES($1,$2,$3,\'owner\',$4,$5) RETURNING id,name,email,role',[newCompanyId,email,String(b.ownerName).trim(),h.hash,h.salt]);
         return {companyId:newCompanyId,owner:nu.rows[0]};
@@ -778,6 +836,39 @@ async function handler(req,res) {
       return json(res,200,{ok:true,tempPassword:pwd});
     }
 
+    // Validations de paiement (tunnel Orange Money / MTN Mobile Money) :
+    // liste des demandes en attente (ou toutes), approbation (active
+    // l'entreprise et sa souscription) et rejet.
+    if(req.method==='GET'&&u.pathname==='/api/superadmin/payment-requests') {
+      const status=['pending','approved','rejected'].includes(u.searchParams.get('status')) ? u.searchParams.get('status') : 'pending';
+      const r=await query(`SELECT pr.id,pr.company_id AS "companyId",c.name AS "companyName",pr.plan,pr.method,pr.amount,pr.payer_phone AS "payerPhone",pr.reference,pr.status,pr.created_at AS "createdAt",pr.decided_at AS "decidedAt"
+        FROM payment_requests pr JOIN companies c ON c.id=pr.company_id WHERE pr.status=$1 ORDER BY pr.created_at DESC`,[status]);
+      return json(res,200,{paymentRequests:r.rows});
+    }
+    const prApproveMatch=u.pathname.match(/^\/api\/superadmin\/payment-requests\/([0-9a-f-]+)\/approve$/i);
+    if(prApproveMatch&&req.method==='POST') {
+      const pr=await query('SELECT id,company_id AS "companyId",plan,amount FROM payment_requests WHERE id=$1 AND status=\'pending\'',[prApproveMatch[1]]);
+      if(!pr.rows[0]) return json(res,404,{error:'Demande introuvable ou déjà traitée'});
+      const {companyId:pendingCompanyId,plan}=pr.rows[0];
+      await transaction(async client=>{
+        await client.query('UPDATE payment_requests SET status=\'approved\',decided_at=now() WHERE id=$1',[prApproveMatch[1]]);
+        await client.query('UPDATE companies SET approved_at=COALESCE(approved_at,now()) WHERE id=$1',[pendingCompanyId]);
+        await client.query('UPDATE subscriptions SET plan=$1,status=\'active\',monthly_price=$2 WHERE company_id=$3',[plan,planLimits(plan).monthlyPrice,pendingCompanyId]);
+      });
+      const owners=await query("SELECT email,name FROM users WHERE company_id=$1 AND role='owner'",[pendingCompanyId]);
+      for(const o of owners.rows) {
+        await sendEmail(o.email,'Votre compte VENDIA est activé 🎉',
+          '<p>Bonjour '+escHtml(o.name)+',</p><p>Votre paiement a été validé et votre compte VENDIA (forfait '+escHtml(plan)+') est maintenant actif. Vous pouvez vous connecter dès maintenant.</p>');
+      }
+      return json(res,200,{ok:true});
+    }
+    const prRejectMatch=u.pathname.match(/^\/api\/superadmin\/payment-requests\/([0-9a-f-]+)\/reject$/i);
+    if(prRejectMatch&&req.method==='POST') {
+      const r=await query('UPDATE payment_requests SET status=\'rejected\',decided_at=now() WHERE id=$1 AND status=\'pending\' RETURNING id',[prRejectMatch[1]]);
+      if(!r.rows[0]) return json(res,404,{error:'Demande introuvable ou déjà traitée'});
+      return json(res,200,{ok:true});
+    }
+
     return json(res,404,{error:'Route super-admin introuvable'});
   }
 
@@ -785,7 +876,8 @@ async function handler(req,res) {
   const session=await getSession(auth);
   if(!session||!session.companyId) return json(res,401,{error:'Authentification requise'});
   const companyId=session.companyId;
-  const susp=await query('SELECT suspended FROM companies WHERE id=$1',[companyId]);
+  const susp=await query('SELECT suspended,approved_at AS "approvedAt" FROM companies WHERE id=$1',[companyId]);
+  if(!susp.rows[0]?.approvedAt) return json(res,403,{error:"Votre compte est en attente de validation du paiement. Vous serez averti par email dès l'activation."});
   if(susp.rows[0]?.suspended) return json(res,403,{error:'Ce compte VENDIA est suspendu. Contactez le support.'});
 
   if(req.method==='GET'&&u.pathname==='/api/bootstrap') return json(res,200,await dashboard(companyId));
@@ -1126,6 +1218,76 @@ async function handler(req,res) {
   return json(res,404,{error:'Route introuvable'});
 }
 
+// --- Rapport quotidien (20h, heure du Cameroun) ---------------------------
+// Envoyé par email (voir sendEmail/RESEND_API_KEY) à chaque administrateur
+// (rôle 'owner') de chaque entreprise active, et un récapitulatif de
+// l'ensemble des entreprises au super-admin. Le Cameroun n'a pas d'heure
+// d'été (UTC+1 toute l'année), donc un simple décalage fixe suffit — pas
+// besoin de la base de fuseaux horaires du système pour ça.
+const money = n => Number(n||0).toLocaleString('fr-FR')+' FCFA';
+function cameroonNow() { return new Date(Date.now() + 60*60*1000); }
+
+async function buildCompanyReport(companyId) {
+  const [company,closedOrders,pendingDeliveries,dueFollowups,hesitant,newProspects,sub] = await Promise.all([
+    query('SELECT name FROM companies WHERE id=$1',[companyId]),
+    query(`SELECT id,order_number AS number,amount FROM orders WHERE company_id=$1 AND (created_at AT TIME ZONE 'Africa/Douala')::date = (now() AT TIME ZONE 'Africa/Douala')::date`,[companyId]),
+    query(`SELECT o.id,o.order_number AS number,p.name AS client,o.status FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 AND o.status IN ('En attente','Confirmée','En préparation') ORDER BY o.created_at`,[companyId]),
+    query(`SELECT f.id,f.text,p.name AS prospect FROM followups f LEFT JOIN prospects p ON p.id=f.prospect_id WHERE f.company_id=$1 AND f.status='Programmée' AND f.due_at IS NOT NULL AND (f.due_at AT TIME ZONE 'Africa/Douala')::date = (now() AT TIME ZONE 'Africa/Douala')::date ORDER BY f.due_at`,[companyId]),
+    query(`SELECT id,name,phone,score FROM prospects WHERE company_id=$1 AND status NOT IN ('Gagné','Perdu') AND score BETWEEN 40 AND 69 ORDER BY score DESC`,[companyId]),
+    query(`SELECT COUNT(*)::int AS n FROM prospects WHERE company_id=$1 AND (created_at AT TIME ZONE 'Africa/Douala')::date = (now() AT TIME ZONE 'Africa/Douala')::date`,[companyId]),
+    query('SELECT plan FROM subscriptions WHERE company_id=$1',[companyId])
+  ]);
+  const revenueToday = closedOrders.rows.reduce((s,o)=>s+Number(o.amount||0),0);
+  const aiUsage = await getAiUsage(companyId, sub.rows[0]?.plan);
+  return { companyName: company.rows[0]?.name || 'Entreprise', closedOrders: closedOrders.rows, revenueToday, pendingDeliveries: pendingDeliveries.rows, dueFollowups: dueFollowups.rows, hesitant: hesitant.rows, newProspectsCount: newProspects.rows[0].n, aiUsage };
+}
+
+function reportToHtml(r) {
+  return ''+
+    '<p><strong>🏆 Prospects closés aujourd\'hui :</strong> '+r.closedOrders.length+' commande(s) — '+money(r.revenueToday)+'</p>'+
+    (r.closedOrders.length ? '<ul>'+r.closedOrders.map(o=>'<li>'+escHtml(o.number)+' — '+money(o.amount)+'</li>').join('')+'</ul>' : '')+
+    '<p><strong>🚚 Livraisons prévues / en attente :</strong> '+r.pendingDeliveries.length+'</p>'+
+    (r.pendingDeliveries.length ? '<ul>'+r.pendingDeliveries.map(o=>'<li>'+escHtml(o.number)+' — '+escHtml(o.client||'Client')+' — '+escHtml(o.status)+'</li>').join('')+'</ul>' : '')+
+    '<p><strong>🔁 Relances prévues aujourd\'hui :</strong> '+r.dueFollowups.length+'</p>'+
+    (r.dueFollowups.length ? '<ul>'+r.dueFollowups.map(f=>'<li>'+escHtml(f.prospect||'Prospect')+' — '+escHtml(f.text||'')+'</li>').join('')+'</ul>' : '')+
+    '<p><strong>🤔 Prospects hésitants :</strong> '+r.hesitant.length+'</p>'+
+    (r.hesitant.length ? '<ul>'+r.hesitant.map(p=>'<li>'+escHtml(p.name||p.phone||'Prospect')+' (score '+p.score+'/100)</li>').join('')+'</ul>' : '')+
+    '<p><strong>🆕 Nouveaux prospects aujourd\'hui :</strong> '+r.newProspectsCount+'</p>'+
+    '<p><strong>🤖 Réponses IA utilisées ce mois :</strong> '+(r.aiUsage.limit==null ? 'illimité' : (r.aiUsage.used+' / '+r.aiUsage.limit))+'</p>';
+}
+
+async function sendDailyReports() {
+  const companies=(await query('SELECT id,name FROM companies WHERE approved_at IS NOT NULL AND suspended=false')).rows;
+  let combined='', totals={orders:0,revenue:0,newProspects:0};
+  for (const c of companies) {
+    const report=await buildCompanyReport(c.id);
+    const html=reportToHtml(report);
+    totals.orders+=report.closedOrders.length; totals.revenue+=report.revenueToday; totals.newProspects+=report.newProspectsCount;
+    const owners=(await query("SELECT email,name FROM users WHERE company_id=$1 AND role='owner'",[c.id])).rows;
+    for (const o of owners) {
+      await sendEmail(o.email, 'VENDIA — Votre rapport du jour', '<p>Bonjour '+escHtml(o.name)+',</p><p>Voici le rapport de <strong>'+escHtml(report.companyName)+'</strong> pour aujourd\'hui :</p>'+html);
+    }
+    combined += '<h3>'+escHtml(report.companyName)+'</h3>'+html+'<hr>';
+  }
+  const summary='<p><strong>Entreprises actives :</strong> '+companies.length+' · <strong>Commandes closes :</strong> '+totals.orders+' · <strong>CA du jour :</strong> '+money(totals.revenue)+' · <strong>Nouveaux prospects :</strong> '+totals.newProspects+'</p><hr>';
+  await sendEmail(process.env.SUPERADMIN_EMAIL||'', 'VENDIA — Rapport quotidien de toutes les entreprises', summary+combined);
+}
+
+async function checkDailyReportSchedule() {
+  const now=cameroonNow();
+  if (now.getUTCHours()!==20) return; // fenêtre : toute la 20e heure (20h00–20h59 Cameroun)
+  const today=now.toISOString().slice(0,10);
+  try {
+    const r=await query('SELECT state FROM app_state WHERE id=1');
+    const state=r.rows[0]?.state || {};
+    if (state.lastDailyReportDate===today) return; // déjà envoyé aujourd'hui — protège contre les redémarrages
+    await sendDailyReports();
+    const newState=JSON.stringify({...state,lastDailyReportDate:today});
+    await query('INSERT INTO app_state(id,state) VALUES(1,$1) ON CONFLICT (id) DO UPDATE SET state=$1,updated_at=now()',[newState]);
+    console.log('[daily-report] rapports envoyes pour',today);
+  } catch(e) { console.error('[daily-report] echec:',e.message); }
+}
+
 // Migrations additives et idempotentes exécutées au démarrage : évite de
 // dépendre d'une étape manuelle (CLI/console Railway) après chaque déploiement
 // qui ajoute des colonnes/tables. Sans effet sur les données existantes.
@@ -1168,6 +1330,29 @@ async function ensureMigrations() {
        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
      )`,
     'CREATE INDEX IF NOT EXISTS password_resets_token_idx ON password_resets(token_hash)',
+    // Lot "tunnel de paiement mobile money + rapports quotidiens" —
+    // idempotent. approved_at NULL = compte en attente de validation du
+    // paiement par le super-admin (bloque connexion/API/webhook, voir plus
+    // haut). Le backfill n'approuve que les entreprises SANS demande de
+    // paiement (créées avant ce lot, ou directement par le super-admin) —
+    // jamais les nouvelles inscriptions en attente, qui ont toujours une
+    // ligne dans payment_requests.
+    'ALTER TABLE companies ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ',
+    `CREATE TABLE IF NOT EXISTS payment_requests (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+       plan TEXT NOT NULL CHECK(plan IN ('Starter','Business','Pro')),
+       method TEXT NOT NULL CHECK(method IN ('orange_money','mtn_momo')),
+       amount NUMERIC(14,2) NOT NULL,
+       payer_phone TEXT,
+       reference TEXT,
+       status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+       decided_at TIMESTAMPTZ
+     )`,
+    'CREATE INDEX IF NOT EXISTS payment_requests_status_idx ON payment_requests(status)',
+    `UPDATE companies SET approved_at = COALESCE(approved_at, created_at)
+       WHERE approved_at IS NULL AND id NOT IN (SELECT company_id FROM payment_requests)`,
   ];
   for (const stmt of statements) {
     try { await query(stmt); } catch(e) { console.error('[migrations] echec:',stmt.split('\n')[0],e.message); }
@@ -1177,6 +1362,7 @@ async function ensureMigrations() {
 
 const server=http.createServer((req,res)=>handler(req,res).catch(e=>{console.error(e);json(res,500,{error:'Erreur serveur'});}));
 ensureMigrations().then(()=>ensureSuperAdmin()).catch(e=>console.error('[superadmin] echec initialisation:',e.message)).finally(()=>{
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.8.0 listening on ${PORT}`));
+  setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.9.0 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

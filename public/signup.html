@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VENDIA — Créer un compte</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,sans-serif;background:#f5f7fb;color:#172033}
+header{background:#111827;color:white;padding:18px 28px}
+h1{margin:0;font-size:22px}.tag{opacity:.75;font-size:13px}
+.wrap{max-width:640px;margin:32px auto;padding:0 18px}
+.panel{background:white;border-radius:18px;padding:24px;box-shadow:0 8px 30px #0000000d;margin-bottom:16px}
+.btn{border:0;border-radius:10px;padding:13px 18px;background:#111827;color:#fff;font-weight:700;cursor:pointer;width:100%;font-size:15px}
+form.formgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.formgrid .full{grid-column:1/-1}
+input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px;background:white;font-size:14px}
+.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:10px 0}
+.plan{border:2px solid #e9edf5;border-radius:14px;padding:14px;cursor:pointer;text-align:center}
+.plan.active{border-color:#111827;background:#f5f7fb}
+.plan h4{margin:0 0 4px}.plan .price{font-weight:800;font-size:16px}
+.methods{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+.method{border:2px solid #e9edf5;border-radius:14px;padding:14px;cursor:pointer;text-align:center}
+.method.active{border-color:#111827;background:#f5f7fb}
+.instructions{background:#eef2ff;border-radius:12px;padding:14px;margin:12px 0;font-size:14px}
+.error{color:#b42318;margin-top:10px}.success{color:#18794e;margin-top:10px}.hidden{display:none}.muted{color:#687386;font-size:13px}
+@media(max-width:600px){.plans{grid-template-columns:1fr}.methods{grid-template-columns:1fr}form.formgrid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><h1>VENDIA</h1><div class="tag">Créer le compte de votre entreprise</div></header>
+<main class="wrap">
+
+<section id="form" class="panel">
+<h2>1. Votre forfait</h2>
+<div class="plans" id="plans"></div>
+
+<h2>2. Votre entreprise</h2>
+<form class="formgrid" id="signupForm" onsubmit="submitSignup(event)">
+<input id="companyName" placeholder="Nom de l'entreprise" required class="full">
+<input id="sector" placeholder="Secteur d'activité">
+<span></span>
+<input id="ownerName" placeholder="Votre nom complet" required>
+<input id="ownerEmail" type="email" placeholder="Votre email" required>
+<input id="ownerPassword" type="password" placeholder="Mot de passe (min. 6 caractères)" required class="full">
+
+<div class="full"><h3 style="margin-bottom:4px">3. Paiement</h3></div>
+<div class="full methods" id="methods"></div>
+<div class="full instructions" id="paymentInstructions"></div>
+<input id="payerPhone" placeholder="Votre numéro (celui utilisé pour payer)" required>
+<input id="reference" placeholder="Référence de la transaction" required>
+
+<div class="full"><button class="btn" type="submit">Créer mon compte</button></div>
+</form>
+<p class="muted" style="margin-top:10px">Votre compte sera activé dès que le paiement sera validé (généralement sous quelques heures). Vous serez averti par email.</p>
+<div id="status" style="margin-top:10px"></div>
+<div style="margin-top:14px"><a href="/">Déjà un compte ? Se connecter</a></div>
+</section>
+
+<section id="done" class="panel hidden">
+<h2>✅ Compte créé</h2>
+<p id="doneMsg"></p>
+<a href="/">Retour à la connexion</a>
+</section>
+
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let plansData=null, selectedPlan='Starter', selectedMethod='orange_money';
+
+async function loadPlans(){
+  const r=await fetch('/api/plans'); plansData=await r.json();
+  renderPlans(); renderMethods(); renderInstructions();
+}
+function renderPlans(){
+  const names=['Starter','Business','Pro'];
+  $('plans').innerHTML=names.map(n=>{
+    const p=plansData.plans[n];
+    return '<div class="plan'+(n===selectedPlan?' active':'')+'" onclick="selectPlan(\''+n+'\')">'+
+      '<h4>'+n+'</h4><div class="price">'+Number(p.monthlyPrice).toLocaleString('fr-FR')+' FCFA</div>'+
+      '<div class="muted">'+(p.maxUsers==null?'Membres illimités':p.maxUsers+' membre(s)')+'</div></div>';
+  }).join('');
+}
+function selectPlan(n){ selectedPlan=n; renderPlans(); renderInstructions(); }
+function renderMethods(){
+  $('methods').innerHTML=''+
+    '<div class="method'+(selectedMethod==='orange_money'?' active':'')+'" onclick="selectMethod(\'orange_money\')"><strong>🟠 Orange Money</strong></div>'+
+    '<div class="method'+(selectedMethod==='mtn_momo'?' active':'')+'" onclick="selectMethod(\'mtn_momo\')"><strong>🟡 MTN Mobile Money</strong></div>';
+}
+function selectMethod(m){ selectedMethod=m; renderMethods(); renderInstructions(); }
+function renderInstructions(){
+  const price=Number(plansData.plans[selectedPlan].monthlyPrice).toLocaleString('fr-FR');
+  const number=selectedMethod==='orange_money'?plansData.payment.orangeMoney:plansData.payment.mtnMomo;
+  const label=selectedMethod==='orange_money'?'Orange Money':'MTN Mobile Money';
+  $('paymentInstructions').innerHTML='Envoyez <strong>'+price+' FCFA</strong> via <strong>'+label+'</strong> au numéro <strong>'+esc(number)+'</strong>, puis indiquez ci-dessous le numéro depuis lequel vous avez payé et la référence de la transaction (reçue par SMS).';
+}
+async function submitSignup(e){
+  e.preventDefault();
+  const status=$('status');
+  status.innerHTML='Création en cours…'; status.className='muted';
+  try{
+    const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      companyName:$('companyName').value.trim(), sector:$('sector').value.trim(),
+      ownerName:$('ownerName').value.trim(), ownerEmail:$('ownerEmail').value.trim(), ownerPassword:$('ownerPassword').value,
+      plan:selectedPlan, paymentMethod:selectedMethod, payerPhone:$('payerPhone').value.trim(), reference:$('reference').value.trim()
+    })});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error||'Erreur lors de la création du compte');
+    $('form').classList.add('hidden');
+    $('done').classList.remove('hidden');
+    $('doneMsg').textContent=d.message;
+  }catch(x){ status.className='error'; status.textContent=x.message; }
+}
+loadPlans();
+</script>
+</body></html>
