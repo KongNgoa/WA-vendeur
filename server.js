@@ -113,7 +113,7 @@ async function ensureDemo() {
     let c = await client.query('SELECT id FROM companies WHERE name=$1 LIMIT 1',['Boutique Démo Yaoundé']);
     let companyId = c.rows[0]?.id;
     if (!companyId) {
-      const r = await client.query("INSERT INTO companies(name,sector,ai_name,approved_at) VALUES($1,$2,$3,now()) RETURNING id",['Boutique Démo Yaoundé','Mode & accessoires','Julie']);
+      const r = await client.query("INSERT INTO companies(name,sector,ai_name,approved_at) VALUES($1,$2,$3,now()) RETURNING id",['Boutique Démo Yaoundé','Mode & accessoires','Assistant commercial']);
       companyId = r.rows[0].id;
       const products=[['Nike Air Max','Chaussures',25000,8],['T-shirt Premium','Vêtements',12000,17],['Jean homme','Vêtements',18000,5]];
       for (const p of products) await client.query('INSERT INTO products(company_id,name,category,price,stock) VALUES($1,$2,$3,$4,$5)',[companyId,...p]);
@@ -149,7 +149,7 @@ async function ensureSuperAdmin() {
 
 async function dashboard(companyId) {
   const [company,products,prospects,orders,conversations,followups,subscription,appointments] = await Promise.all([
-    query('SELECT id,name,sector,ai_name AS "aiName",ai_tone AS "aiTone",ai_auto_reply_enabled AS "aiAutoReplyEnabled" FROM companies WHERE id=$1',[companyId]),
+    query('SELECT id,name,sector,ai_name AS "aiName",ai_tone AS "aiTone",ai_language AS "aiLanguage",ai_rules AS "aiRules",ai_auto_reply_enabled AS "aiAutoReplyEnabled" FROM companies WHERE id=$1',[companyId]),
     query('SELECT id,name,category,price,stock,created_at AS "createdAt" FROM products WHERE company_id=$1 ORDER BY created_at DESC',[companyId]),
     query('SELECT id,name,phone,need,value,score,status,order_intent AS "orderIntent",last_contact AS "lastContact",next_action AS "nextAction",next_action_priority AS "nextActionPriority",next_action_reason AS "nextActionReason",next_action_at AS "nextActionAt",created_at AS "createdAt" FROM prospects WHERE company_id=$1 ORDER BY score DESC,created_at DESC',[companyId]),
     query('SELECT o.id,o.order_number AS number,p.name AS client,o.amount,o.status,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC',[companyId]),
@@ -377,7 +377,7 @@ function ai(text, products=[]) {
   if(q.includes('livr')) return 'Oui. Quel est votre quartier pour organiser la livraison ?';
   if(q.includes('acheter')||q.includes('commande')) return 'Avec plaisir. Donnez-moi votre nom, téléphone, produit et localisation pour préparer la commande.';
   if(q.includes('humain')||q.includes('conseiller')) return 'Bien sûr. Je transmets votre demande à un conseiller humain.';
-  return 'Bonjour 👋 Je suis Julie, votre assistante commerciale. Que puis-je faire pour vous ?';
+  return 'Bonjour 👋 Je suis votre assistant commercial. Que puis-je faire pour vous ?';
 }
 
 // Envoi WhatsApp réel (phase 3, Meta WhatsApp Cloud API). Règle impérative,
@@ -647,8 +647,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.1',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.1'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.2',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.2'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -1069,8 +1069,26 @@ async function handler(req,res) {
 
   if(req.method==='PATCH'&&u.pathname==='/api/settings/ai') {
     const b=await body(req);
-    await query('UPDATE companies SET ai_auto_reply_enabled=$1 WHERE id=$2',[Boolean(b.autoReplyEnabled),companyId]);
+    // autoReplyEnabled seul (case à cocher) vs. formulaire complet de
+    // personnalisation (nom/ton/langue/consignes) : on ne touche que les
+    // champs réellement envoyés pour ne pas écraser les autres par erreur.
+    if(Object.keys(b).length===1 && 'autoReplyEnabled' in b) {
+      await query('UPDATE companies SET ai_auto_reply_enabled=$1 WHERE id=$2',[Boolean(b.autoReplyEnabled),companyId]);
+      return json(res,200,{ok:true});
+    }
+    await query('UPDATE companies SET ai_name=$1,ai_tone=$2,ai_language=$3,ai_rules=$4,ai_auto_reply_enabled=$5 WHERE id=$6',[
+      b.aiName?String(b.aiName).trim().slice(0,60):'Assistant commercial',
+      b.aiTone?String(b.aiTone).trim().slice(0,120):'Professionnel et chaleureux',
+      b.aiLanguage?String(b.aiLanguage).trim().slice(0,40):'Français',
+      b.aiRules?String(b.aiRules).trim().slice(0,2000):null,
+      b.autoReplyEnabled!==false,
+      companyId
+    ]);
     return json(res,200,{ok:true});
+  }
+  if(req.method==='GET'&&u.pathname==='/api/settings/ai') {
+    const r=await query('SELECT ai_name AS "aiName",ai_tone AS "aiTone",ai_language AS "aiLanguage",ai_rules AS "aiRules",ai_auto_reply_enabled AS "aiAutoReplyEnabled" FROM companies WHERE id=$1',[companyId]);
+    return json(res,200,r.rows[0]||{});
   }
 
   // Numéros mobile money PROPRES à cette entreprise, pour que SES clients
@@ -1304,8 +1322,19 @@ async function handler(req,res) {
   }
 
   if(req.method==='POST'&&u.pathname==='/api/ai/reply') {
-    const b=await body(req); const d=await query('SELECT name,price,stock FROM products WHERE company_id=$1 ORDER BY created_at',[companyId]);
-    return json(res,200,{reply:ai(b.text,d.rows),provider:'fallback-demo'});
+    const b=await body(req);
+    const [d,c,pr]=await Promise.all([
+      query('SELECT name,category,price,stock FROM products WHERE company_id=$1 ORDER BY created_at',[companyId]),
+      query('SELECT name,sector,ai_name AS "aiName",ai_tone AS "aiTone",ai_language AS "aiLanguage",ai_rules AS "aiRules",payment_orange_money AS "paymentOrangeMoney",payment_mtn_momo AS "paymentMtnMomo" FROM companies WHERE id=$1',[companyId]),
+      b.prospectId ? query('SELECT status,need FROM prospects WHERE id=$1 AND company_id=$2',[b.prospectId,companyId]) : Promise.resolve({rows:[]})
+    ]);
+    // Teste le VRAI moteur IA (Claude) utilisé sur WhatsApp quand la clé est
+    // configurée, avec le catalogue et la personnalité réels de l'entreprise
+    // — plutôt que la réponse de secours à mots-clés (fallback-demo), pour
+    // que ce panneau serve de vérification fiable après un changement de clé.
+    const real = await generateAiReply(c.rows[0]||{}, pr.rows[0]||null, d.rows, [{direction:'in',body:b.text}]);
+    if(real) return json(res,200,{reply:real,provider:'anthropic'});
+    return json(res,200,{reply:ai(b.text,d.rows),provider:'fallback-demo',aiUnavailable:!process.env.ANTHROPIC_API_KEY});
   }
 
   if(req.method==='POST'&&u.pathname==='/api/ai/qualify') {
@@ -1658,6 +1687,6 @@ const server=http.createServer((req,res)=>handler(req,res).catch(e=>{console.err
 ensureMigrations().then(()=>ensureSuperAdmin()).catch(e=>console.error('[superadmin] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.1 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.2 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

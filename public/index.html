@@ -133,13 +133,24 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <div id="appointmentTable"></div></div>
 </section>
 <section id="assistantTab" class="hidden">
+<div class="panel"><h3>Personnalité de l'assistant IA</h3>
+<p class="muted">Le nom, le ton et la langue utilisés par l'IA pour répondre à vos clients sur WhatsApp — et dans le test ci-dessous.</p>
+<form class="formgrid" onsubmit="saveAiSettings(event)">
+<input id="aiNameInput" placeholder="Nom de l'IA (ex. Toussaint, Julie, Assistant Boutique)" maxlength="60">
+<input id="aiToneInput" placeholder="Ton (ex. Professionnel et chaleureux)" maxlength="120">
+<input id="aiLanguageInput" placeholder="Langue (ex. Français)" maxlength="40">
+<div class="full"><textarea id="aiRulesInput" rows="3" placeholder="Consignes spécifiques à respecter (optionnel) — ex. toujours proposer la livraison, ne jamais donner de remise sans validation…" maxlength="2000" style="width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px;font-family:inherit"></textarea></div>
+<div class="full"><button class="btn primary">Enregistrer</button></div>
+</form>
+<div id="aiSettingsStatus" style="margin-top:10px"></div>
+</div>
 <div class="panel"><h3>Assistant commercial IA</h3><p class="muted">Testez une réponse client basée sur votre catalogue et mesurez l’intention d’achat.</p>
 <div class="formgrid">
 <select id="aiProspect"><option value="">Analyser sans prospect</option></select>
 <input id="q" placeholder="Ex. Je veux la Nike Air Max, vous livrez à Odza ?">
 </div>
 <div class="chat"><button class="btn primary" onclick="ask()">Analyser la demande</button></div>
-<div class="reply" id="reply">Bonjour 👋 Je suis Julie. Posez-moi une question.</div>
+<div class="reply" id="reply">Bonjour 👋 Posez une question test.</div>
 <div id="qualification" style="margin-top:12px"></div>
 </div>
 <div class="panel"><h3>Réponse automatique par IA</h3>
@@ -364,6 +375,7 @@ function tab(name) {
   if (name === 'orders') renderOrders();
   if (name === 'followups') { renderFollowups(); renderAppointments(); }
   if (name === 'team') loadTeam();
+  if (name === 'assistant') loadAiSettings();
   if (name === 'settings') { loadWhatsappSettings(); loadPaymentSettings(); }
 }
 
@@ -757,6 +769,28 @@ async function savePaymentSettings(e){
   }catch(x){ $('pStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
 }
 
+async function loadAiSettings(){
+  try{
+    const s=await api('/api/settings/ai');
+    $('aiNameInput').value=s.aiName||'';
+    $('aiToneInput').value=s.aiTone||'';
+    $('aiLanguageInput').value=s.aiLanguage||'';
+    $('aiRulesInput').value=s.aiRules||'';
+  }catch(x){ $('aiSettingsStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
+}
+async function saveAiSettings(e){
+  e.preventDefault();
+  try{
+    await api('/api/settings/ai',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      aiName:$('aiNameInput').value.trim(), aiTone:$('aiToneInput').value.trim(),
+      aiLanguage:$('aiLanguageInput').value.trim(), aiRules:$('aiRulesInput').value.trim(),
+      autoReplyEnabled: data.company?.aiAutoReplyEnabled !== false
+    })});
+    $('aiSettingsStatus').innerHTML='<span class="badge">✅ Personnalité enregistrée.</span>';
+    if(data.company){ data.company.aiName=$('aiNameInput').value.trim(); }
+  }catch(x){ $('aiSettingsStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
+}
+
 const APPOINTMENT_STATUS_CLASS = { 'Confirmé':'', 'Proposé':'cold', 'Annulé':'handoff' };
 function renderAppointments(){
   const list=data.appointments||[];
@@ -788,11 +822,14 @@ async function ask() {
   try {
     const prospectId=$('aiProspect').value||null;
     const [d,q,na]=await Promise.all([
-      api('/api/ai/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})}),
+      api('/api/ai/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,prospectId})}),
       api('/api/ai/qualify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,prospectId})}),
       api('/api/ai/next-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,prospectId})})
     ]);
     $('reply').textContent=d.reply;
+    $('reply').innerHTML += d.provider==='anthropic'
+      ? ' <span class="badge" style="margin-left:6px">✅ Réponse Claude (IA réelle)</span>'
+      : ' <span class="badge hot" style="margin-left:6px">⚠️ Mode secours'+(d.aiUnavailable?' — clé IA non configurée':' — IA momentanément indisponible')+'</span>';
     const x=q.qualification;
     const cls=x.score>=70?'hot':x.score<40?'cold':'';
     $('qualification').innerHTML='<div class="panel" style="box-shadow:none;border:1px solid #edf0f5;margin:0"><strong>Qualification automatique</strong><div style="margin-top:8px"><span class="badge '+cls+'">'+esc(x.status)+' · '+x.score+'/100</span> '+(x.orderIntent?'<span class="badge">🛒 Intention d’achat</span>':'')+'</div><div class="muted" style="margin-top:8px">'+esc(x.reasons.join(' · ')||'Aucun signal particulier détecté.')+'</div></div>' +

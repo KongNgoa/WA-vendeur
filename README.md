@@ -33,4 +33,9 @@ Rapport quotidien (20h, heure du Cameroun) envoyé par email à chaque administr
 - **Paiement mobile money propre à chaque entreprise** : chaque entreprise renseigne ses propres numéros Orange Money / MTN Mobile Money dans Paramètres → l'IA les indique automatiquement au client au moment de la commande. Distinct des numéros du super-admin (`ORANGE_MONEY_NUMBER`/`MTN_MOMO_NUMBER`) qui servent uniquement au tunnel d'abonnement VENDIA.
 - **Prise de rendez-vous automatisée** : un client qui exprime une intention de rendez-vous (livraison, démo, appel) avec un jour/une heure est confirmé automatiquement (visible dans l'onglet Relances → Rendez-vous) ; sans date précise, le rendez-vous reste "Proposé" et l'IA demande au client de préciser.
 
+## Personnalité de l'IA et logo (1.10.2)
+- **Nom, ton, langue et consignes de l'IA personnalisables** (onglet Assistant IA → "Personnalité de l'assistant IA") : chaque entreprise choisit comment son assistant se présente à ses clients (ces champs existaient déjà en base mais n'avaient jamais eu d'interface).
+- **Le testeur "Assistant commercial IA" utilise désormais le vrai moteur Claude** (comme sur WhatsApp) quand `ANTHROPIC_API_KEY` est configurée, au lieu d'une réponse de secours à mots-clés — un badge indique clairement quel moteur a répondu, pratique pour vérifier qu'une clé fonctionne sans passer par WhatsApp.
+- **Logo VENDIA intégré** : favicon, icône d'app et en-tête des 4 pages publiques, avec la palette de couleurs de la marque (bleu → vert en dégradé, fond marine) reprise pour les boutons principaux et onglets actifs.
+
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.
