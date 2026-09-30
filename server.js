@@ -148,14 +148,15 @@ async function ensureSuperAdmin() {
 }
 
 async function dashboard(companyId) {
-  const [company,products,prospects,orders,conversations,followups,subscription] = await Promise.all([
+  const [company,products,prospects,orders,conversations,followups,subscription,appointments] = await Promise.all([
     query('SELECT id,name,sector,ai_name AS "aiName",ai_tone AS "aiTone",ai_auto_reply_enabled AS "aiAutoReplyEnabled" FROM companies WHERE id=$1',[companyId]),
     query('SELECT id,name,category,price,stock,created_at AS "createdAt" FROM products WHERE company_id=$1 ORDER BY created_at DESC',[companyId]),
     query('SELECT id,name,phone,need,value,score,status,order_intent AS "orderIntent",last_contact AS "lastContact",next_action AS "nextAction",next_action_priority AS "nextActionPriority",next_action_reason AS "nextActionReason",next_action_at AS "nextActionAt",created_at AS "createdAt" FROM prospects WHERE company_id=$1 ORDER BY score DESC,created_at DESC',[companyId]),
     query('SELECT o.id,o.order_number AS number,p.name AS client,o.amount,o.status,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC',[companyId]),
     query(`SELECT c.id,c.external_contact AS phone,p.name,COALESCE(json_agg(json_build_object('id',m.id,'from',m.direction,'text',m.body) ORDER BY m.created_at) FILTER (WHERE m.id IS NOT NULL),'[]') AS messages FROM conversations c LEFT JOIN prospects p ON p.id=c.prospect_id LEFT JOIN messages m ON m.conversation_id=c.id WHERE c.company_id=$1 GROUP BY c.id,p.name ORDER BY c.created_at DESC`,[companyId]),
     query('SELECT id,due_at AS "dueAt",status,text,prospect_id AS "prospectId",source,cancelled_reason AS "cancelledReason" FROM followups WHERE company_id=$1 ORDER BY due_at NULLS LAST',[companyId]),
-    query('SELECT plan,status,monthly_price AS "monthlyPrice",next_billing_at AS "nextBillingAt" FROM subscriptions WHERE company_id=$1',[companyId])
+    query('SELECT plan,status,monthly_price AS "monthlyPrice",next_billing_at AS "nextBillingAt" FROM subscriptions WHERE company_id=$1',[companyId]),
+    query(`SELECT a.id,a.prospect_id AS "prospectId",p.name AS prospect,a.type,a.scheduled_at AS "scheduledAt",a.status FROM appointments a LEFT JOIN prospects p ON p.id=a.prospect_id WHERE a.company_id=$1 ORDER BY a.scheduled_at NULLS LAST,a.created_at DESC`,[companyId])
   ]);
   const ps=prospects.rows, os=orders.rows;
   const plan=subscription.rows[0]?.plan;
@@ -171,6 +172,7 @@ async function dashboard(companyId) {
     orders:os,
     conversations:conversations.rows,
     followups:followups.rows,
+    appointments:appointments.rows,
     subscription:subscription.rows[0],
     usage:{
       aiMessages:aiUsage,
@@ -258,6 +260,64 @@ function determineNextAction(text, qualification) {
     return { action: 'nurture', priority: 'low', reason: 'Prospect froid — nurturing / relance différée' };
   }
   return { action: 'answer_and_qualify', priority: 'low', reason: 'Poursuivre la conversation et qualifier davantage' };
+}
+
+// Prise de rendez-vous automatisée (fonctionnalité repérée chez les
+// concurrents — livraison/démo/appel programmés directement depuis la
+// conversation). Détection volontairement simple (mots-clés + expressions de
+// date/heure courantes en français) plutôt qu'un moteur NLU complet : elle
+// couvre les tournures les plus fréquentes sur WhatsApp sans dépendance
+// externe, et laisse toujours le dernier mot à l'IA/l'équipe en cas de doute
+// (aucune date reconnue → le rendez-vous reste "Proposé", pas confirmé).
+const APPOINTMENT_TYPE_HINTS = [
+  [/d[ée]mo|d[ée]monstration/i, 'Démonstration'],
+  [/livr/i, 'Livraison'],
+  [/appel|m['’]appeler|me joindre/i, 'Appel'],
+];
+const APPOINTMENT_INTENT = /\b(rendez[- ]vous|rdv|passer (?:chez|vous voir)|venir (?:chez|vous voir)|on se voit|programmer|planifier|caler|fixer un moment)\b/i;
+const WEEKDAYS_FR = ['dimanche','lundi','mardi','mercredi','jeudi','vendredi','samedi'];
+
+function parseAppointmentSlot(text, now) {
+  const q = String(text||'').toLowerCase();
+  const base = now || cameroonNow();
+  let date = null;
+
+  if (/après[- ]demain/.test(q)) { date = new Date(base); date.setUTCDate(date.getUTCDate()+2); }
+  else if (/\bdemain\b/.test(q)) { date = new Date(base); date.setUTCDate(date.getUTCDate()+1); }
+  else if (/\baujourd['’]?hui\b|\bce soir\b/.test(q)) { date = new Date(base); }
+  else {
+    const wd = WEEKDAYS_FR.findIndex(d => new RegExp('\\b'+d+'\\b').test(q));
+    if (wd !== -1) {
+      date = new Date(base);
+      const todayWd = date.getUTCDay();
+      let delta = (wd - todayWd + 7) % 7;
+      if (delta === 0) delta = 7; // "lundi" un lundi = le lundi suivant, pas aujourd'hui
+      date.setUTCDate(date.getUTCDate()+delta);
+    } else {
+      const dm = q.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
+      if (dm) {
+        date = new Date(base);
+        const year = dm[3] ? (dm[3].length===2?2000+Number(dm[3]):Number(dm[3])) : date.getUTCFullYear();
+        date.setUTCFullYear(year, Number(dm[2])-1, Number(dm[1]));
+      }
+    }
+  }
+  if (!date) return null;
+
+  const tm = q.match(/\b(\d{1,2})\s*[h:]\s*(\d{2})?\b/);
+  let hour = 9, minute = 0; // heure par défaut si le client ne précise que le jour
+  if (tm) { hour = Math.min(23, Number(tm[1])); minute = tm[2] ? Number(tm[2]) : 0; }
+  else if (/matin/.test(q)) hour = 9;
+  else if (/apr[eè]s[- ]midi/.test(q)) hour = 15;
+  else if (/soir/.test(q)) hour = 18;
+  date.setUTCHours(hour, minute, 0, 0);
+  // `base`/`date` portent l'heure du Cameroun encodée dans les champs UTC
+  // (voir cameroonNow()) — on revient ici au véritable instant UTC (Cameroun
+  // = UTC+1 fixe, sans heure d'été) avant de renvoyer une date exploitable.
+  date = new Date(date.getTime() - 60*60*1000);
+
+  const typeMatch = APPOINTMENT_TYPE_HINTS.find(([re]) => re.test(q));
+  return { scheduledAt: date, hasExplicitTime: Boolean(tm), type: typeMatch ? typeMatch[1] : 'Rendez-vous' };
 }
 
 // Relances automatiques contrôlées (section 26 du dossier de transmission).
@@ -356,6 +416,70 @@ async function sendWhatsAppMessage(company, toPhone, text) {
   }
 }
 
+// Catalogue produits interactif (fonctionnalité "meilleure pratique" repérée
+// chez plusieurs concurrents africains/globaux — Zoko, Interakt — qui
+// affichent le catalogue directement dans la conversation au lieu d'un texte
+// brut). Utilise un message "interactive list" de l'API Cloud WhatsApp
+// (natif, sans passer par un catalogue Meta Commerce séparé) : le client
+// parcourt jusqu'à 10 produits par message sans quitter WhatsApp. L'id de
+// chaque ligne (product_<id>) permet, à la sélection, de retrouver le
+// produit exact — voir extractInboundText.
+async function sendWhatsAppProductList(company, toPhone, products) {
+  const to = formatWhatsAppPhone(toPhone);
+  if (!to) return { error: 'Numéro de destinataire invalide' };
+  const rows = (products || []).slice(0, 10).map(p => ({
+    id: 'product_' + p.id,
+    title: String(p.name || 'Produit').slice(0, 24),
+    description: (Number(p.price || 0).toLocaleString('fr-FR') + ' FCFA' + (Number(p.stock) > 0 ? ' · Stock: ' + p.stock : ' — Rupture de stock')).slice(0, 72)
+  }));
+  if (!rows.length) return { error: 'Aucun produit à afficher' };
+  try {
+    const resp = await fetch(`https://graph.facebook.com/${WHATSAPP_API_VERSION}/${company.whatsappPhoneNumberId}/messages`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + company.whatsappAccessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp', to, type: 'interactive',
+        interactive: {
+          type: 'list',
+          body: { text: 'Voici notre catalogue 🛍️ Touchez un article pour en savoir plus.' },
+          action: { button: 'Voir le catalogue', sections: [{ title: 'Nos produits', rows }] }
+        }
+      })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { error: data?.error?.message || ('Erreur WhatsApp (HTTP ' + resp.status + ')') };
+    return { providerMessageId: data?.messages?.[0]?.id || null };
+  } catch (e) {
+    return { error: 'Connexion à WhatsApp impossible : ' + e.message };
+  }
+}
+
+// Le client demande à voir le catalogue en texte libre ("vous avez quoi
+// comme produits ?", "catalogue", "menu"…) — déclenche l'envoi de la liste
+// interactive ci-dessus plutôt qu'une réponse IA classique.
+const CATALOG_INTENT = /\b(catalogue?|liste des produits|vos produits|vos articles|qu[’']?avez[- ]vous|qu avez vous|montrez?[- ]moi|montre moi vos|voir (?:le |vos )?produits|c['’]est quoi vos produits|menu produits)\b/i;
+
+// Convertit un message WhatsApp entrant (texte libre OU réponse à un message
+// interactif) en texte exploitable par le pipeline existant (qualification,
+// IA, etc.). Une sélection dans la liste du catalogue devient une phrase
+// naturelle ("Je m'intéresse à ...") pour que l'IA réponde avec le prix/stock
+// exact du produit choisi, en s'appuyant sur le catalogue déjà dans son
+// system prompt — sans code de réponse dédié à dupliquer/maintenir.
+function extractInboundText(msg) {
+  if (msg.type === 'text') return msg.text?.body || '';
+  if (msg.type === 'interactive') {
+    const it = msg.interactive || {};
+    if (it.type === 'list_reply' && it.list_reply) {
+      const title = it.list_reply.title || '';
+      return title ? ("Je m'intéresse à : " + title) : "Je m'intéresse à ce produit.";
+    }
+    if (it.type === 'button_reply' && it.button_reply) {
+      return it.button_reply.title || it.button_reply.id || '';
+    }
+  }
+  return '[Message ' + (msg.type || 'non textuel') + ' reçu — non traité automatiquement]';
+}
+
 // Définition des forfaits VENDIA. C'est ici (et uniquement ici) que se
 // décide ce que chaque palier autorise — la table 'subscriptions' ne stocke
 // que le nom du plan choisi par l'entreprise, jamais ses limites : changer
@@ -406,12 +530,16 @@ async function generateAiReply(company, prospect, products, history) {
     ? products.map(p=>'- '+p.name+(p.category?' ('+p.category+')':'')+' : '+Number(p.price).toLocaleString('fr-FR')+' FCFA, stock '+p.stock).join('\n')
     : 'Aucun produit renseigné pour le moment — ne propose aucun article précis, demande ce que le client recherche.';
 
+  const paymentMethods=[company.paymentOrangeMoney?('Orange Money : '+company.paymentOrangeMoney):null,company.paymentMtnMomo?('MTN Mobile Money : '+company.paymentMtnMomo):null].filter(Boolean);
+
   const systemPrompt = [
     'Tu es '+(company.aiName||'l\'assistant commercial')+' de l\'entreprise "'+company.name+'"'+(company.sector?' (secteur : '+company.sector+')':'')+', et tu réponds aux clients sur WhatsApp.',
     'Ton de voix : '+(company.aiTone||'professionnel et chaleureux')+'. Réponds toujours en '+(company.aiLanguage||'français')+'.',
     company.aiRules ? 'Consignes spécifiques de l\'entreprise à respecter : '+company.aiRules : null,
     'Catalogue actuel :\n'+catalogue,
     prospect ? 'Fiche du client en cours — statut commercial : '+(prospect.status||'inconnu')+', besoin exprimé jusqu\'ici : '+(prospect.need||'non précisé')+'.' : null,
+    paymentMethods.length ? 'Moyens de paiement disponibles pour ce client :\n'+paymentMethods.join('\n')+'\nQuand le client confirme vouloir commander/payer, indique-lui clairement comment payer (numéro et moyen ci-dessus). Ne mentionne aucun autre moyen de paiement.' : null,
+    'Si le client propose ou confirme une date/heure pour un rendez-vous, une livraison, une démonstration ou un appel, confirme-le clairement et brièvement dans ta réponse (le système enregistre ce rendez-vous automatiquement). Si son intention de rendez-vous est claire mais qu\'il ne précise ni jour ni heure, demande-lui de proposer un jour et une heure.',
     'Règles impératives :',
     '- Réponds de façon brève et naturelle, comme un vrai message WhatsApp (1 à 3 phrases courtes, pas de markdown, pas de listes à puces, pas de formule d\'email).',
     '- N\'invente jamais un prix, un produit ou une disponibilité qui n\'est pas dans le catalogue ci-dessus.',
@@ -519,8 +647,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.9.0',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.9.0'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.0',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.0'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -563,7 +691,7 @@ async function handler(req,res) {
           const messages=Array.isArray(value.messages)?value.messages:[];
           console.log('[webhook] change field=%s phoneNumberId=%s messages=%d',change.field,phoneNumberId,messages.length);
           if(!phoneNumberId||!messages.length) continue; // accusés de statut (lu/livré) ou métadonnées seules : rien à faire
-          const c=await query('SELECT c.id,c.name,c.sector,c.ai_name AS "aiName",c.ai_tone AS "aiTone",c.ai_language AS "aiLanguage",c.ai_rules AS "aiRules",c.ai_auto_reply_enabled AS "aiAutoReplyEnabled",c.suspended,c.approved_at AS "approvedAt",s.plan AS "plan" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id WHERE c.whatsapp_phone_number_id=$1',[phoneNumberId]);
+          const c=await query('SELECT c.id,c.name,c.sector,c.ai_name AS "aiName",c.ai_tone AS "aiTone",c.ai_language AS "aiLanguage",c.ai_rules AS "aiRules",c.ai_auto_reply_enabled AS "aiAutoReplyEnabled",c.suspended,c.approved_at AS "approvedAt",c.whatsapp_phone_number_id AS "whatsappPhoneNumberId",c.whatsapp_access_token AS "whatsappAccessToken",c.payment_orange_money AS "paymentOrangeMoney",c.payment_mtn_momo AS "paymentMtnMomo",s.plan AS "plan" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id WHERE c.whatsapp_phone_number_id=$1',[phoneNumberId]);
           const companyRow=c.rows[0];
           const targetCompanyId=companyRow?.id;
           if(!targetCompanyId) { console.error('Webhook WhatsApp: aucune entreprise pour phone_number_id',phoneNumberId); continue; }
@@ -574,7 +702,7 @@ async function handler(req,res) {
           for(const msg of messages) {
             const from=String(msg.from||'').replace(/^237/,''); // aligné sur le format local déjà utilisé dans l'app (ex. prospects saisis manuellement)
             if(!from) continue;
-            const text=msg.type==='text'?(msg.text?.body||'') : ('[Message '+(msg.type||'non textuel')+' reçu — non traité automatiquement]');
+            const text=extractInboundText(msg);
             let conv=await query('SELECT id,prospect_id AS "prospectId",external_contact AS phone,channel FROM conversations WHERE company_id=$1 AND channel=\'whatsapp\' AND external_contact=$2 ORDER BY created_at DESC LIMIT 1',[targetCompanyId,from]);
             let conversationRow=conv.rows[0];
             if(!conversationRow) {
@@ -582,6 +710,21 @@ async function handler(req,res) {
               conversationRow=created.rows[0];
             }
             const ingestResult=await ingestMessage(targetCompanyId,conversationRow.id,conversationRow,{body:text,direction:'in',phone:from,name:contactName,providerMessageId:msg.id||null});
+
+            // Prise de rendez-vous automatisée : un client qui exprime une
+            // intention de rendez-vous (mot-clé) dans son message est
+            // enregistré, confirmé (date/heure reconnue) ou "proposé" (date
+            // non reconnue — un humain/l'IA devra préciser) sans action
+            // manuelle. Ne bloque jamais le reste du traitement du message.
+            if (ingestResult.prospectId && APPOINTMENT_INTENT.test(text)) {
+              try {
+                const slot=parseAppointmentSlot(text);
+                await query(
+                  'INSERT INTO appointments(company_id,prospect_id,conversation_id,type,scheduled_at,status) VALUES($1,$2,$3,$4,$5,$6)',
+                  [targetCompanyId,ingestResult.prospectId,conversationRow.id,slot?.type||'Rendez-vous',slot?slot.scheduledAt.toISOString():null,slot?'Confirmé':'Proposé']
+                );
+              } catch(e) { console.error('[appointments] echec creation companyId=%s erreur=%s',targetCompanyId,e.message); }
+            }
 
             // Réponse automatique par IA (24h/24) : déclenchée uniquement sur un
             // message WhatsApp entrant réel — jamais sur un envoi sortant — donc
@@ -594,9 +737,22 @@ async function handler(req,res) {
             if(companyRow.aiAutoReplyEnabled!==false && limits.aiAutoReply) {
               try {
                 let replyText;
+                let handledByCatalog=false;
                 if(ingestResult.nextAction?.action==='handoff') {
                   replyText="Merci pour votre message 🙏 Je transmets tout de suite à un membre de notre équipe qui revient vers vous rapidement.";
-                } else {
+                } else if (CATALOG_INTENT.test(text) && companyRow.whatsappPhoneNumberId && companyRow.whatsappAccessToken) {
+                  const catalogProducts=(await query('SELECT id,name,price,stock FROM products WHERE company_id=$1 ORDER BY created_at',[targetCompanyId])).rows;
+                  if (catalogProducts.length) {
+                    const sendResult=await sendWhatsAppProductList(companyRow,from,catalogProducts);
+                    if (sendResult.error) {
+                      console.error('[catalog] echec envoi liste interactive companyId=%s erreur=%s',targetCompanyId,sendResult.error);
+                    } else {
+                      await query('INSERT INTO messages(conversation_id,direction,body,provider_message_id) VALUES($1,$2,$3,$4)',[conversationRow.id,'out','📋 Catalogue interactif envoyé ('+catalogProducts.length+' produit(s))',sendResult.providerMessageId||null]);
+                      handledByCatalog=true;
+                    }
+                  }
+                }
+                if (!handledByCatalog && replyText===undefined) {
                   const usage=await getAiUsage(targetCompanyId,companyRow.plan);
                   if(usage.remaining!==null && usage.remaining<=0) {
                     console.warn('[ai-reply] quota IA epuise companyId=%s plan=%s',targetCompanyId,companyRow.plan);
@@ -901,6 +1057,40 @@ async function handler(req,res) {
   if(req.method==='PATCH'&&u.pathname==='/api/settings/ai') {
     const b=await body(req);
     await query('UPDATE companies SET ai_auto_reply_enabled=$1 WHERE id=$2',[Boolean(b.autoReplyEnabled),companyId]);
+    return json(res,200,{ok:true});
+  }
+
+  // Numéros mobile money PROPRES à cette entreprise, pour que SES clients
+  // puissent payer directement dans la conversation WhatsApp (l'IA les
+  // mentionne — voir generateAiReply). Bien distinct des numéros du
+  // super-admin (ORANGE_MONEY_NUMBER/MTN_MOMO_NUMBER) qui servent uniquement
+  // au tunnel d'abonnement VENDIA lui-même.
+  if(req.method==='GET'&&u.pathname==='/api/settings/payment') {
+    const r=await query('SELECT payment_orange_money AS "orangeMoney",payment_mtn_momo AS "mtnMomo" FROM companies WHERE id=$1',[companyId]);
+    return json(res,200,r.rows[0]||{orangeMoney:null,mtnMomo:null});
+  }
+  if(req.method==='PATCH'&&u.pathname==='/api/settings/payment') {
+    const b=await body(req);
+    await query('UPDATE companies SET payment_orange_money=$1,payment_mtn_momo=$2 WHERE id=$3',[b.orangeMoney?String(b.orangeMoney).trim():null,b.mtnMomo?String(b.mtnMomo).trim():null,companyId]);
+    return json(res,200,{ok:true});
+  }
+
+  // Rendez-vous (livraison, démo, appel…) détectés automatiquement dans les
+  // conversations WhatsApp entrantes — voir APPOINTMENT_INTENT/parseAppointmentSlot.
+  if(req.method==='GET'&&u.pathname==='/api/appointments') {
+    const r=await query(`SELECT a.id,a.prospect_id AS "prospectId",p.name AS prospect,p.phone,a.type,a.scheduled_at AS "scheduledAt",a.status,a.created_at AS "createdAt" FROM appointments a LEFT JOIN prospects p ON p.id=a.prospect_id WHERE a.company_id=$1 ORDER BY a.scheduled_at NULLS LAST,a.created_at DESC`,[companyId]);
+    return json(res,200,{appointments:r.rows});
+  }
+  const apMatch=u.pathname.match(/^\/api\/appointments\/([0-9a-f-]+)$/i);
+  if(apMatch&&(req.method==='PUT'||req.method==='PATCH')) {
+    const b=await body(req);
+    const r=await query('UPDATE appointments SET scheduled_at=COALESCE($1,scheduled_at),status=COALESCE($2,status) WHERE id=$3 AND company_id=$4 RETURNING id,prospect_id AS "prospectId",type,scheduled_at AS "scheduledAt",status',[b.scheduledAt||null,b.status||null,apMatch[1],companyId]);
+    if(!r.rows[0]) return json(res,404,{error:'Rendez-vous introuvable'});
+    return json(res,200,r.rows[0]);
+  }
+  if(apMatch&&req.method==='DELETE') {
+    const r=await query('DELETE FROM appointments WHERE id=$1 AND company_id=$2 RETURNING id',[apMatch[1],companyId]);
+    if(!r.rows[0]) return json(res,404,{error:'Rendez-vous introuvable'});
     return json(res,200,{ok:true});
   }
 
@@ -1288,6 +1478,80 @@ async function checkDailyReportSchedule() {
   } catch(e) { console.error('[daily-report] echec:',e.message); }
 }
 
+// --- Relance automatique des prospects hésitants (envoi réel) --------------
+// Le moteur de relance (syncAutoFollowup, plus haut) planifie déjà une ligne
+// dans 'followups' (source='auto') — jusqu'ici, elle restait affichée dans
+// l'onglet Relances pour un envoi manuel. Ici : dès que l'échéance est
+// passée, un message de relance généré par l'IA est réellement envoyé sur
+// WhatsApp, sans action humaine — fonctionnalité "relance de prospects
+// hésitants" repérée chez les concurrents (paniers abandonnés Zoko/Interakt),
+// adaptée au contexte commercial (pas de panier, mais un prospect qui n'a
+// pas répondu). Ne redéclenche jamais une relance déjà envoyée (sent_at) et
+// respecte le même interrupteur/quota IA que les réponses automatiques.
+async function generateFollowupReply(company, prospect) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return null;
+  const systemPrompt = [
+    'Tu es '+(company.aiName||"l'assistant commercial")+' de l\'entreprise "'+company.name+'"'+(company.sector?' (secteur : '+company.sector+')':'')+'.',
+    'Tu écris un court message de relance WhatsApp à un client qui n\'a pas répondu depuis un moment. Ton de voix : '+(company.aiTone||'professionnel et chaleureux')+'. Écris en '+(company.aiLanguage||'français')+'.',
+    prospect?.need ? 'Besoin exprimé par le client jusqu\'ici : '+prospect.need+'.' : null,
+    'Règles : 1 à 2 phrases courtes, naturelles, comme un vrai message WhatsApp (pas de markdown). Relance la conversation sans pression excessive, sans répéter un message déjà envoyé mot pour mot, sans inventer de prix ou de produit. Ne révèle jamais que tu es une intelligence artificielle.',
+  ].filter(Boolean).join('\n\n');
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'x-api-key':apiKey, 'anthropic-version':'2023-06-01' },
+      body: JSON.stringify({ model: ANTHROPIC_MODEL, max_tokens: 150, system: systemPrompt, messages:[{role:'user',content:'Rédige le message de relance maintenant.'}] })
+    });
+    if (!resp.ok) { console.error('[followup-send] erreur API Anthropic %s',resp.status); return null; }
+    const data = await resp.json();
+    const text = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('').trim();
+    return text || null;
+  } catch(e) { console.error('[followup-send] echec appel API Anthropic:',e.message); return null; }
+}
+
+async function checkDueFollowups() {
+  let due;
+  try {
+    due = (await query(
+      `SELECT f.id,f.company_id AS "companyId",f.prospect_id AS "prospectId",f.text
+       FROM followups f WHERE f.status='Programmée' AND f.source='auto' AND f.sent_at IS NULL
+         AND f.due_at IS NOT NULL AND f.due_at<=now() LIMIT 25`
+    )).rows;
+  } catch(e) { console.error('[followup-send] echec lecture des relances dues:',e.message); return; }
+
+  for (const f of due) {
+    try {
+      const c=await query('SELECT c.id,c.name,c.sector,c.ai_name AS "aiName",c.ai_tone AS "aiTone",c.ai_language AS "aiLanguage",c.ai_auto_reply_enabled AS "aiAutoReplyEnabled",c.suspended,c.approved_at AS "approvedAt",c.whatsapp_phone_number_id AS "whatsappPhoneNumberId",c.whatsapp_access_token AS "whatsappAccessToken",s.plan AS "plan" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id WHERE c.id=$1',[f.companyId]);
+      const company=c.rows[0];
+      const cancel = async reason => query("UPDATE followups SET status='Annulée',cancelled_reason=$1 WHERE id=$2",[reason,f.id]);
+      if (!company || company.suspended || !company.approvedAt) { await cancel('Entreprise suspendue ou non validée'); continue; }
+      const limits=planLimits(company.plan);
+      if (!limits.autoFollowups || company.aiAutoReplyEnabled===false || !limits.aiAutoReply) { await cancel('Relances automatiques désactivées ou non incluses dans le forfait'); continue; }
+      if (!company.whatsappPhoneNumberId || !company.whatsappAccessToken) { await cancel('WhatsApp non configuré'); continue; }
+
+      const p=(await query('SELECT id,name,phone,need,status FROM prospects WHERE id=$1',[f.prospectId])).rows[0];
+      if (!p || ['Gagné','Perdu'].includes(p.status)) { await cancel('Prospect déjà conclu'); continue; }
+
+      const conv=(await query("SELECT id,external_contact AS phone,channel FROM conversations WHERE company_id=$1 AND prospect_id=$2 AND channel='whatsapp' ORDER BY created_at DESC LIMIT 1",[f.companyId,f.prospectId])).rows[0];
+      if (!conv || !conv.phone) { await cancel('Aucune conversation WhatsApp associée'); continue; }
+
+      const usage=await getAiUsage(f.companyId,company.plan);
+      if (usage.remaining!==null && usage.remaining<=0) { await cancel('Quota IA mensuel épuisé'); continue; }
+
+      const relance=await generateFollowupReply(company,p);
+      if (!relance) { await cancel('Génération IA indisponible'); continue; }
+
+      await ingestMessage(f.companyId,conv.id,conv,{body:relance,direction:'out'});
+      await incrementAiUsage(f.companyId);
+      await query("UPDATE followups SET status='Envoyée',sent_at=now() WHERE id=$1",[f.id]);
+      console.log('[followup-send] relance envoyee companyId=%s prospectId=%s',f.companyId,f.prospectId);
+    } catch(e) {
+      console.error('[followup-send] echec pour followupId=%s: %s',f.id,e.message);
+    }
+  }
+}
+
 // Migrations additives et idempotentes exécutées au démarrage : évite de
 // dépendre d'une étape manuelle (CLI/console Railway) après chaque déploiement
 // qui ajoute des colonnes/tables. Sans effet sur les données existantes.
@@ -1353,6 +1617,23 @@ async function ensureMigrations() {
     'CREATE INDEX IF NOT EXISTS payment_requests_status_idx ON payment_requests(status)',
     `UPDATE companies SET approved_at = COALESCE(approved_at, created_at)
        WHERE approved_at IS NULL AND id NOT IN (SELECT company_id FROM payment_requests)`,
+    // Lot "meilleures pratiques des concurrents africains" — idempotent :
+    // paiement mobile money propre à chaque entreprise (pour ses propres
+    // clients, distinct des numéros du super-admin utilisés pour le tunnel
+    // d'abonnement VENDIA) + rendez-vous automatisés.
+    'ALTER TABLE companies ADD COLUMN IF NOT EXISTS payment_orange_money TEXT',
+    'ALTER TABLE companies ADD COLUMN IF NOT EXISTS payment_mtn_momo TEXT',
+    `CREATE TABLE IF NOT EXISTS appointments (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+       prospect_id UUID REFERENCES prospects(id) ON DELETE CASCADE,
+       conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
+       type TEXT NOT NULL DEFAULT 'Rendez-vous',
+       scheduled_at TIMESTAMPTZ,
+       status TEXT NOT NULL DEFAULT 'Proposé',
+       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+     )`,
+    'CREATE INDEX IF NOT EXISTS appointments_company_idx ON appointments(company_id, scheduled_at)',
   ];
   for (const stmt of statements) {
     try { await query(stmt); } catch(e) { console.error('[migrations] echec:',stmt.split('\n')[0],e.message); }
@@ -1363,6 +1644,7 @@ async function ensureMigrations() {
 const server=http.createServer((req,res)=>handler(req,res).catch(e=>{console.error(e);json(res,500,{error:'Erreur serveur'});}));
 ensureMigrations().then(()=>ensureSuperAdmin()).catch(e=>console.error('[superadmin] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.9.0 listening on ${PORT}`));
+  setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.0 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

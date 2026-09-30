@@ -119,7 +119,12 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <select id="fProspect" required><option value="">Choisir le prospect</option></select>
 <input id="fDue" type="datetime-local" required><input id="fText" class="full" placeholder="Message de relance" required>
 <div class="full"><button class="btn primary">Programmer</button></div></form></div>
-<div class="panel"><h3>Relances <span class="muted" id="followupCount"></span></h3><div id="followupTable"></div></div>
+<div class="panel"><h3>Relances <span class="muted" id="followupCount"></span></h3>
+<p class="muted">Une relance auto (🤖) est envoyée automatiquement au client par WhatsApp dès son échéance — aucune action requise. « Envoyée » = relance déjà partie.</p>
+<div id="followupTable"></div></div>
+<div class="panel"><h3>Rendez-vous <span class="muted" id="appointmentCount"></span></h3>
+<p class="muted">Détectés automatiquement dans les conversations WhatsApp (livraison, démonstration, appel…). « Proposé » = intention détectée sans jour/heure précis — à clarifier avec le client.</p>
+<div id="appointmentTable"></div></div>
 </section>
 <section id="assistantTab" class="hidden">
 <div class="panel"><h3>Assistant commercial IA</h3><p class="muted">Testez une réponse client basée sur votre catalogue et mesurez l’intention d’achat.</p>
@@ -182,12 +187,21 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 </div>
 <p class="muted">Coche l'abonnement au champ <strong>messages</strong> pour que les messages WhatsApp entrants arrivent automatiquement dans le CRM.</p>
 </div>
+<div class="panel"><h3>Paiement mobile money (vos clients)</h3>
+<p class="muted">Vos propres numéros Orange Money / MTN Mobile Money pour encaisser <strong>vos</strong> clients — distincts de votre abonnement VENDIA. Une fois renseignés, l'assistant IA les indique automatiquement au client quand il confirme une commande.</p>
+<form class="formgrid" onsubmit="savePaymentSettings(event)">
+<input id="pOrangeMoney" placeholder="Numéro Orange Money (ex. +237 6XX XXX XXX)">
+<input id="pMtnMomo" placeholder="Numéro MTN Mobile Money (ex. +237 6XX XXX XXX)">
+<div class="full"><button class="btn primary">Enregistrer</button></div>
+</form>
+<div id="pStatus" style="margin-top:10px"></div>
+</div>
 </section>
 </main>
 
 <script>
 let token = localStorage.getItem('wa_token') || '';
-let data = {products:[], prospects:[], orders:[], followups:[], conversations:[], metrics:{}}; let activeConversation=null;
+let data = {products:[], prospects:[], orders:[], followups:[], appointments:[], conversations:[], metrics:{}}; let activeConversation=null;
 
 const $ = id => document.getElementById(id);
 const esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -342,14 +356,14 @@ function tab(name) {
   if (name === 'crm') renderCRM();
   if (name === 'conversations') renderConversations();
   if (name === 'orders') renderOrders();
-  if (name === 'followups') renderFollowups();
+  if (name === 'followups') { renderFollowups(); renderAppointments(); }
   if (name === 'team') loadTeam();
-  if (name === 'settings') loadWhatsappSettings();
+  if (name === 'settings') { loadWhatsappSettings(); loadPaymentSettings(); }
 }
 
 function renderAll() {
   $('companyNameTag').textContent = data.company?.name ? '— '+data.company.name : '';
-  renderDashboard(); renderProducts(); renderCRM(); renderConversations(); renderOrders(); renderFollowups(); populateProspectSelects(); initAiAutoReplyToggle(); renderAiUsagePanel();
+  renderDashboard(); renderProducts(); renderCRM(); renderConversations(); renderOrders(); renderFollowups(); renderAppointments(); populateProspectSelects(); initAiAutoReplyToggle(); renderAiUsagePanel();
 }
 function initAiAutoReplyToggle() {
   const el=$('aiAutoReplyToggle'); if(!el) return;
@@ -718,6 +732,47 @@ async function testWhatsappSettings(){
       ? '<span class="badge">✅ Connexion réussie — '+esc(r.verifiedName||r.displayPhoneNumber||'numéro vérifié')+'</span>'
       : '<span class="error">❌ '+esc(r.error||'Échec de connexion')+'</span>';
   }catch(x){ $('wStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
+}
+
+async function loadPaymentSettings(){
+  try{
+    const s=await api('/api/settings/payment');
+    $('pOrangeMoney').value=s.orangeMoney||'';
+    $('pMtnMomo').value=s.mtnMomo||'';
+  }catch(x){ $('pStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
+}
+async function savePaymentSettings(e){
+  e.preventDefault();
+  try{
+    await api('/api/settings/payment',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      orangeMoney:$('pOrangeMoney').value.trim(), mtnMomo:$('pMtnMomo').value.trim()
+    })});
+    $('pStatus').innerHTML='<span class="badge">✅ Numéros enregistrés.</span>';
+  }catch(x){ $('pStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
+}
+
+const APPOINTMENT_STATUS_CLASS = { 'Confirmé':'', 'Proposé':'cold', 'Annulé':'handoff' };
+function renderAppointments(){
+  const list=data.appointments||[];
+  $('appointmentCount').textContent='('+list.length+')';
+  $('appointmentTable').innerHTML=list.length
+    ? '<table><thead><tr><th>Prospect</th><th>Type</th><th>Date/heure</th><th>Statut</th><th>Action</th></tr></thead><tbody>'+
+      list.map(a=>{
+        const cls=APPOINTMENT_STATUS_CLASS[a.status]||'';
+        return '<tr><td>'+esc(a.prospect||a.prospectId||'—')+'</td><td>'+esc(a.type||'Rendez-vous')+'</td><td>'+esc(a.scheduledAt?new Date(a.scheduledAt).toLocaleString('fr-FR'):'À préciser')+'</td><td><span class="badge '+cls+'">'+esc(a.status)+'</span></td><td>'+
+          (a.status!=='Annulé' ? '<button class="btn danger" onclick="cancelAppointment(\''+a.id+'\')">Annuler</button>' : '')+
+          '</td></tr>';
+      }).join('')+
+      '</tbody></table>'
+    : '<div class="empty">Aucun rendez-vous détecté pour le moment.</div>';
+}
+async function cancelAppointment(id){
+  if(!confirm('Annuler ce rendez-vous ?'))return;
+  try{
+    await api('/api/appointments/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'Annulé'})});
+    await load();
+    tab('followups');
+  }catch(x){alert(x.message);}
 }
 
 async function ask() {

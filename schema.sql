@@ -237,3 +237,23 @@ CREATE TABLE IF NOT EXISTS app_state (
   version INTEGER NOT NULL DEFAULT 1,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Lot "meilleures pratiques des concurrents africains" (catalogue interactif
+-- WhatsApp, relance automatique réellement envoyée, paiement mobile money
+-- propre à chaque entreprise, prise de rendez-vous automatisée) — idempotent.
+-- Pour appliquer uniquement cet ajout sur la base de production existante,
+-- utiliser scripts/migrate-add-competitive-features.js.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS payment_orange_money TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS payment_mtn_momo TEXT;
+
+CREATE TABLE IF NOT EXISTS appointments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  prospect_id UUID REFERENCES prospects(id) ON DELETE CASCADE,
+  conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
+  type TEXT NOT NULL DEFAULT 'Rendez-vous',
+  scheduled_at TIMESTAMPTZ,
+  status TEXT NOT NULL DEFAULT 'Proposé',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS appointments_company_idx ON appointments(company_id, scheduled_at);
