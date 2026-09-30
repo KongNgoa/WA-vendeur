@@ -3,13 +3,19 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>VENDIA — Super-admin</title>
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
+<link rel="icon" href="assets/favicon.ico">
 <style>
+:root{--navy:#0B1442;--navy-light:#152269;--blue:#17A2FE;--green:#1FD37A;--gradient:linear-gradient(135deg,var(--blue),var(--green))}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,sans-serif;background:#f5f7fb;color:#172033}
-header{background:#111827;color:white;padding:18px 28px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10}
+header{background:var(--navy);color:white;padding:18px 28px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10}
+.brand{display:flex;align-items:center;gap:12px}.brand img{height:36px;width:36px;border-radius:9px;display:block}
 h1{margin:0;font-size:22px}.tag{opacity:.75;font-size:13px}.wrap{max-width:1180px;margin:24px auto;padding:0 18px}
 .login,.panel,.stat{background:white;border-radius:18px;padding:22px;box-shadow:0 8px 30px #0000000d;margin-bottom:16px}
 .btn{border:0;border-radius:10px;padding:10px 14px;background:#e9edf5;color:#172033;font-weight:700;cursor:pointer;white-space:nowrap;font-size:13px}
-.btn.primary{background:#111827;color:#fff}.btn.danger{background:#fee4e2;color:#b42318}
+.btn.primary{background:var(--gradient);color:#fff}.btn.danger{background:#fee4e2;color:#b42318}
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid #edf0f5;font-size:13px;vertical-align:top}th{color:#687386;font-size:11px;text-transform:uppercase}
 .actions{display:flex;gap:6px;flex-wrap:wrap}.badge{padding:4px 9px;border-radius:20px;background:#e7f7ee;color:#18794e;font-size:12px;font-weight:700;display:inline-block;margin:2px 4px 2px 0}
 .hot{background:#fff0e0;color:#b54708}.handoff{background:#fee4e2;color:#b42318}.cold{background:#eef2f6;color:#536071}
@@ -21,7 +27,7 @@ input,select{width:100%;padding:10px;border:1px solid #d9deea;border-radius:10px
 </style>
 </head>
 <body>
-<header><div><h1>VENDIA — Super-admin</h1><div class="tag">Vue et contrôle sur toutes les entreprises</div></div>
+<header><div class="brand"><img src="assets/logo-mark-112.png" alt="VENDIA"><div><h1>VENDIA — Super-admin</h1><div class="tag">Vue et contrôle sur toutes les entreprises</div></div></div>
 <div><button class="btn" id="logoutBtn" onclick="logout()" style="display:none">Déconnexion</button></div></header>
 <main class="wrap">
 

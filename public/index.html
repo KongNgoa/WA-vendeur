@@ -3,12 +3,18 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>VENDIA</title>
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
+<link rel="icon" href="assets/favicon.ico">
 <style>
+:root{--navy:#0B1442;--navy-light:#152269;--blue:#17A2FE;--green:#1FD37A;--gradient:linear-gradient(135deg,var(--blue),var(--green))}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,sans-serif;background:#f5f7fb;color:#172033}
-header{background:#111827;color:white;padding:18px 28px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10}
+header{background:var(--navy);color:white;padding:18px 28px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10}
+.brand{display:flex;align-items:center;gap:12px}.brand img{height:40px;width:40px;border-radius:10px;display:block}
 h1{margin:0;font-size:24px}.tag{opacity:.75;font-size:13px}.wrap{max-width:1180px;margin:24px auto;padding:0 18px}
 .hero,.login,.panel,.stat{background:white;border-radius:18px;padding:22px;box-shadow:0 8px 30px #0000000d}.hero{margin-bottom:16px}.hero h2{font-size:30px;margin:0 0 6px}
-.nav{display:flex;gap:8px;margin-bottom:18px;overflow:auto}.nav button,.btn{border:0;border-radius:10px;padding:11px 15px;background:#e9edf5;color:#172033;font-weight:700;cursor:pointer;white-space:nowrap}.nav button.active,.btn.primary{background:#111827;color:#fff}.btn.danger{background:#fee4e2;color:#b42318}
+.nav{display:flex;gap:8px;margin-bottom:18px;overflow:auto}.nav button,.btn{border:0;border-radius:10px;padding:11px 15px;background:#e9edf5;color:#172033;font-weight:700;cursor:pointer;white-space:nowrap}.nav button.active,.btn.primary{background:var(--gradient);color:#fff}.btn.danger{background:#fee4e2;color:#b42318}
 .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:16px}.stat{padding:18px}.num{font-size:28px;font-weight:800;margin-top:6px}.muted{color:#687386;font-size:14px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.panel{margin-bottom:16px}.panel h3{margin-top:0}
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 8px;border-bottom:1px solid #edf0f5;font-size:14px}th{color:#687386;font-size:12px;text-transform:uppercase}
@@ -23,7 +29,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 </style>
 </head>
 <body>
-<header><div><h1>VENDIA <span id="companyNameTag" class="tag"></span></h1><div class="tag">Le commercial IA qui travaille pour vous 24h/24</div></div><div class="actions"><span class="badge">BÊTA</span><button class="btn" style="margin-left:8px" onclick="logout()">Déconnexion</button></div></header>
+<header><div class="brand"><img src="assets/logo-mark-112.png" alt="VENDIA"><div><h1>VENDIA <span id="companyNameTag" class="tag"></span></h1><div class="tag">Le commercial IA qui travaille pour vous 24h/24</div></div></div><div class="actions"><span class="badge">BÊTA</span><button class="btn" style="margin-left:8px" onclick="logout()">Déconnexion</button></div></header>
 <main class="wrap">
 <section id="login" class="login">
 <h2>Connexion</h2><p class="muted">Connectez-vous pour accéder à votre espace commercial.</p>
