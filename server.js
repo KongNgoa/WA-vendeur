@@ -223,8 +223,8 @@ async function dashboard(companyId) {
   // avec l'historique (voir audit).
   const [company,products,prospects,orders,followups,subscription,appointments] = await Promise.all([
     query('SELECT id,name,sector,ai_name AS "aiName",ai_tone AS "aiTone",ai_language AS "aiLanguage",ai_rules AS "aiRules",ai_auto_reply_enabled AS "aiAutoReplyEnabled" FROM companies WHERE id=$1',[companyId]),
-    query('SELECT id,name,category,price,stock,created_at AS "createdAt" FROM products WHERE company_id=$1 ORDER BY created_at DESC',[companyId]),
-    query('SELECT id,name,phone,need,value,score,status,order_intent AS "orderIntent",last_contact AS "lastContact",next_action AS "nextAction",next_action_priority AS "nextActionPriority",next_action_reason AS "nextActionReason",next_action_at AS "nextActionAt",created_at AS "createdAt" FROM prospects WHERE company_id=$1 ORDER BY score DESC,created_at DESC LIMIT 500',[companyId]),
+    query('SELECT id,name,category,price,stock,image_url AS "imageUrl",created_at AS "createdAt" FROM products WHERE company_id=$1 ORDER BY created_at DESC',[companyId]),
+    query('SELECT id,name,phone,need,value,score,status,stage,order_intent AS "orderIntent",last_contact AS "lastContact",next_action AS "nextAction",next_action_priority AS "nextActionPriority",next_action_reason AS "nextActionReason",next_action_at AS "nextActionAt",created_at AS "createdAt" FROM prospects WHERE company_id=$1 ORDER BY score DESC,created_at DESC LIMIT 500',[companyId]),
     query('SELECT o.id,o.order_number AS number,p.name AS client,o.amount,o.status,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC LIMIT 500',[companyId]),
     query('SELECT id,due_at AS "dueAt",status,text,prospect_id AS "prospectId",source,cancelled_reason AS "cancelledReason" FROM followups WHERE company_id=$1 ORDER BY due_at NULLS LAST LIMIT 500',[companyId]),
     query('SELECT plan,status,monthly_price AS "monthlyPrice",next_billing_at AS "nextBillingAt" FROM subscriptions WHERE company_id=$1',[companyId]),
@@ -277,6 +277,27 @@ function extractCustomerData(text, current={}) {
   return {name,phone,location};
 }
 
+// Température IA calculée depuis le score (Chaud/Tiède/Froid) — stockée dans
+// prospects.status, à ne jamais confondre avec prospects.stage (étape du
+// pipeline commercial : Nouveau/À contacter/En discussion/Gagné/Perdu, modifiable
+// manuellement dans l'interface, voir CRM/kanban). Avant la séparation de ces
+// deux colonnes les deux notions partageaient status, et l'IA écrasait sans le
+// vouloir l'étape manuelle à chaque message entrant.
+function heatFromScore(score) {
+  return score>=70?'Chaud':score>=40?'Tiède':'Froid';
+}
+
+// Valide une URL d'image produit (catalogue). N'accepte que http(s), rejette
+// les schémas dangereux (javascript:, data:...) et les chaînes trop longues.
+// Retourne l'URL nettoyée, ou null si absente/invalide.
+function validImageUrl(raw) {
+  const s=String(raw||'').trim();
+  if(!s) return null;
+  if(s.length>2000) return null;
+  if(!/^https?:\/\//i.test(s)) return null;
+  return s;
+}
+
 function classifyLead(text, products=[], prospect={}) {
   const q=String(text||'').toLowerCase();
   let score=0;
@@ -295,7 +316,7 @@ function classifyLead(text, products=[], prospect={}) {
   if (/juste regarder|simplement regarder|pas intéress|pas interesse|je réfléchis|je reflechis|plus tard|just looking|not interested|i'll think about it|maybe later|not now/.test(q)) add(-15,'intention faible');
   score=Math.max(score,Number(prospect.score||0));
   score=Math.max(0,Math.min(100,score));
-  const status=score>=70?'Chaud':score>=40?'Tiède':'Froid';
+  const status=heatFromScore(score);
   const orderIntent=/acheter|commande|commander|je prends|je veux|réserver|reserver|\bbuy\b|\bpurchase\b|\border\b|i want|i'll take/.test(q);
   return {score,status,orderIntent,reasons};
 }
@@ -529,6 +550,27 @@ async function sendWhatsAppProductList(company, toPhone, products) {
   }
 }
 
+// Photo produit envoyée quand le client sélectionne un article dans le
+// catalogue interactif (WhatsApp ne permet pas d'image par ligne dans une
+// liste native — on l'envoie donc comme message séparé juste après la
+// sélection, voir webhook POST /webhooks/whatsapp).
+async function sendWhatsAppImage(company, toPhone, imageUrl, caption) {
+  const to = formatWhatsAppPhone(toPhone);
+  if (!to) return { error: 'Numéro de destinataire invalide' };
+  try {
+    const resp = await fetch(`https://graph.facebook.com/${WHATSAPP_API_VERSION}/${company.whatsappPhoneNumberId}/messages`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + company.whatsappAccessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'image', image: { link: imageUrl, caption: caption || '' } })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { error: data?.error?.message || ('Erreur WhatsApp (HTTP ' + resp.status + ')') };
+    return { providerMessageId: data?.messages?.[0]?.id || null };
+  } catch (e) {
+    return { error: 'Connexion à WhatsApp impossible : ' + e.message };
+  }
+}
+
 // Le client demande à voir le catalogue en texte libre ("vous avez quoi
 // comme produits ?", "catalogue", "menu"…) — déclenche l'envoi de la liste
 // interactive ci-dessus plutôt qu'une réponse IA classique.
@@ -553,6 +595,17 @@ function extractInboundText(msg) {
     }
   }
   return '[Message ' + (msg.type || 'non textuel') + ' reçu — non traité automatiquement]';
+}
+
+// Si le message entrant est une sélection dans le catalogue interactif
+// (sendWhatsAppProductList), renvoie l'id du produit choisi (voir rows:
+// id: 'product_'+p.id), sinon null.
+function extractSelectedProductId(msg) {
+  if (msg.type === 'interactive' && msg.interactive?.type === 'list_reply') {
+    const id = msg.interactive.list_reply?.id || '';
+    if (id.startsWith('product_')) return id.slice('product_'.length);
+  }
+  return null;
 }
 
 // Définition des forfaits VENDIA. C'est ici (et uniquement ici) que se
@@ -699,7 +752,7 @@ async function findOrCreateProspectByPhone(companyId, phone, name, needText) {
     return null;
   }
   try {
-    const created = await query('INSERT INTO prospects(company_id,name,phone,need,value,score,status,order_intent,last_contact) VALUES($1,$2,$3,$4,0,0,$5,false,now()) RETURNING id',[companyId,name,phone,needText,'Nouveau']);
+    const created = await query('INSERT INTO prospects(company_id,name,phone,need,value,score,status,stage,order_intent,last_contact) VALUES($1,$2,$3,$4,0,0,$5,$6,false,now()) RETURNING id',[companyId,name,phone,needText,heatFromScore(0),'Nouveau']);
     return created.rows[0].id;
   } catch (e) {
     if (e.code === '23505' && phone) { // doublon créé entre-temps par une requête concurrente — on relit la ligne gagnante
@@ -784,8 +837,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.6',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.6'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.7',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.7'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -864,6 +917,23 @@ async function handler(req,res) {
             const text=extractInboundText(msg);
             const conversationRow=await findOrCreateWhatsAppConversation(targetCompanyId,from);
             const ingestResult=await ingestMessage(targetCompanyId,conversationRow.id,conversationRow,{body:text,direction:'in',phone:from,name:contactName,providerMessageId:msg.id||null});
+
+            // Catalogue avec images : si le client vient de sélectionner un
+            // article dans la liste interactive et que ce produit a une
+            // photo, on l'envoie en message séparé (WhatsApp ne permet pas
+            // d'image par ligne dans une liste native) avant la réponse IA.
+            const selectedProductId=extractSelectedProductId(msg);
+            if(selectedProductId && companyRow.whatsappPhoneNumberId && companyRow.whatsappAccessToken) {
+              try {
+                const sp=(await query('SELECT name,price,image_url AS "imageUrl" FROM products WHERE id=$1 AND company_id=$2',[selectedProductId,targetCompanyId])).rows[0];
+                if(sp?.imageUrl) {
+                  const caption=sp.name+' — '+Number(sp.price||0).toLocaleString('fr-FR')+' FCFA';
+                  const imgResult=await sendWhatsAppImage(companyRow,from,sp.imageUrl,caption);
+                  if(imgResult.error) console.error('[catalog] echec envoi photo produit companyId=%s produit=%s erreur=%s',targetCompanyId,selectedProductId,imgResult.error);
+                  else await query('INSERT INTO messages(conversation_id,direction,body,provider_message_id) VALUES($1,$2,$3,$4)',[conversationRow.id,'out','🖼️ Photo envoyée — '+caption,imgResult.providerMessageId||null]);
+                }
+              } catch(e) { console.error('[catalog] echec photo produit companyId=%s erreur=%s',targetCompanyId,e.message); }
+            }
 
             // Prise de rendez-vous automatisée : un client qui exprime une
             // intention de rendez-vous (mot-clé) dans son message est
@@ -1361,20 +1431,24 @@ async function handler(req,res) {
   }
 
   if(req.method==='GET'&&u.pathname==='/api/products') {
-    const r=await query('SELECT id,name,category,price,stock,created_at AS "createdAt" FROM products WHERE company_id=$1 ORDER BY created_at DESC',[companyId]);
+    const r=await query('SELECT id,name,category,price,stock,image_url AS "imageUrl",created_at AS "createdAt" FROM products WHERE company_id=$1 ORDER BY created_at DESC',[companyId]);
     return json(res,200,{products:r.rows});
   }
   if(req.method==='POST'&&u.pathname==='/api/products') {
     const b=await body(req);
     if(!b.name||b.price===undefined||Number.isNaN(Number(b.price))) return json(res,400,{error:'Nom et prix valides requis'});
-    const r=await query('INSERT INTO products(company_id,name,category,price,stock) VALUES($1,$2,$3,$4,$5) RETURNING id,name,category,price,stock,created_at AS "createdAt"',[companyId,String(b.name).trim(),b.category||null,Number(b.price),Math.max(0,Number(b.stock||0))]);
+    const imageUrl=validImageUrl(b.imageUrl);
+    if(b.imageUrl&&!imageUrl) return json(res,400,{error:'URL d\'image invalide (doit commencer par http:// ou https://)'});
+    const r=await query('INSERT INTO products(company_id,name,category,price,stock,image_url) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,name,category,price,stock,image_url AS "imageUrl",created_at AS "createdAt"',[companyId,String(b.name).trim(),b.category||null,Number(b.price),Math.max(0,Number(b.stock||0)),imageUrl]);
     return json(res,201,{product:r.rows[0]});
   }
   const productMatch=u.pathname.match(/^\/api\/products\/([0-9a-f-]+)$/i);
   if(productMatch && (req.method==='PUT'||req.method==='PATCH')) {
     const b=await body(req);
     if(!b.name||b.price===undefined||Number.isNaN(Number(b.price))) return json(res,400,{error:'Nom et prix valides requis'});
-    const r=await query('UPDATE products SET name=$1,category=$2,price=$3,stock=$4 WHERE id=$5 AND company_id=$6 RETURNING id,name,category,price,stock,created_at AS "createdAt"',[String(b.name).trim(),b.category||null,Number(b.price),Math.max(0,Number(b.stock||0)),productMatch[1],companyId]);
+    const imageUrl=validImageUrl(b.imageUrl);
+    if(b.imageUrl&&!imageUrl) return json(res,400,{error:'URL d\'image invalide (doit commencer par http:// ou https://)'});
+    const r=await query('UPDATE products SET name=$1,category=$2,price=$3,stock=$4,image_url=$5 WHERE id=$6 AND company_id=$7 RETURNING id,name,category,price,stock,image_url AS "imageUrl",created_at AS "createdAt"',[String(b.name).trim(),b.category||null,Number(b.price),Math.max(0,Number(b.stock||0)),imageUrl,productMatch[1],companyId]);
     if(!r.rows[0]) return json(res,404,{error:'Produit introuvable'});
     return json(res,200,{product:r.rows[0]});
   }
@@ -1490,7 +1564,7 @@ async function handler(req,res) {
   }
 
   if(req.method==='GET'&&u.pathname==='/api/prospects') {
-    const r=await query('SELECT id,name,phone,need,value,score,status,order_intent AS "orderIntent",last_contact AS "lastContact",next_action AS "nextAction",next_action_priority AS "nextActionPriority",next_action_reason AS "nextActionReason",next_action_at AS "nextActionAt",created_at AS "createdAt" FROM prospects WHERE company_id=$1 ORDER BY score DESC,created_at DESC LIMIT 500',[companyId]);
+    const r=await query('SELECT id,name,phone,need,value,score,status,stage,order_intent AS "orderIntent",last_contact AS "lastContact",next_action AS "nextAction",next_action_priority AS "nextActionPriority",next_action_reason AS "nextActionReason",next_action_at AS "nextActionAt",created_at AS "createdAt" FROM prospects WHERE company_id=$1 ORDER BY score DESC,created_at DESC LIMIT 500',[companyId]);
     return json(res,200,{prospects:r.rows});
   }
   if(req.method==='POST'&&u.pathname==='/api/prospects') {
@@ -1499,7 +1573,8 @@ async function handler(req,res) {
     const quota=await prospectQuotaStatus(companyId);
     if(!quota.allowed) return json(res,403,{error:'Limite de '+quota.limit+' prospects par mois atteinte pour votre forfait. Passez à un forfait supérieur pour continuer.'});
     const score=Math.max(0,Math.min(100,Number(b.score||0)));
-    const r=await query('INSERT INTO prospects(company_id,name,phone,need,value,score,status,order_intent,last_contact) VALUES($1,$2,$3,$4,$5,$6,$7,$8,now()) RETURNING id,name,phone,need,value,score,status,order_intent AS "orderIntent",last_contact AS "lastContact"',[companyId,b.name||null,b.phone||null,b.need||null,Number(b.value||0),score,b.status||'Nouveau',Boolean(b.orderIntent)]);
+    const stage=['Nouveau','À contacter','En discussion','Gagné','Perdu'].includes(b.stage) ? b.stage : 'Nouveau';
+    const r=await query('INSERT INTO prospects(company_id,name,phone,need,value,score,status,stage,order_intent,last_contact) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,now()) RETURNING id,name,phone,need,value,score,status,stage,order_intent AS "orderIntent",last_contact AS "lastContact"',[companyId,b.name||null,b.phone||null,b.need||null,Number(b.value||0),score,heatFromScore(score),stage,Boolean(b.orderIntent)]);
     return json(res,201,{prospect:r.rows[0]});
   }
   const prospectMatch=u.pathname.match(/^\/api\/prospects\/([0-9a-f-]+)$/i);
@@ -1507,9 +1582,10 @@ async function handler(req,res) {
     const b=await body(req);
     if(!b.name&&!b.phone) return json(res,400,{error:'Nom ou téléphone requis'});
     const score=Math.max(0,Math.min(100,Number(b.score||0)));
-    const r=await query('UPDATE prospects SET name=$1,phone=$2,need=$3,value=$4,score=$5,status=$6,order_intent=$7,last_contact=now() WHERE id=$8 AND company_id=$9 RETURNING id,name,phone,need,value,score,status,order_intent AS "orderIntent",last_contact AS "lastContact"',[b.name||null,b.phone||null,b.need||null,Number(b.value||0),score,b.status||'Nouveau',Boolean(b.orderIntent),prospectMatch[1],companyId]);
+    const stage=['Nouveau','À contacter','En discussion','Gagné','Perdu'].includes(b.stage) ? b.stage : 'Nouveau';
+    const r=await query('UPDATE prospects SET name=$1,phone=$2,need=$3,value=$4,score=$5,status=$6,stage=$7,order_intent=$8,last_contact=now() WHERE id=$9 AND company_id=$10 RETURNING id,name,phone,need,value,score,status,stage,order_intent AS "orderIntent",last_contact AS "lastContact"',[b.name||null,b.phone||null,b.need||null,Number(b.value||0),score,heatFromScore(score),stage,Boolean(b.orderIntent),prospectMatch[1],companyId]);
     if(!r.rows[0]) return json(res,404,{error:'Prospect introuvable'});
-    if(r.rows[0].status==='Gagné'||r.rows[0].status==='Perdu') await cancelAutoFollowups(companyId,prospectMatch[1],'Prospect '+r.rows[0].status.toLowerCase()+' — relance automatique inutile');
+    if(r.rows[0].stage==='Gagné'||r.rows[0].stage==='Perdu') await cancelAutoFollowups(companyId,prospectMatch[1],'Prospect '+r.rows[0].stage.toLowerCase()+' — relance automatique inutile');
     return json(res,200,{prospect:r.rows[0]});
   }
   if(prospectMatch && req.method==='DELETE') {
@@ -1627,7 +1703,7 @@ async function handler(req,res) {
     if(Number.isNaN(amount)||amount<0) return json(res,400,{error:'Montant invalide'});
     const number='VND-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+crypto.randomBytes(3).toString('hex').toUpperCase();
     const r=await query('INSERT INTO orders(company_id,prospect_id,order_number,amount,status) VALUES($1,$2,$3,$4,$5) RETURNING id,order_number AS number,prospect_id AS "prospectId",amount,status,created_at AS "createdAt"',[companyId,b.prospectId,number,amount,b.status||'En attente']);
-    await query('UPDATE prospects SET order_intent=true,status=CASE WHEN status IS NULL OR status IN (\'Nouveau\',\'À contacter\') THEN \'En discussion\' ELSE status END WHERE id=$1 AND company_id=$2',[b.prospectId,companyId]);
+    await query('UPDATE prospects SET order_intent=true,stage=CASE WHEN stage IS NULL OR stage IN (\'Nouveau\',\'À contacter\') THEN \'En discussion\' ELSE stage END WHERE id=$1 AND company_id=$2',[b.prospectId,companyId]);
     await cancelAutoFollowups(companyId,b.prospectId,'Commande créée — relance automatique inutile');
     return json(res,201,{order:r.rows[0]});
   }
@@ -1677,7 +1753,7 @@ async function buildCompanyReport(companyId) {
     query(`SELECT id,order_number AS number,amount FROM orders WHERE company_id=$1 AND (created_at AT TIME ZONE 'Africa/Douala')::date = (now() AT TIME ZONE 'Africa/Douala')::date`,[companyId]),
     query(`SELECT o.id,o.order_number AS number,p.name AS client,o.status FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 AND o.status IN ('En attente','Confirmée','En préparation') ORDER BY o.created_at`,[companyId]),
     query(`SELECT f.id,f.text,p.name AS prospect FROM followups f LEFT JOIN prospects p ON p.id=f.prospect_id WHERE f.company_id=$1 AND f.status='Programmée' AND f.due_at IS NOT NULL AND (f.due_at AT TIME ZONE 'Africa/Douala')::date = (now() AT TIME ZONE 'Africa/Douala')::date ORDER BY f.due_at`,[companyId]),
-    query(`SELECT id,name,phone,score FROM prospects WHERE company_id=$1 AND status NOT IN ('Gagné','Perdu') AND score BETWEEN 40 AND 69 ORDER BY score DESC`,[companyId]),
+    query(`SELECT id,name,phone,score FROM prospects WHERE company_id=$1 AND stage NOT IN ('Gagné','Perdu') AND score BETWEEN 40 AND 69 ORDER BY score DESC`,[companyId]),
     query(`SELECT COUNT(*)::int AS n FROM prospects WHERE company_id=$1 AND (created_at AT TIME ZONE 'Africa/Douala')::date = (now() AT TIME ZONE 'Africa/Douala')::date`,[companyId]),
     query('SELECT plan FROM subscriptions WHERE company_id=$1',[companyId])
   ]);
@@ -1784,8 +1860,8 @@ async function checkDueFollowups() {
       if (!limits.autoFollowups || company.aiAutoReplyEnabled===false || !limits.aiAutoReply) { await cancel('Relances automatiques désactivées ou non incluses dans le forfait'); continue; }
       if (!company.whatsappPhoneNumberId || !company.whatsappAccessToken) { await cancel('WhatsApp non configuré'); continue; }
 
-      const p=(await query('SELECT id,name,phone,need,status FROM prospects WHERE id=$1',[f.prospectId])).rows[0];
-      if (!p || ['Gagné','Perdu'].includes(p.status)) { await cancel('Prospect déjà conclu'); continue; }
+      const p=(await query('SELECT id,name,phone,need,status,stage FROM prospects WHERE id=$1',[f.prospectId])).rows[0];
+      if (!p || ['Gagné','Perdu'].includes(p.stage)) { await cancel('Prospect déjà conclu'); continue; }
 
       const conv=(await query("SELECT id,external_contact AS phone,channel FROM conversations WHERE company_id=$1 AND prospect_id=$2 AND channel='whatsapp' ORDER BY created_at DESC LIMIT 1",[f.companyId,f.prospectId])).rows[0];
       if (!conv || !conv.phone) { await cancel('Aucune conversation WhatsApp associée'); continue; }
@@ -1907,6 +1983,14 @@ async function ensureMigrations() {
      )`,
     'CREATE UNIQUE INDEX IF NOT EXISTS conversations_company_channel_contact_idx ON conversations(company_id,channel,external_contact) WHERE external_contact IS NOT NULL',
     'CREATE UNIQUE INDEX IF NOT EXISTS prospects_company_phone_idx ON prospects(company_id,phone) WHERE phone IS NOT NULL',
+    // Sépare l'étape du pipeline (stage, modifiable manuellement — vue kanban) de
+    // la température IA (status, recalculée à chaque message WhatsApp entrant) :
+    // avant ce correctif les deux étaient confondues, un prospect "Gagné" repassait
+    // "Chaud" dès sa prochaine réponse client. Le backfill reprend les valeurs de
+    // pipeline encore présentes dans status vers la nouvelle colonne stage.
+    "ALTER TABLE prospects ADD COLUMN IF NOT EXISTS stage TEXT NOT NULL DEFAULT 'Nouveau'",
+    "UPDATE prospects SET stage=status WHERE status IN ('Nouveau','À contacter','En discussion','Gagné','Perdu')",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT",
   ];
   for (const stmt of statements) {
     try { await query(stmt); } catch(e) { console.error('[migrations] echec:',stmt.split('\n')[0],e.message); }
@@ -1920,6 +2004,6 @@ const server=http.createServer((req,res)=>handler(req,res).catch(e=>{console.err
 ensureMigrations().then(()=>ensureSuperAdmin()).catch(e=>console.error('[superadmin] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.6 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.7 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

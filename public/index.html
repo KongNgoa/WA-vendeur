@@ -38,6 +38,11 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 .sparkline .bar{flex:1;background:var(--gradient);border-radius:4px 4px 0 0;min-height:3px;position:relative}
 .sparkline .bar .val{position:absolute;top:-18px;left:0;right:0;text-align:center;font-size:11px;font-weight:700;color:#172033}
 .sparkline .bar .lbl{position:absolute;bottom:-18px;left:0;right:0;text-align:center;font-size:10px;color:#687386}
+.kanbanBoard{display:flex;gap:14px;overflow-x:auto;padding-bottom:8px}
+.kanbanCol{flex:0 0 240px;background:#f7f8fb;border-radius:14px;padding:10px;min-height:120px}
+.kanbanColHead{font-weight:700;font-size:13px;margin-bottom:10px;padding:0 4px}
+.kanbanCard{background:white;border-radius:10px;padding:10px 12px;margin-bottom:8px;box-shadow:0 2px 8px #0000000f;cursor:grab}
+.kanbanCard:active{cursor:grabbing}
 .login{max-width:430px;margin:45px auto}.login h2{margin-top:0}.login input{display:block;margin:10px 0}.error{color:#b42318;margin-top:10px}.success{color:#18794e;margin-top:10px}.hidden{display:none}.empty{padding:28px;text-align:center;color:#687386}
 .langSwitch{display:flex;border:1px solid #ffffff33;border-radius:8px;overflow:hidden}.langSwitch button{border:0;background:transparent;color:#fff;opacity:.6;padding:6px 10px;font-weight:700;font-size:12px;cursor:pointer;border-radius:0}.langSwitch button.active{opacity:1;background:#ffffff26}
 @media(max-width:800px){.stats{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}form.formgrid{grid-template-columns:1fr}.hero h2{font-size:25px}header{padding:15px 18px}}
@@ -97,6 +102,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <form class="formgrid" onsubmit="saveProduct(event)">
 <input id="pName" placeholder="Nom du produit" required data-i18n-placeholder="placeholder_product_name"><input id="pCategory" placeholder="Catégorie" data-i18n-placeholder="placeholder_category">
 <input id="pPrice" type="number" min="0" placeholder="Prix (FCFA)" required data-i18n-placeholder="placeholder_price"><input id="pStock" type="number" min="0" placeholder="Stock" value="0" data-i18n-placeholder="placeholder_stock">
+<input id="pImageUrl" class="full" type="url" placeholder="URL de la photo (optionnel) — ex. https://..." data-i18n-placeholder="placeholder_image_url">
 <div class="full"><button class="btn primary" data-i18n="btn_add_to_catalog">Ajouter au catalogue</button></div></form>
 </div>
 <div class="panel"><h3 data-i18n="products_catalog_title">Catalogue</h3> <span class="muted" id="productCount"></span><div id="productTable"></div></div>
@@ -108,10 +114,12 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <input id="cName" placeholder="Nom du prospect" data-i18n-placeholder="placeholder_prospect_name"><input id="cPhone" placeholder="Téléphone" data-i18n-placeholder="placeholder_phone">
 <input id="cNeed" placeholder="Besoin" data-i18n-placeholder="placeholder_need"><input id="cValue" type="number" min="0" placeholder="Valeur potentielle (FCFA)" data-i18n-placeholder="placeholder_value">
 <input id="cScore" type="number" min="0" max="100" placeholder="Score 0–100" value="50" data-i18n-placeholder="placeholder_score">
-<select id="cStatus"><option value="Nouveau" data-i18n="status_nouveau">Nouveau</option><option value="À contacter" data-i18n="status_a_contacter">À contacter</option><option value="En discussion" data-i18n="status_en_discussion">En discussion</option><option value="Gagné" data-i18n="status_gagne">Gagné</option><option value="Perdu" data-i18n="status_perdu">Perdu</option></select>
+<select id="cStage"><option value="Nouveau" data-i18n="status_nouveau">Nouveau</option><option value="À contacter" data-i18n="status_a_contacter">À contacter</option><option value="En discussion" data-i18n="status_en_discussion">En discussion</option><option value="Gagné" data-i18n="status_gagne">Gagné</option><option value="Perdu" data-i18n="status_perdu">Perdu</option></select>
 <div class="full"><button class="btn primary" data-i18n="btn_add_to_crm">Ajouter au CRM</button></div></form>
 </div>
-<div class="panel"><h3 data-i18n="nav_crm">Prospects</h3> <span class="muted" id="crmCount"></span><div id="crmTable"></div></div>
+<div class="panel"><h3 data-i18n="nav_crm">Prospects</h3> <span class="muted" id="crmCount"></span>
+<div class="actions" style="margin-bottom:12px"><button class="btn primary" id="crmViewListBtn" onclick="setCrmView('list')" data-i18n="crm_view_list">☰ Liste</button><button class="btn" id="crmViewKanbanBtn" onclick="setCrmView('kanban')" data-i18n="crm_view_kanban">🗂️ Pipeline</button></div>
+<div id="crmTable"></div></div>
 <div id="prospectModal" style="position:fixed;inset:0;background:#0008;z-index:100;display:none;align-items:center;justify-content:center;padding:18px">
 <div style="background:white;border-radius:18px;max-width:620px;width:100%;max-height:90vh;overflow:auto;padding:22px;box-shadow:0 20px 60px #0004">
 <div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><div><h3 id="modalProspectName" style="margin:0">Prospect</h3><div class="muted" id="modalProspectPhone"></div></div><button class="btn" onclick="closeProspectModal()" data-i18n="btn_close">Fermer</button></div>
@@ -270,6 +278,7 @@ fr: {
   dash_prospects_month:"Prospects ce mois", dash_unlimited:"illimité", empty_products_dash:"Aucun produit.", stock_label:"Stock",
   products_add_title:"Ajouter un produit", placeholder_product_name:"Nom du produit", placeholder_category:"Catégorie",
   placeholder_price:"Prix (FCFA)", placeholder_stock:"Stock", btn_add_to_catalog:"Ajouter au catalogue",
+  placeholder_image_url:"URL de la photo (optionnel) — ex. https://...", prompt_image_url:"URL de la photo (laisser vide pour aucune)",
   products_catalog_title:"Catalogue", th_product:"Produit", th_category:"Catégorie", th_price:"Prix", th_stock:"Stock", th_actions:"Actions",
   btn_edit:"Modifier", btn_delete:"Supprimer", empty_products:"Aucun produit dans le catalogue.",
   prompt_product_name:"Nom du produit", prompt_price_fcfa:"Prix en FCFA", prompt_stock:"Stock", prompt_category:"Catégorie",
@@ -277,6 +286,8 @@ fr: {
   crm_add_title:"Ajouter un prospect", placeholder_prospect_name:"Nom du prospect", placeholder_phone:"Téléphone",
   placeholder_need:"Besoin", placeholder_value:"Valeur potentielle (FCFA)", placeholder_score:"Score 0–100",
   status_nouveau:"Nouveau", status_a_contacter:"À contacter", status_en_discussion:"En discussion", status_gagne:"Gagné", status_perdu:"Perdu",
+  heat_chaud:"Chaud", heat_tiede:"Tiède", heat_froid:"Froid",
+  crm_view_list:"☰ Liste", crm_view_kanban:"🗂️ Pipeline",
   btn_add_to_crm:"Ajouter au CRM", th_prospect:"Prospect", th_need:"Besoin", th_score:"Score", th_status:"Statut",
   th_recommended_action:"Action recommandée", th_value:"Valeur", btn_view:"Voir", empty_crm:"Aucun prospect. Ajoutez votre premier contact.",
   modal_default_prospect:"Prospect", btn_close:"Fermer", phone_not_set:"Téléphone non renseigné", label_score:"Score",
@@ -379,6 +390,7 @@ en: {
   dash_prospects_month:"Leads this month", dash_unlimited:"unlimited", empty_products_dash:"No products.", stock_label:"Stock",
   products_add_title:"Add a product", placeholder_product_name:"Product name", placeholder_category:"Category",
   placeholder_price:"Price (FCFA)", placeholder_stock:"Stock", btn_add_to_catalog:"Add to catalog",
+  placeholder_image_url:"Photo URL (optional) — e.g. https://...", prompt_image_url:"Photo URL (leave empty for none)",
   products_catalog_title:"Catalog", th_product:"Product", th_category:"Category", th_price:"Price", th_stock:"Stock", th_actions:"Actions",
   btn_edit:"Edit", btn_delete:"Delete", empty_products:"No products in the catalog yet.",
   prompt_product_name:"Product name", prompt_price_fcfa:"Price in FCFA", prompt_stock:"Stock", prompt_category:"Category",
@@ -386,6 +398,8 @@ en: {
   crm_add_title:"Add a lead", placeholder_prospect_name:"Lead name", placeholder_phone:"Phone",
   placeholder_need:"Need", placeholder_value:"Potential value (FCFA)", placeholder_score:"Score 0–100",
   status_nouveau:"New", status_a_contacter:"To contact", status_en_discussion:"In discussion", status_gagne:"Won", status_perdu:"Lost",
+  heat_chaud:"Hot", heat_tiede:"Warm", heat_froid:"Cold",
+  crm_view_list:"☰ List", crm_view_kanban:"🗂️ Pipeline",
   btn_add_to_crm:"Add to CRM", th_prospect:"Lead", th_need:"Need", th_score:"Score", th_status:"Status",
   th_recommended_action:"Recommended action", th_value:"Value", btn_view:"View", empty_crm:"No leads yet. Add your first contact.",
   modal_default_prospect:"Lead", btn_close:"Close", phone_not_set:"No phone number", label_score:"Score",
@@ -736,21 +750,73 @@ function renderDashboard() {
 
 function renderProducts() {
   $('productCount').textContent = '('+data.products.length+')';
-  $('productTable').innerHTML = data.products.length ? '<table><thead><tr><th>'+t('th_product')+'</th><th>'+t('th_category')+'</th><th>'+t('th_price')+'</th><th>'+t('th_stock')+'</th><th>'+t('th_actions')+'</th></tr></thead><tbody>' +
-    data.products.map(p => '<tr><td><strong>'+esc(p.name)+'</strong></td><td>'+esc(p.category||'—')+'</td><td>'+money(p.price)+'</td><td>'+p.stock+'</td><td><div class="actions">' +
+  $('productTable').innerHTML = data.products.length ? '<table><thead><tr><th></th><th>'+t('th_product')+'</th><th>'+t('th_category')+'</th><th>'+t('th_price')+'</th><th>'+t('th_stock')+'</th><th>'+t('th_actions')+'</th></tr></thead><tbody>' +
+    data.products.map(p => '<tr><td>'+(p.imageUrl?'<img src="'+esc(p.imageUrl)+'" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px" onerror="this.style.display=\'none\'">':'')+'</td><td><strong>'+esc(p.name)+'</strong></td><td>'+esc(p.category||'—')+'</td><td>'+money(p.price)+'</td><td>'+p.stock+'</td><td><div class="actions">' +
     '<button class="btn" data-edit-product="'+p.id+'">'+t('btn_edit')+'</button><button class="btn danger" data-delete-product="'+p.id+'">'+t('btn_delete')+'</button></div></td></tr>').join('') +
     '</tbody></table>' : '<div class="empty">'+t('empty_products')+'</div>';
 }
 
+let crmView='list';
+function setCrmView(view){
+  crmView=view;
+  try{ localStorage.setItem('vendia_crm_view',view); }catch(e){}
+  $('crmViewListBtn').classList.toggle('primary',view==='list');
+  $('crmViewKanbanBtn').classList.toggle('primary',view==='kanban');
+  renderCRM();
+}
+
 function renderCRM() {
   $('crmCount').textContent = '('+data.prospects.length+')';
+  if (crmView==='kanban') { renderCRMKanban(); return; }
   $('crmTable').innerHTML = data.prospects.length ? '<table><thead><tr><th>'+t('th_prospect')+'</th><th>'+t('th_need')+'</th><th>'+t('th_score')+'</th><th>'+t('th_status')+'</th><th>'+t('th_recommended_action')+'</th><th>'+t('th_value')+'</th><th>'+t('th_actions')+'</th></tr></thead><tbody>' +
     data.prospects.map(p => '<tr><td><strong>'+esc(p.name||t('empty_crm').split('.')[0])+'</strong><br><span class="muted">'+esc(p.phone||'—')+'</span></td><td>'+esc(p.need||'—')+'</td>' +
-    '<td><span class="badge '+(p.score>=70?'hot':p.score<40?'cold':'')+'">'+p.score+'/100</span></td><td>'+esc(statusLabel(p.status||'Nouveau'))+'</td>' +
+    '<td><span class="badge '+(p.score>=70?'hot':p.score<40?'cold':'')+'" title="'+esc(heatLabel(p.status))+'">'+p.score+'/100</span></td><td>'+esc(statusLabel(p.stage||'Nouveau'))+'</td>' +
     '<td>'+(p.nextAction?'<span class="badge '+actionClass(p.nextAction,p.nextActionPriority)+'">'+esc(actionLabel(p.nextAction))+'</span>':'<span class="muted">—</span>')+'</td>' +
     '<td>'+money(p.value)+'</td><td><div class="actions">' +
     '<button class="btn primary" data-view-prospect="'+p.id+'">'+t('btn_view')+'</button><button class="btn" data-edit-prospect="'+p.id+'">'+t('btn_edit')+'</button><button class="btn danger" data-delete-prospect="'+p.id+'">'+t('btn_delete')+'</button></div></td></tr>').join('') +
     '</tbody></table>' : '<div class="empty">'+t('empty_crm')+'</div>';
+}
+
+const HEAT_KEY_MAP={'Chaud':'heat_chaud','Tiède':'heat_tiede','Froid':'heat_froid'};
+function heatLabel(raw){ const key=HEAT_KEY_MAP[raw]; return key ? t(key) : (raw||''); }
+
+const CRM_STAGES=['Nouveau','À contacter','En discussion','Gagné','Perdu'];
+function renderCRMKanban(){
+  if(!data.prospects.length){ $('crmTable').innerHTML='<div class="empty">'+t('empty_crm')+'</div>'; return; }
+  const byStage={}; CRM_STAGES.forEach(s=>byStage[s]=[]);
+  data.prospects.forEach(p=>{ const s=CRM_STAGES.includes(p.stage)?p.stage:'Nouveau'; byStage[s].push(p); });
+  $('crmTable').innerHTML='<div class="kanbanBoard">'+CRM_STAGES.map(stage=>
+    '<div class="kanbanCol" data-stage="'+esc(stage)+'" ondragover="event.preventDefault()" ondrop="onKanbanDrop(event,\''+stage+'\')">'+
+    '<div class="kanbanColHead">'+esc(statusLabel(stage))+' <span class="muted">('+byStage[stage].length+')</span></div>'+
+    byStage[stage].map(p=>
+      '<div class="kanbanCard" draggable="true" ondragstart="event.dataTransfer.setData(\'text/plain\',\''+p.id+'\')">'+
+      '<strong>'+esc(p.name||t('empty_crm').split('.')[0])+'</strong>'+
+      '<div class="muted" style="font-size:12px">'+esc(p.phone||'—')+'</div>'+
+      '<div style="margin:6px 0"><span class="badge '+(p.score>=70?'hot':p.score<40?'cold':'')+'" title="'+esc(heatLabel(p.status))+'">'+p.score+'/100</span></div>'+
+      '<div class="muted" style="font-size:12px">'+esc(p.need||'—')+'</div>'+
+      '<select style="margin-top:8px;width:100%;font-size:12px" onchange="moveProspectStage(\''+p.id+'\',this.value)">'+
+      CRM_STAGES.map(s=>'<option value="'+esc(s)+'"'+(s===stage?' selected':'')+'>'+esc(statusLabel(s))+'</option>').join('')+
+      '</select>'+
+      '</div>'
+    ).join('')+
+    '</div>'
+  ).join('')+'</div>';
+}
+
+function onKanbanDrop(e,newStage){
+  e.preventDefault();
+  const id=e.dataTransfer.getData('text/plain');
+  if(id) moveProspectStage(id,newStage);
+}
+
+async function moveProspectStage(id,newStage){
+  const p=data.prospects.find(x=>x.id===id); if(!p||p.stage===newStage) return;
+  try {
+    await api('/api/prospects/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      name:p.name,phone:p.phone,need:p.need,score:Number(p.score),stage:newStage,value:Number(p.value),orderIntent:p.orderIntent
+    })});
+    await load();
+  } catch(e){ alert(e.message); }
 }
 
 async function saveProduct(e) {
@@ -758,7 +824,7 @@ async function saveProduct(e) {
   try {
     await api('/api/products',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       name:$('pName').value.trim(), category:$('pCategory').value.trim(),
-      price:Number($('pPrice').value), stock:Number($('pStock').value || 0)
+      price:Number($('pPrice').value), stock:Number($('pStock').value || 0), imageUrl:$('pImageUrl').value.trim()
     })});
     e.target.reset(); $('pStock').value=0; await load(); tab('products');
   } catch(err) { alert(err.message); }
@@ -770,8 +836,9 @@ async function editProduct(id) {
   const price=prompt(t('prompt_price_fcfa'),p.price); if(price===null)return;
   const stock=prompt(t('prompt_stock'),p.stock); if(stock===null)return;
   const category=prompt(t('prompt_category'),p.category||''); if(category===null)return;
+  const imageUrl=prompt(t('prompt_image_url'),p.imageUrl||''); if(imageUrl===null)return;
   try {
-    await api('/api/products/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,price:Number(price),stock:Number(stock),category})});
+    await api('/api/products/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,price:Number(price),stock:Number(stock),category,imageUrl})});
     await load(); tab('products');
   } catch(e){alert(e.message);}
 }
@@ -787,7 +854,7 @@ async function saveProspect(e) {
   try {
     await api('/api/prospects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       name:$('cName').value.trim(), phone:$('cPhone').value.trim(), need:$('cNeed').value.trim(),
-      value:Number($('cValue').value||0), score:Number($('cScore').value||0), status:$('cStatus').value
+      value:Number($('cValue').value||0), score:Number($('cScore').value||0), stage:$('cStage').value
     })});
     e.target.reset(); $('cScore').value=50; await load(); tab('crm');
   } catch(err){alert(err.message);}
@@ -798,7 +865,7 @@ function viewProspect(id){
   $('modalProspectName').textContent=p.name||t('modal_default_prospect');
   $('modalProspectPhone').textContent=p.phone||t('phone_not_set');
   const cls=Number(p.score)>=70?'hot':Number(p.score)<40?'cold':'';
-  $('modalProspectBody').innerHTML='<div class="actions"><span class="badge '+cls+'">'+t('label_score')+': '+esc(p.score||0)+'/100</span><span class="badge">'+esc(statusLabel(p.status||'Nouveau'))+'</span>'+(p.orderIntent?'<span class="badge">'+t('badge_order_intent')+'</span>':'')+'</div><div class="grid" style="margin-top:16px"><div><div class="muted">'+t('th_need')+'</div><strong>'+esc(p.need||t('value_not_set'))+'</strong></div><div><div class="muted">'+t('label_potential_value')+'</div><strong>'+money(p.value)+'</strong></div></div>' +
+  $('modalProspectBody').innerHTML='<div class="actions"><span class="badge '+cls+'">'+t('label_score')+': '+esc(p.score||0)+'/100</span><span class="badge">'+esc(statusLabel(p.stage||'Nouveau'))+'</span>'+(p.orderIntent?'<span class="badge">'+t('badge_order_intent')+'</span>':'')+'</div><div class="grid" style="margin-top:16px"><div><div class="muted">'+t('th_need')+'</div><strong>'+esc(p.need||t('value_not_set'))+'</strong></div><div><div class="muted">'+t('label_potential_value')+'</div><strong>'+money(p.value)+'</strong></div></div>' +
     (p.nextAction ? renderNextAction({action:p.nextAction,priority:p.nextActionPriority,reason:p.nextActionReason}, p.id) : '') +
     '<div style="margin-top:18px"><button class="btn primary" onclick="goToAssistantFromProspect(\''+p.id+'\')">'+t('btn_analyze_request')+'</button></div>';
   $('prospectModal').style.display='flex';
@@ -813,10 +880,10 @@ async function editProspect(id) {
   const phone=prompt(t('prompt_phone'),p.phone||''); if(phone===null)return;
   const need=prompt(t('prompt_need'),p.need||''); if(need===null)return;
   const score=prompt(t('prompt_score'),p.score); if(score===null)return;
-  const status=prompt(t('prompt_status'),p.status||'Nouveau'); if(status===null)return;
+  const stage=prompt(t('prompt_status'),p.stage||'Nouveau'); if(stage===null)return;
   const value=prompt(t('prompt_value_fcfa'),p.value||0); if(value===null)return;
   try {
-    await api('/api/prospects/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,phone,need,score:Number(score),status,value:Number(value),orderIntent:p.orderIntent})});
+    await api('/api/prospects/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,phone,need,score:Number(score),stage,value:Number(value),orderIntent:p.orderIntent})});
     await load(); tab('crm');
   } catch(e){alert(e.message);}
 }
@@ -1197,7 +1264,7 @@ async function ask() {
       : ' <span class="badge hot" style="margin-left:6px">'+(d.quotaExceeded?t('fallback_badge_quota'):d.aiUnavailable?t('fallback_badge_nokey'):t('fallback_badge_error'))+'</span>';
     const x=q.qualification;
     const cls=x.score>=70?'hot':x.score<40?'cold':'';
-    $('qualification').innerHTML='<div class="panel" style="box-shadow:none;border:1px solid #edf0f5;margin:0"><strong>'+t('qualification_title')+'</strong><div style="margin-top:8px"><span class="badge '+cls+'">'+esc(statusLabel(x.status))+' · '+x.score+'/100</span> '+(x.orderIntent?'<span class="badge">'+t('badge_order_intent')+'</span>':'')+'</div><div class="muted" style="margin-top:8px">'+esc(x.reasons.join(' · ')||t('no_signal_detected'))+'</div></div>' +
+    $('qualification').innerHTML='<div class="panel" style="box-shadow:none;border:1px solid #edf0f5;margin:0"><strong>'+t('qualification_title')+'</strong><div style="margin-top:8px"><span class="badge '+cls+'">'+esc(heatLabel(x.status))+' · '+x.score+'/100</span> '+(x.orderIntent?'<span class="badge">'+t('badge_order_intent')+'</span>':'')+'</div><div class="muted" style="margin-top:8px">'+esc(x.reasons.join(' · ')||t('no_signal_detected'))+'</div></div>' +
       renderNextAction(na.nextAction, prospectId);
     if(prospectId) await load();
   } catch(e){$('reply').textContent=e.message;}

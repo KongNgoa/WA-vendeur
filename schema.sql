@@ -106,6 +106,7 @@ CREATE TABLE products (
   category TEXT,
   price NUMERIC(14,2) NOT NULL DEFAULT 0,
   stock INTEGER NOT NULL DEFAULT 0,
+  image_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX products_company_idx ON products(company_id);
@@ -119,6 +120,7 @@ CREATE TABLE prospects (
   value NUMERIC(14,2) DEFAULT 0,
   score INTEGER NOT NULL DEFAULT 0 CHECK(score BETWEEN 0 AND 100),
   status TEXT,
+  stage TEXT NOT NULL DEFAULT 'Nouveau',
   order_intent BOOLEAN NOT NULL DEFAULT false,
   last_contact TIMESTAMPTZ,
   next_action TEXT,
@@ -139,6 +141,14 @@ ALTER TABLE prospects ADD COLUMN IF NOT EXISTS next_action TEXT;
 ALTER TABLE prospects ADD COLUMN IF NOT EXISTS next_action_priority TEXT;
 ALTER TABLE prospects ADD COLUMN IF NOT EXISTS next_action_reason TEXT;
 ALTER TABLE prospects ADD COLUMN IF NOT EXISTS next_action_at TIMESTAMPTZ;
+-- Sépare l'étape du pipeline commercial (stage : Nouveau/À contacter/En discussion/
+-- Gagné/Perdu, modifiable manuellement) de la température IA (status : Chaud/
+-- Tiède/Froid, recalculée à chaque message WhatsApp entrant). Avant ce correctif
+-- les deux étaient confondues dans la colonne status, qui était donc écrasée par
+-- l'IA à chaque message — un prospect marqué "Gagné" repassait "Chaud" dès sa
+-- prochaine réponse. Voir vue kanban (CRM) dans server.js/index.html.
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS stage TEXT NOT NULL DEFAULT 'Nouveau';
+UPDATE prospects SET stage=status WHERE status IN ('Nouveau','À contacter','En discussion','Gagné','Perdu');
 
 CREATE TABLE conversations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

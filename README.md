@@ -71,4 +71,9 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - **Taux de réponse**, **temps de réponse moyen**, **taux de conversion prospect → commande** et **messages IA utilisés ce mois** en un coup d'œil.
 - **Graphique des messages reçus sur les 14 derniers jours** pour repérer les pics d'activité.
 
+## CRM en vue pipeline et catalogue avec photos (1.10.7)
+- **Vue Kanban pour les prospects** (onglet CRM → bouton "🗂️ Pipeline") : les prospects sont répartis en colonnes par étape (Nouveau, À contacter, En discussion, Gagné, Perdu), déplaçables par glisser-déposer ou via le menu déroulant de chaque carte — pratique pour visualiser et faire avancer son pipeline commercial d'un coup d'œil, en plus de la vue liste existante.
+- **Correction d'un bug de fond sur le statut des prospects** : l'étape commerciale (Nouveau/En discussion/Gagné/Perdu, modifiée manuellement) et la température IA (Chaud/Tiède/Froid, recalculée automatiquement à chaque message WhatsApp reçu) partageaient la même donnée en base. Un prospect marqué "Gagné" pouvait donc repasser silencieusement "Chaud" ou "Froid" dès son prochain message client, et les relances automatiques ne s'arrêtaient pas toujours correctement pour les dossiers conclus. Les deux notions sont désormais séparées : l'étape du pipeline reste stable, modifiable uniquement par vous.
+- **Photos produits dans le catalogue** : chaque produit peut désormais avoir une photo (URL d'image). Elle s'affiche dans la gestion du catalogue et, surtout, est envoyée automatiquement au client sur WhatsApp dès qu'il sélectionne un article dans le catalogue interactif — avant la réponse de l'IA.
+
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.
