@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { query, transaction, closeDatabase } from './db.js';
+import ExcelJS from 'exceljs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -297,6 +298,70 @@ function validImageUrl(raw) {
   if(!/^https?:\/\//i.test(s)) return null;
   return s;
 }
+
+// Modèles de démarrage rapide par secteur d'activité : personnalité IA et
+// produits d'exemple pré-remplis, pour qu'une entreprise qui vient de
+// s'inscrire ait quelque chose de pertinent à montrer à ses premiers clients
+// WhatsApp sans tout configurer à la main. Appliqué uniquement sur demande
+// explicite (POST /api/onboarding/apply-template), jamais automatiquement.
+const SECTOR_TEMPLATES={
+  mode:{
+    label:'Boutique mode & accessoires',
+    sector:'Mode & accessoires',
+    aiName:'Aïcha',
+    aiTone:'Chaleureux, élégant et enthousiaste, comme une vendeuse passionnée de mode',
+    aiLanguage:'Français',
+    aiRules:"Mets en avant le style et la qualité des tissus. Demande la taille et la couleur souhaitées avant de confirmer une commande. Si un article n'est plus en stock, propose une alternative similaire du catalogue.",
+    products:[
+      {name:'Robe wax imprimée',category:'Robes',price:15000,stock:8},
+      {name:'Ensemble bazin brodé',category:'Ensembles',price:35000,stock:4},
+      {name:'Sac à main cuir',category:'Accessoires',price:12000,stock:10},
+      {name:'Sandales plates',category:'Chaussures',price:8000,stock:15},
+    ],
+  },
+  restaurant:{
+    label:'Restaurant & traiteur',
+    sector:'Restauration',
+    aiName:'Chef Marcel',
+    aiTone:'Convivial, appétissant et rapide, comme un serveur qui connaît le menu par cœur',
+    aiLanguage:'Français',
+    aiRules:"Annonce toujours les plats du jour disponibles avant de prendre une commande. Demande l'adresse de livraison si le client veut être livré, et précise le délai estimé. Mentionne si un plat est épicé.",
+    products:[
+      {name:'Ndolé complet',category:'Plats',price:3500,stock:20},
+      {name:'Poulet DG',category:'Plats',price:4500,stock:15},
+      {name:'Brochettes (portion de 5)',category:'Grillades',price:2000,stock:30},
+      {name:'Jus de bissap (1L)',category:'Boissons',price:1500,stock:25},
+    ],
+  },
+  beaute:{
+    label:'Salon de beauté & coiffure',
+    sector:'Beauté & coiffure',
+    aiName:'Grace',
+    aiTone:'Douce, rassurante et professionnelle, comme une styliste de confiance',
+    aiLanguage:'Français',
+    aiRules:"Propose toujours de fixer un rendez-vous avec un jour et une heure précis quand le client montre de l'intérêt. Demande le type de coiffure ou de soin souhaité. Reste discret et bienveillant sur les questions de beauté.",
+    products:[
+      {name:'Tresses box braids',category:'Coiffure',price:10000,stock:999},
+      {name:'Pose perruque + coupe',category:'Coiffure',price:15000,stock:999},
+      {name:'Manucure complète',category:'Beauté des mains',price:5000,stock:999},
+      {name:'Soin visage hydratant',category:'Soins',price:7000,stock:999},
+    ],
+  },
+  quincaillerie:{
+    label:'Quincaillerie & matériaux',
+    sector:'Quincaillerie',
+    aiName:'Paul',
+    aiTone:'Direct, pratique et fiable, comme un vendeur en quincaillerie qui connaît son stock',
+    aiLanguage:'Français',
+    aiRules:"Donne toujours le prix et la quantité disponible en stock. Demande la quantité souhaitée par le client avant de confirmer. Si un client décrit un projet (construction, réparation), suggère les produits complémentaires utiles.",
+    products:[
+      {name:'Sac de ciment 50kg',category:'Matériaux',price:6000,stock:50},
+      {name:'Fer à béton 12mm (barre)',category:'Matériaux',price:7500,stock:40},
+      {name:'Peinture émail (1L)',category:'Peinture',price:4000,stock:20},
+      {name:'Perceuse électrique',category:'Outillage',price:28000,stock:6},
+    ],
+  },
+};
 
 function classifyLead(text, products=[], prospect={}) {
   const q=String(text||'').toLowerCase();
@@ -837,8 +902,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.7',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.7'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.8',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.8'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -1001,8 +1066,6 @@ async function handler(req,res) {
     }
     return json(res,200,{received:true});
   }
-
-  await ensureDemo();
 
   if(req.method==='POST'&&u.pathname==='/api/login') {
     if(rateLimited('login:'+clientIp(req),10,5*60*1000)) return tooManyRequests(res);
@@ -1458,6 +1521,32 @@ async function handler(req,res) {
     return json(res,200,{ok:true});
   }
 
+  if(req.method==='GET'&&u.pathname==='/api/onboarding/templates') {
+    const list=Object.entries(SECTOR_TEMPLATES).map(([key,t])=>({key,label:t.label,sector:t.sector,productCount:t.products.length}));
+    return json(res,200,{templates:list});
+  }
+  // Applique un modèle de démarrage rapide (personnalité IA + produits
+  // d'exemple) pour un secteur donné. N'écrase jamais un catalogue déjà
+  // rempli : les produits d'exemple ne sont ajoutés que si le catalogue de
+  // l'entreprise est actuellement vide, pour ne jamais effacer de vraies
+  // données. La personnalité IA, elle, est toujours appliquée (l'utilisateur
+  // peut ensuite l'ajuster depuis l'onglet Assistant IA).
+  if(req.method==='POST'&&u.pathname==='/api/onboarding/apply-template') {
+    const b=await body(req);
+    const tpl=SECTOR_TEMPLATES[b.sector];
+    if(!tpl) return json(res,400,{error:'Secteur inconnu. Choisissez : '+Object.keys(SECTOR_TEMPLATES).join(', ')});
+    await query('UPDATE companies SET sector=$1,ai_name=$2,ai_tone=$3,ai_language=$4,ai_rules=$5 WHERE id=$6',[tpl.sector,tpl.aiName,tpl.aiTone,tpl.aiLanguage,tpl.aiRules,companyId]);
+    const existing=await query('SELECT COUNT(*)::int AS n FROM products WHERE company_id=$1',[companyId]);
+    let productsAdded=0;
+    if(existing.rows[0].n===0) {
+      for(const p of tpl.products) {
+        await query('INSERT INTO products(company_id,name,category,price,stock) VALUES($1,$2,$3,$4,$5)',[companyId,p.name,p.category,p.price,p.stock]);
+        productsAdded++;
+      }
+    }
+    return json(res,200,{ok:true,productsAdded,skippedProducts:existing.rows[0].n>0});
+  }
+
   if(req.method==='GET'&&u.pathname==='/api/users') {
     const r=await query('SELECT id,name,email,role,created_at AS "createdAt" FROM users WHERE company_id=$1 ORDER BY created_at',[companyId]);
     return json(res,200,{users:r.rows});
@@ -1710,6 +1799,50 @@ async function handler(req,res) {
   if(req.method==='GET'&&u.pathname==='/api/orders') {
     const r=await query('SELECT o.id,o.order_number AS number,o.prospect_id AS "prospectId",p.name AS client,o.amount,o.status,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC LIMIT 500',[companyId]);
     return json(res,200,{orders:r.rows});
+  }
+
+  // Export comptable simple (Palier 3 de la feuille de route) : un gérant qui
+  // tient sa propre comptabilité peut télécharger ses commandes en Excel sans
+  // ressaisie manuelle. Deux feuilles : détail des commandes, et un résumé par
+  // statut (dont le total "encaissé" = commandes Livrée) pour un rapprochement
+  // rapide. Pas de dépendance externe — généré à la volée avec exceljs.
+  if(req.method==='GET'&&u.pathname==='/api/export/orders.xlsx') {
+    const rows=(await query('SELECT o.order_number AS number,p.name AS client,p.phone,o.amount,o.status,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC LIMIT 5000',[companyId])).rows;
+    const wb=new ExcelJS.Workbook();
+    wb.creator='VENDIA'; wb.created=new Date();
+
+    const sheet=wb.addWorksheet('Commandes');
+    sheet.columns=[
+      {header:'Numéro',key:'number',width:24},
+      {header:'Client',key:'client',width:26},
+      {header:'Téléphone',key:'phone',width:16},
+      {header:'Montant (FCFA)',key:'amount',width:16},
+      {header:'Statut',key:'status',width:16},
+      {header:'Date',key:'createdAt',width:20},
+    ];
+    sheet.getRow(1).font={bold:true};
+    for(const r of rows) sheet.addRow({number:r.number,client:r.client||'—',phone:r.phone||'—',amount:Number(r.amount),status:r.status,createdAt:new Date(r.createdAt)});
+    sheet.getColumn('amount').numFmt='#,##0';
+    sheet.getColumn('createdAt').numFmt='dd/mm/yyyy hh:mm';
+
+    const byStatus={}; let total=0, encaisse=0;
+    for(const r of rows) { const amt=Number(r.amount)||0; byStatus[r.status]=(byStatus[r.status]||0)+amt; total+=amt; if(r.status==='Livrée') encaisse+=amt; }
+    const summary=wb.addWorksheet('Résumé');
+    summary.columns=[{header:'Statut',key:'status',width:22},{header:'Montant total (FCFA)',key:'amount',width:22}];
+    summary.getRow(1).font={bold:true};
+    Object.entries(byStatus).forEach(([status,amount])=>summary.addRow({status,amount}));
+    summary.addRow({});
+    const rowTotal=summary.addRow({status:'Total commandes',amount:total}); rowTotal.font={bold:true};
+    const rowEncaisse=summary.addRow({status:'Dont encaissé (livré)',amount:encaisse}); rowEncaisse.font={bold:true};
+    summary.getColumn('amount').numFmt='#,##0';
+
+    const buffer=await wb.xlsx.writeBuffer();
+    res.writeHead(200,{
+      'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition':'attachment; filename="vendia-commandes-'+new Date().toISOString().slice(0,10)+'.xlsx"',
+      'Cache-Control':'no-store',
+    });
+    return res.end(Buffer.from(buffer));
   }
   const orderMatch=u.pathname.match(/^\/api\/orders\/([0-9a-f-]+)$/i);
   if(orderMatch && (req.method==='PUT'||req.method==='PATCH')) {
@@ -2001,9 +2134,9 @@ async function ensureMigrations() {
 }
 
 const server=http.createServer((req,res)=>handler(req,res).catch(e=>{console.error(e);json(res,500,{error:'Erreur serveur'});}));
-ensureMigrations().then(()=>ensureSuperAdmin()).catch(e=>console.error('[superadmin] echec initialisation:',e.message)).finally(()=>{
+ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>console.error('[demarrage] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.7 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.8 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

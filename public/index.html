@@ -98,6 +98,10 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 </section>
 
 <section id="productsTab" class="hidden">
+<div class="panel" id="onboardingTemplatesPanel"><h3 data-i18n="onboarding_templates_title">Démarrage rapide — modèles par secteur</h3>
+<p class="muted" data-i18n="onboarding_templates_desc">Pré-remplissez la personnalité de l'assistant IA et quelques produits d'exemple selon votre secteur. Vos produits existants ne sont jamais écrasés.</p>
+<div id="onboardingTemplatesList" class="formgrid"></div>
+</div>
 <div class="panel"><h3 data-i18n="products_add_title">Ajouter un produit</h3>
 <form class="formgrid" onsubmit="saveProduct(event)">
 <input id="pName" placeholder="Nom du produit" required data-i18n-placeholder="placeholder_product_name"><input id="pCategory" placeholder="Catégorie" data-i18n-placeholder="placeholder_category">
@@ -146,7 +150,9 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <input id="oAmount" type="number" min="0" placeholder="Montant (FCFA)" required data-i18n-placeholder="placeholder_amount">
 <select id="oStatus"><option value="En attente" data-i18n="ostatus_en_attente">En attente</option><option value="Confirmée" data-i18n="ostatus_confirmee">Confirmée</option><option value="En préparation" data-i18n="ostatus_en_preparation">En préparation</option><option value="Livrée" data-i18n="ostatus_livree">Livrée</option><option value="Annulée" data-i18n="ostatus_annulee">Annulée</option></select>
 <div class="full"><button class="btn primary" data-i18n="btn_create_order">Créer la commande</button></div></form></div>
-<div class="panel"><h3 data-i18n="nav_orders">Commandes</h3> <span class="muted" id="orderCount"></span><div id="orderTable"></div></div>
+<div class="panel"><h3 data-i18n="nav_orders">Commandes</h3> <span class="muted" id="orderCount"></span>
+<div class="actions" style="margin-bottom:12px"><button class="btn" onclick="exportOrdersExcel()" data-i18n="btn_export_excel">📊 Exporter en Excel</button></div>
+<div id="orderTable"></div></div>
 </section>
 <section id="followupsTab" class="hidden">
 <div class="panel"><h3 data-i18n="followups_schedule_title">Programmer une relance</h3>
@@ -276,6 +282,11 @@ fr: {
   panel_commercial_state:"État commercial", panel_recent_catalog:"Catalogue récent",
   dash_hot:"🔥 Chauds", dash_warm:"🟠 Tièdes", dash_cold:"❄️ Froids", dash_products:"Produits", dash_low_stock:"Stock faible",
   dash_prospects_month:"Prospects ce mois", dash_unlimited:"illimité", empty_products_dash:"Aucun produit.", stock_label:"Stock",
+  onboarding_templates_title:"Démarrage rapide — modèles par secteur", onboarding_templates_desc:"Pré-remplissez la personnalité de l'assistant IA et quelques produits d'exemple selon votre secteur. Vos produits existants ne sont jamais écrasés.",
+  onboarding_template_product_count:"{n} produits d'exemple", btn_apply_template:"Utiliser ce modèle",
+  confirm_apply_template:"Appliquer le modèle \"{s}\" ? Cela remplace la personnalité de l'assistant IA (nom, ton, consignes). Vos produits existants, s'il y en a, ne seront pas touchés.",
+  onboarding_applied_products_added:"Modèle appliqué : {n} produit(s) d'exemple ajouté(s) au catalogue.",
+  onboarding_applied_products_skipped:"Modèle appliqué. Votre catalogue contenait déjà des produits, ils n'ont pas été modifiés.",
   products_add_title:"Ajouter un produit", placeholder_product_name:"Nom du produit", placeholder_category:"Catégorie",
   placeholder_price:"Prix (FCFA)", placeholder_stock:"Stock", btn_add_to_catalog:"Ajouter au catalogue",
   placeholder_image_url:"URL de la photo (optionnel) — ex. https://...", prompt_image_url:"URL de la photo (laisser vide pour aucune)",
@@ -300,7 +311,7 @@ fr: {
   whatsapp_send_failed_prefix:"⚠ Échec envoi WhatsApp :", placeholder_reply_client:"Répondre au client", btn_send:"Envoyer",
   orders_new_title:"Nouvelle commande", option_choose_prospect:"Choisir le prospect", placeholder_amount:"Montant (FCFA)",
   ostatus_en_attente:"En attente", ostatus_confirmee:"Confirmée", ostatus_en_preparation:"En préparation", ostatus_livree:"Livrée", ostatus_annulee:"Annulée",
-  btn_create_order:"Créer la commande", th_number:"N°", th_client:"Client", th_amount:"Montant", empty_orders:"Aucune commande.",
+  btn_create_order:"Créer la commande", btn_export_excel:"📊 Exporter en Excel", th_number:"N°", th_client:"Client", th_amount:"Montant", empty_orders:"Aucune commande.",
   followups_schedule_title:"Programmer une relance", placeholder_followup_message:"Message de relance", btn_schedule:"Programmer",
   followups_auto_note:"Une relance auto (🤖) est envoyée automatiquement au client par WhatsApp dès son échéance — aucune action requise. « Envoyée » = relance déjà partie.",
   th_due:"Échéance", th_message:"Message", th_origin:"Origine", th_action:"Action", origin_auto:"🤖 Auto", origin_manual:"✍️ Manuel",
@@ -388,6 +399,11 @@ en: {
   panel_commercial_state:"Sales overview", panel_recent_catalog:"Recent catalog",
   dash_hot:"🔥 Hot", dash_warm:"🟠 Warm", dash_cold:"❄️ Cold", dash_products:"Products", dash_low_stock:"Low stock",
   dash_prospects_month:"Leads this month", dash_unlimited:"unlimited", empty_products_dash:"No products.", stock_label:"Stock",
+  onboarding_templates_title:"Quick start — templates by sector", onboarding_templates_desc:"Pre-fill the AI assistant's personality and a few sample products based on your sector. Your existing products are never overwritten.",
+  onboarding_template_product_count:"{n} sample products", btn_apply_template:"Use this template",
+  confirm_apply_template:"Apply the \"{s}\" template? This replaces the AI assistant's personality (name, tone, instructions). Your existing products, if any, won't be touched.",
+  onboarding_applied_products_added:"Template applied: {n} sample product(s) added to your catalog.",
+  onboarding_applied_products_skipped:"Template applied. Your catalog already had products, so they weren't changed.",
   products_add_title:"Add a product", placeholder_product_name:"Product name", placeholder_category:"Category",
   placeholder_price:"Price (FCFA)", placeholder_stock:"Stock", btn_add_to_catalog:"Add to catalog",
   placeholder_image_url:"Photo URL (optional) — e.g. https://...", prompt_image_url:"Photo URL (leave empty for none)",
@@ -412,7 +428,7 @@ en: {
   whatsapp_send_failed_prefix:"⚠ WhatsApp send failed:", placeholder_reply_client:"Reply to the client", btn_send:"Send",
   orders_new_title:"New order", option_choose_prospect:"Choose a lead", placeholder_amount:"Amount (FCFA)",
   ostatus_en_attente:"Pending", ostatus_confirmee:"Confirmed", ostatus_en_preparation:"Preparing", ostatus_livree:"Delivered", ostatus_annulee:"Cancelled",
-  btn_create_order:"Create order", th_number:"No.", th_client:"Client", th_amount:"Amount", empty_orders:"No orders yet.",
+  btn_create_order:"Create order", btn_export_excel:"📊 Export to Excel", th_number:"No.", th_client:"Client", th_amount:"Amount", empty_orders:"No orders yet.",
   followups_schedule_title:"Schedule a follow-up", placeholder_followup_message:"Follow-up message", btn_schedule:"Schedule",
   followups_auto_note:"An automatic follow-up (🤖) is sent to the client on WhatsApp as soon as it's due — no action needed. \"Sent\" = the follow-up already went out.",
   th_due:"Due", th_message:"Message", th_origin:"Origin", th_action:"Action", origin_auto:"🤖 Auto", origin_manual:"✍️ Manual",
@@ -665,7 +681,7 @@ function tab(name) {
   currentTab=name;
   document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   ['dashboard','products','crm','assistant','conversations','orders','followups','analytics','team','settings'].forEach(x => $(x+'Tab').classList.toggle('hidden', x !== name));
-  if (name === 'products') renderProducts();
+  if (name === 'products') { renderProducts(); renderOnboardingTemplates(); }
   if (name === 'crm') renderCRM();
   if (name === 'conversations') renderConversations();
   if (name === 'orders') renderOrders();
@@ -754,6 +770,32 @@ function renderProducts() {
     data.products.map(p => '<tr><td>'+(p.imageUrl?'<img src="'+esc(p.imageUrl)+'" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px" onerror="this.style.display=\'none\'">':'')+'</td><td><strong>'+esc(p.name)+'</strong></td><td>'+esc(p.category||'—')+'</td><td>'+money(p.price)+'</td><td>'+p.stock+'</td><td><div class="actions">' +
     '<button class="btn" data-edit-product="'+p.id+'">'+t('btn_edit')+'</button><button class="btn danger" data-delete-product="'+p.id+'">'+t('btn_delete')+'</button></div></td></tr>').join('') +
     '</tbody></table>' : '<div class="empty">'+t('empty_products')+'</div>';
+}
+
+// Modèles de démarrage rapide par secteur : chargés une fois (liste statique
+// sans donnée sensible), affichés en cartes cliquables dans l'onglet
+// Catalogue. L'application réelle se fait via applyOnboardingTemplate().
+let onboardingTemplates=null;
+async function renderOnboardingTemplates() {
+  const panel=$('onboardingTemplatesPanel'); if(!panel) return;
+  if(!onboardingTemplates) {
+    try { onboardingTemplates=(await api('/api/onboarding/templates')).templates||[]; }
+    catch(e) { onboardingTemplates=[]; }
+  }
+  if(!onboardingTemplates.length) { panel.classList.add('hidden'); return; }
+  $('onboardingTemplatesList').innerHTML = onboardingTemplates.map(tpl =>
+    '<div class="panel" style="margin:0"><strong>'+esc(tpl.label)+'</strong><br>' +
+    '<span class="muted">'+tf('onboarding_template_product_count',{n:tpl.productCount})+'</span><br>' +
+    '<button class="btn" style="margin-top:8px" onclick="applyOnboardingTemplate(\''+tpl.key+'\',\''+esc(tpl.label).replace(/'/g,"\\'")+'\')">'+t('btn_apply_template')+'</button></div>'
+  ).join('');
+}
+async function applyOnboardingTemplate(key, label) {
+  if(!confirm(tf('confirm_apply_template',{s:label}))) return;
+  try {
+    const r=await api('/api/onboarding/apply-template',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sector:key})});
+    await load();
+    alert(r.skippedProducts ? t('onboarding_applied_products_skipped') : tf('onboarding_applied_products_added',{n:r.productsAdded}));
+  } catch(e) { alert(e.message); }
 }
 
 let crmView='list';
@@ -1005,6 +1047,19 @@ async function saveOrder(e){
     await load();
     tab('orders');
   }catch(x){alert(x.message);}
+}
+
+async function exportOrdersExcel(){
+  try{
+    const r=await fetch('/api/export/orders.xlsx',{headers:token?{Authorization:'Bearer '+token}:{}});
+    if(!r.ok){ let msg=t('generic_error'); try{ msg=(await r.json()).error||msg; }catch{} throw new Error(msg); }
+    const blob=await r.blob();
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download='vendia-commandes-'+new Date().toISOString().slice(0,10)+'.xlsx';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }catch(x){ alert(x.message); }
 }
 
 function renderFollowups(){
