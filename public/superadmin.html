@@ -24,62 +24,143 @@ input,select{width:100%;padding:10px;border:1px solid #d9deea;border-radius:10px
 .login{max-width:420px;margin:60px auto}.error{color:#b42318;margin-top:10px}.success{color:#18794e;margin-top:10px}.hidden{display:none}.muted{color:#687386;font-size:13px}
 .empty{padding:24px;text-align:center;color:#687386}
 .msgIn{background:#f5f7fb}.msgOut{background:#f0f4ff}.msg{padding:8px;margin-top:6px;border-radius:8px;font-size:13px}
+.langSwitch{display:flex;border:1px solid #ffffff33;border-radius:8px;overflow:hidden}.langSwitch button{border:0;background:transparent;color:#fff;opacity:.6;padding:6px 10px;font-weight:700;font-size:12px;cursor:pointer;border-radius:0}.langSwitch button.active{opacity:1;background:#ffffff26}
 </style>
 </head>
 <body>
-<header><div class="brand"><img src="assets/logo-mark-112.png" alt="VENDIA"><div><h1>VENDIA — Super-admin</h1><div class="tag">Vue et contrôle sur toutes les entreprises</div></div></div>
-<div><button class="btn" id="logoutBtn" onclick="logout()" style="display:none">Déconnexion</button></div></header>
+<header><div class="brand"><img src="assets/logo-mark-112.png" alt="VENDIA"><div><h1>VENDIA — <span data-i18n="title_suffix">Super-admin</span></h1><div class="tag" data-i18n="header_subtitle">Vue et contrôle sur toutes les entreprises</div></div></div>
+<div class="actions" style="align-items:center"><div class="langSwitch" id="langSwitch"><button data-lang="fr" onclick="setLang('fr')">FR</button><button data-lang="en" onclick="setLang('en')">EN</button></div><button class="btn" id="logoutBtn" onclick="logout()" style="display:none" data-i18n="logout_btn">Déconnexion</button></div></header>
 <main class="wrap">
 
 <section id="login" class="login">
-<h2>Connexion super-admin</h2>
-<input id="saEmail" type="email" placeholder="Email"><input id="saPassword" type="password" placeholder="Mot de passe" style="margin-top:10px">
-<button class="btn primary" style="margin-top:10px" onclick="login()">Se connecter</button>
+<h2 data-i18n="login_title">Connexion super-admin</h2>
+<input id="saEmail" type="email" placeholder="Email"><input id="saPassword" type="password" placeholder="Mot de passe" style="margin-top:10px" data-i18n-placeholder="placeholder_password">
+<button class="btn primary" style="margin-top:10px" onclick="login()" data-i18n="login_btn">Se connecter</button>
 <div id="loginMsg" style="margin-top:10px"></div>
 </section>
 
 <section id="app" class="hidden">
-<div class="panel"><h3>Nouvelle entreprise</h3>
+<div class="panel"><h3 data-i18n="new_company_title">Nouvelle entreprise</h3>
 <form class="formgrid" onsubmit="createCompany(event)">
-<input id="ncName" placeholder="Nom de l'entreprise" required>
-<input id="ncSector" placeholder="Secteur">
+<input id="ncName" placeholder="Nom de l'entreprise" required data-i18n-placeholder="placeholder_company_name">
+<input id="ncSector" placeholder="Secteur" data-i18n-placeholder="placeholder_sector">
 <select id="ncPlan"><option value="Starter">Starter (10 000 FCFA)</option><option value="Business">Business (25 000 FCFA)</option><option value="Pro">Pro (50 000 FCFA)</option></select>
 <span></span>
-<input id="ncOwnerName" placeholder="Nom du propriétaire" required>
-<input id="ncOwnerEmail" type="email" placeholder="Email du propriétaire" required>
-<input id="ncOwnerPassword" type="password" placeholder="Mot de passe (min. 6 caractères)" required>
-<div class="full"><button class="btn primary">Créer l'entreprise</button></div>
+<input id="ncOwnerName" placeholder="Nom du propriétaire" required data-i18n-placeholder="placeholder_owner_name">
+<input id="ncOwnerEmail" type="email" placeholder="Email du propriétaire" required data-i18n-placeholder="placeholder_owner_email">
+<input id="ncOwnerPassword" type="password" placeholder="Mot de passe (min. 6 caractères)" required data-i18n-placeholder="placeholder_password_min6">
+<div class="full"><button class="btn primary" data-i18n="btn_create_company">Créer l'entreprise</button></div>
 </form>
 <div id="ncStatus" style="margin-top:10px"></div>
 </div>
 
-<div class="panel"><h3>Validations de paiement en attente <span class="muted" id="pendingCount"></span></h3>
+<div class="panel"><h3 data-i18n="pending_payments_title">Validations de paiement en attente</h3> <span class="muted" id="pendingCount"></span>
 <div id="pendingTable"></div>
 </div>
 
-<div class="panel"><h3>Entreprises <span class="muted" id="companyCount"></span></h3>
+<div class="panel"><h3 data-i18n="companies_title">Entreprises</h3> <span class="muted" id="companyCount"></span>
 <div id="companyTable"></div>
 </div>
 
 <div class="panel hidden" id="detailPanel">
-<div style="display:flex;justify-content:space-between;align-items:center"><h3 id="detailTitle">Détail</h3><button class="btn" onclick="closeDetail()">Fermer</button></div>
-<h4>Membres</h4>
+<div style="display:flex;justify-content:space-between;align-items:center"><h3 id="detailTitle" data-i18n="detail_default_title">Détail</h3><button class="btn" onclick="closeDetail()" data-i18n="btn_close">Fermer</button></div>
+<h4 data-i18n="members_title">Membres</h4>
 <div id="detailUsers"></div>
 <form class="formgrid" onsubmit="addDetailUser(event)" style="margin-top:12px">
-<input id="duName" placeholder="Nom" required><input id="duEmail" type="email" placeholder="Email" required>
-<input id="duPassword" type="password" placeholder="Mot de passe (min. 6 caractères)" required>
-<select id="duRole"><option value="owner">Administrateur</option><option value="admin">Responsable</option><option value="sales" selected>Commercial</option><option value="viewer">Lecture seule</option></select>
-<div class="full"><button class="btn primary">Ajouter un membre</button></div>
+<input id="duName" placeholder="Nom" required data-i18n-placeholder="placeholder_name">
+<input id="duEmail" type="email" placeholder="Email" required>
+<input id="duPassword" type="password" placeholder="Mot de passe (min. 6 caractères)" required data-i18n-placeholder="placeholder_password_min6">
+<select id="duRole"><option value="owner" data-i18n="role_owner">Administrateur</option><option value="admin" data-i18n="role_admin">Responsable</option><option value="sales" selected data-i18n="role_sales">Commercial</option><option value="viewer" data-i18n="role_viewer">Lecture seule</option></select>
+<div class="full"><button class="btn primary" data-i18n="btn_add_member">Ajouter un membre</button></div>
 </form>
-<h4 style="margin-top:20px">Conversations (lecture seule)</h4>
+<h4 style="margin-top:20px" data-i18n="conversations_readonly_title">Conversations (lecture seule)</h4>
 <div id="detailConversations"></div>
 </div>
 
 </section>
 </main>
 <script>
+const I18N = {
+fr: {
+  title_suffix:"Super-admin", header_subtitle:"Vue et contrôle sur toutes les entreprises", logout_btn:"Déconnexion",
+  login_title:"Connexion super-admin", placeholder_password:"Mot de passe", login_btn:"Se connecter",
+  new_company_title:"Nouvelle entreprise", placeholder_company_name:"Nom de l'entreprise", placeholder_sector:"Secteur",
+  placeholder_owner_name:"Nom du propriétaire", placeholder_owner_email:"Email du propriétaire", placeholder_password_min6:"Mot de passe (min. 6 caractères)",
+  btn_create_company:"Créer l'entreprise",
+  pending_payments_title:"Validations de paiement en attente", companies_title:"Entreprises",
+  detail_default_title:"Détail", btn_close:"Fermer", members_title:"Membres", placeholder_name:"Nom",
+  role_owner:"👑 Administrateur", role_admin:"Responsable", role_sales:"Commercial", role_viewer:"Lecture seule",
+  btn_add_member:"Ajouter un membre", conversations_readonly_title:"Conversations (lecture seule)",
+  session_expired:"Session expirée. Reconnectez-vous.", generic_error:"Erreur serveur", invalid_credentials:"Identifiants incorrects",
+  loading_login:"Connexion…", logged_out:"Vous êtes déconnecté.",
+  th_company:"Entreprise", th_plan:"Forfait", th_amount:"Montant", th_method:"Moyen", th_payer:"Payeur", th_reference:"Référence", th_actions:"Actions",
+  btn_approve:"Approuver", btn_reject:"Rejeter", empty_pending:"Aucune validation en attente.",
+  confirm_approve_payment:"Confirmer que le paiement a bien été reçu et activer ce compte ?",
+  confirm_reject_payment:"Rejeter cette demande ? Le compte restera bloqué.",
+  th_status:"Statut", th_members:"Membres", th_ai_replies:"Réponses IA", th_prospects_month:"Prospects ce mois",
+  ai_unlimited:"illimité", ai_remaining:"restantes", prospects_unlimited:"(illimité)",
+  badge_suspended:"🚫 Suspendue", badge_pending_payment:"⏳ En attente de paiement", badge_active:"✅ Active",
+  btn_details:"Détails", btn_reactivate:"Réactiver", btn_suspend:"Suspendre", empty_companies:"Aucune entreprise.",
+  confirm_suspend:"Suspendre cette entreprise ? Ses utilisateurs seront déconnectés et ne pourront plus se reconnecter, et le webhook WhatsApp ignorera ses messages.",
+  loading_creating:"Création en cours…", company_created:"✅ Entreprise créée.",
+  detail_title_prefix:"Détail —", th_name:"Nom", th_email:"Email", th_role:"Rôle",
+  btn_reset_password:"Réinit. mdp", btn_remove:"Retirer", empty_members:"Aucun membre.",
+  confirm_remove_member:"Retirer {name} de cette entreprise ?", confirm_reset_password:"Réinitialiser le mot de passe de {name} ?",
+  alert_temp_password:"Nouveau mot de passe temporaire pour {name} :\n\n{pwd}",
+  default_contact:"Contact", label_client:"Client", empty_conversations:"Aucune conversation.",
+  status_active:"Actif", status_trial:"Essai",
+},
+en: {
+  title_suffix:"Super-admin", header_subtitle:"View and control across all companies", logout_btn:"Log out",
+  login_title:"Super-admin login", placeholder_password:"Password", login_btn:"Log in",
+  new_company_title:"New company", placeholder_company_name:"Company name", placeholder_sector:"Sector",
+  placeholder_owner_name:"Owner's name", placeholder_owner_email:"Owner's email", placeholder_password_min6:"Password (min. 6 characters)",
+  btn_create_company:"Create company",
+  pending_payments_title:"Pending payment approvals", companies_title:"Companies",
+  detail_default_title:"Details", btn_close:"Close", members_title:"Members", placeholder_name:"Name",
+  role_owner:"👑 Admin", role_admin:"Manager", role_sales:"Sales rep", role_viewer:"Read only",
+  btn_add_member:"Add a member", conversations_readonly_title:"Conversations (read only)",
+  session_expired:"Session expired. Please log in again.", generic_error:"Server error", invalid_credentials:"Incorrect credentials",
+  loading_login:"Logging in…", logged_out:"You are logged out.",
+  th_company:"Company", th_plan:"Plan", th_amount:"Amount", th_method:"Method", th_payer:"Payer", th_reference:"Reference", th_actions:"Actions",
+  btn_approve:"Approve", btn_reject:"Reject", empty_pending:"No pending approvals.",
+  confirm_approve_payment:"Confirm the payment was received and activate this account?",
+  confirm_reject_payment:"Reject this request? The account will stay blocked.",
+  th_status:"Status", th_members:"Members", th_ai_replies:"AI replies", th_prospects_month:"Leads this month",
+  ai_unlimited:"unlimited", ai_remaining:"left", prospects_unlimited:"(unlimited)",
+  badge_suspended:"🚫 Suspended", badge_pending_payment:"⏳ Awaiting payment", badge_active:"✅ Active",
+  btn_details:"Details", btn_reactivate:"Reactivate", btn_suspend:"Suspend", empty_companies:"No companies yet.",
+  confirm_suspend:"Suspend this company? Its users will be logged out and unable to log back in, and the WhatsApp webhook will ignore its messages.",
+  loading_creating:"Creating…", company_created:"✅ Company created.",
+  detail_title_prefix:"Details —", th_name:"Name", th_email:"Email", th_role:"Role",
+  btn_reset_password:"Reset password", btn_remove:"Remove", empty_members:"No members yet.",
+  confirm_remove_member:"Remove {name} from this company?", confirm_reset_password:"Reset {name}'s password?",
+  alert_temp_password:"New temporary password for {name}:\n\n{pwd}",
+  default_contact:"Contact", label_client:"Client", empty_conversations:"No conversations yet.",
+  status_active:"Active", status_trial:"Trial",
+}
+};
+let lang = localStorage.getItem('vendia_lang') || 'fr';
+function t(key){ const v=(I18N[lang]&&I18N[lang][key])!=null?I18N[lang][key]:(I18N.fr[key]!=null?I18N.fr[key]:key); return v; }
+function tf(key, vars){ let s=t(key); Object.keys(vars||{}).forEach(k=>{ s=s.split('{'+k+'}').join(vars[k]); }); return s; }
+function applyI18n(){
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-i18n]').forEach(el=>{ el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el=>{ el.placeholder = t(el.dataset.i18nPlaceholder); });
+  document.querySelectorAll('#langSwitch button').forEach(b=>b.classList.toggle('active', b.dataset.lang===lang));
+}
+function setLang(l){
+  if(lang===l) return;
+  lang=l; localStorage.setItem('vendia_lang', l);
+  applyI18n();
+  if(!$('app').classList.contains('hidden')){ renderCompanies(); if(lastPending) renderPending(lastPending); if(currentDetailId){ loadDetailUsers(); loadDetailConversations(); } }
+}
+const STATUS_KEY_MAP={ active:'status_active', trial:'status_trial' };
+function statusLabel(raw){ const key=STATUS_KEY_MAP[raw]; return key?t(key):(raw||'—'); }
+
 let token = localStorage.getItem('vendia_superadmin_token') || '';
 let companies = [];
+let lastPending = null;
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const money=n=>Number(n||0).toLocaleString('fr-FR')+' FCFA';
@@ -88,8 +169,8 @@ async function api(path,options={}){
   options.headers={...(options.headers||{}),...(token?{Authorization:'Bearer '+token}:{})};
   const r=await fetch(path,options);
   let d={}; try{d=await r.json();}catch{}
-  if(r.status===401){ token=''; localStorage.removeItem('vendia_superadmin_token'); showLogin('Session expirée. Reconnectez-vous.'); throw new Error('Session expirée'); }
-  if(!r.ok) throw new Error(d.error||'Erreur serveur');
+  if(r.status===401){ token=''; localStorage.removeItem('vendia_superadmin_token'); showLogin(t('session_expired')); throw new Error(t('session_expired')); }
+  if(!r.ok) throw new Error(d.error||t('generic_error'));
   return d;
 }
 function showLogin(msg=''){
@@ -97,11 +178,11 @@ function showLogin(msg=''){
   $('loginMsg').className=msg?'error':''; $('loginMsg').textContent=msg;
 }
 async function login(){
-  const msg=$('loginMsg'); msg.className=''; msg.textContent='Connexion…';
+  const msg=$('loginMsg'); msg.className=''; msg.textContent=t('loading_login');
   try{
     const r=await fetch('/api/superadmin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:$('saEmail').value.trim(),password:$('saPassword').value})});
     const d=await r.json();
-    if(!r.ok) throw new Error(d.error||'Identifiants incorrects');
+    if(!r.ok) throw new Error(d.error||t('invalid_credentials'));
     token=d.token; localStorage.setItem('vendia_superadmin_token',token);
     $('login').classList.add('hidden'); $('app').classList.remove('hidden'); $('logoutBtn').style.display='';
     await loadCompanies();
@@ -110,7 +191,7 @@ async function login(){
 function logout(){
   api('/api/superadmin/logout',{method:'POST'}).catch(()=>{});
   token=''; localStorage.removeItem('vendia_superadmin_token');
-  showLogin('Vous êtes déconnecté.');
+  showLogin(t('logged_out'));
 }
 
 async function loadCompanies(){
@@ -118,67 +199,68 @@ async function loadCompanies(){
     const [cr,pr]=await Promise.all([api('/api/superadmin/companies'),api('/api/superadmin/payment-requests?status=pending')]);
     companies=cr.companies||[];
     renderCompanies();
-    renderPending(pr.paymentRequests||[]);
+    lastPending=pr.paymentRequests||[];
+    renderPending(lastPending);
   }catch(e){ $('companyTable').innerHTML='<div class="error">'+esc(e.message)+'</div>'; }
 }
 function renderPending(list){
   $('pendingCount').textContent='('+list.length+')';
-  $('pendingTable').innerHTML = list.length ? '<table><thead><tr><th>Entreprise</th><th>Forfait</th><th>Montant</th><th>Moyen</th><th>Payeur</th><th>Référence</th><th>Actions</th></tr></thead><tbody>'+
+  $('pendingTable').innerHTML = list.length ? '<table><thead><tr><th>'+t('th_company')+'</th><th>'+t('th_plan')+'</th><th>'+t('th_amount')+'</th><th>'+t('th_method')+'</th><th>'+t('th_payer')+'</th><th>'+t('th_reference')+'</th><th>'+t('th_actions')+'</th></tr></thead><tbody>'+
     list.map(p=>'<tr><td><strong>'+esc(p.companyName)+'</strong></td><td>'+esc(p.plan)+'</td><td>'+money(p.amount)+'</td>'+
       '<td>'+(p.method==='orange_money'?'🟠 Orange Money':'🟡 MTN MoMo')+'</td><td>'+esc(p.payerPhone||'—')+'</td><td>'+esc(p.reference||'—')+'</td>'+
-      '<td><div class="actions"><button class="btn primary" onclick="approvePayment(\''+p.id+'\')">Approuver</button><button class="btn danger" onclick="rejectPayment(\''+p.id+'\')">Rejeter</button></div></td></tr>').join('')+
-    '</tbody></table>' : '<div class="empty">Aucune validation en attente.</div>';
+      '<td><div class="actions"><button class="btn primary" onclick="approvePayment(\''+p.id+'\')">'+t('btn_approve')+'</button><button class="btn danger" onclick="rejectPayment(\''+p.id+'\')">'+t('btn_reject')+'</button></div></td></tr>').join('')+
+    '</tbody></table>' : '<div class="empty">'+t('empty_pending')+'</div>';
 }
 async function approvePayment(id){
-  if(!confirm('Confirmer que le paiement a bien été reçu et activer ce compte ?')) return;
+  if(!confirm(t('confirm_approve_payment'))) return;
   try{ await api('/api/superadmin/payment-requests/'+id+'/approve',{method:'POST'}); await loadCompanies(); }
   catch(x){ alert(x.message); }
 }
 async function rejectPayment(id){
-  if(!confirm('Rejeter cette demande ? Le compte restera bloqué.')) return;
+  if(!confirm(t('confirm_reject_payment'))) return;
   try{ await api('/api/superadmin/payment-requests/'+id+'/reject',{method:'POST'}); await loadCompanies(); }
   catch(x){ alert(x.message); }
 }
 function renderCompanies(){
   $('companyCount').textContent='('+companies.length+')';
-  $('companyTable').innerHTML = companies.length ? '<table><thead><tr><th>Entreprise</th><th>Forfait</th><th>Statut</th><th>Membres</th><th>Réponses IA</th><th>Prospects ce mois</th><th>Actions</th></tr></thead><tbody>'+
+  $('companyTable').innerHTML = companies.length ? '<table><thead><tr><th>'+t('th_company')+'</th><th>'+t('th_plan')+'</th><th>'+t('th_status')+'</th><th>'+t('th_members')+'</th><th>'+t('th_ai_replies')+'</th><th>'+t('th_prospects_month')+'</th><th>'+t('th_actions')+'</th></tr></thead><tbody>'+
     companies.map(c=>{
-      const aiLabel = c.aiUsage.limit==null ? 'illimité' : (c.aiUsage.remaining+' / '+c.aiUsage.limit+' restantes');
-      const prospectsLabel = c.prospectsThisMonth + (c.limits.maxProspectsPerMonth!=null?' / '+c.limits.maxProspectsPerMonth:' (illimité)');
-      const suspendedBadge = c.suspended ? '<span class="badge handoff">🚫 Suspendue</span>' : (!c.approvedAt ? '<span class="badge hot">⏳ En attente de paiement</span>' : '<span class="badge">✅ Active</span>');
+      const aiLabel = c.aiUsage.limit==null ? t('ai_unlimited') : (c.aiUsage.remaining+' / '+c.aiUsage.limit+' '+t('ai_remaining'));
+      const prospectsLabel = c.prospectsThisMonth + (c.limits.maxProspectsPerMonth!=null?' / '+c.limits.maxProspectsPerMonth:' '+t('prospects_unlimited'));
+      const suspendedBadge = c.suspended ? '<span class="badge handoff">'+t('badge_suspended')+'</span>' : (!c.approvedAt ? '<span class="badge hot">'+t('badge_pending_payment')+'</span>' : '<span class="badge">'+t('badge_active')+'</span>');
       return '<tr><td><strong>'+esc(c.name)+'</strong><br><span class="muted">'+esc(c.sector||'—')+'</span><br>'+suspendedBadge+'</td>'+
         '<td><select onchange="changePlan(\''+c.id+'\',this.value)">'+
           ['Starter','Business','Pro'].map(p=>'<option value="'+p+'"'+(p===c.plan?' selected':'')+'>'+p+'</option>').join('')+
         '</select></td>'+
-        '<td>'+esc(c.status||'—')+'</td>'+
+        '<td>'+esc(statusLabel(c.status))+'</td>'+
         '<td>'+c.userCount+' / '+(c.limits.maxUsers==null?'∞':c.limits.maxUsers)+'</td>'+
         '<td>'+esc(aiLabel)+'</td>'+
         '<td>'+esc(prospectsLabel)+'</td>'+
         '<td><div class="actions">'+
-          '<button class="btn" onclick="openDetail(\''+c.id+'\')">Détails</button>'+
-          '<button class="btn '+(c.suspended?'':'danger')+'" onclick="toggleSuspend(\''+c.id+'\','+(!c.suspended)+')">'+(c.suspended?'Réactiver':'Suspendre')+'</button>'+
+          '<button class="btn" onclick="openDetail(\''+c.id+'\')">'+t('btn_details')+'</button>'+
+          '<button class="btn '+(c.suspended?'':'danger')+'" onclick="toggleSuspend(\''+c.id+'\','+(!c.suspended)+')">'+(c.suspended?t('btn_reactivate'):t('btn_suspend'))+'</button>'+
         '</div></td></tr>';
-    }).join('')+'</tbody></table>' : '<div class="empty">Aucune entreprise.</div>';
+    }).join('')+'</tbody></table>' : '<div class="empty">'+t('empty_companies')+'</div>';
 }
 async function changePlan(id,plan){
   try{ await api('/api/superadmin/companies/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan})}); await loadCompanies(); }
   catch(e){ alert(e.message); await loadCompanies(); }
 }
 async function toggleSuspend(id,suspended){
-  if(suspended && !confirm('Suspendre cette entreprise ? Ses utilisateurs seront déconnectés et ne pourront plus se reconnecter, et le webhook WhatsApp ignorera ses messages.')) return;
+  if(suspended && !confirm(t('confirm_suspend'))) return;
   try{ await api('/api/superadmin/companies/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({suspended})}); await loadCompanies(); }
   catch(e){ alert(e.message); }
 }
 async function createCompany(e){
   e.preventDefault();
-  const status=$('ncStatus'); status.innerHTML='Création en cours…';
+  const status=$('ncStatus'); status.innerHTML=t('loading_creating');
   try{
     await api('/api/superadmin/companies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       name:$('ncName').value.trim(), sector:$('ncSector').value.trim(), plan:$('ncPlan').value,
       ownerName:$('ncOwnerName').value.trim(), ownerEmail:$('ncOwnerEmail').value.trim(), ownerPassword:$('ncOwnerPassword').value
     })});
     e.target.reset();
-    status.innerHTML='<span class="badge">✅ Entreprise créée.</span>';
+    status.innerHTML='<span class="badge">'+t('company_created')+'</span>';
     await loadCompanies();
   }catch(x){ status.innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
 }
@@ -187,21 +269,21 @@ let currentDetailId=null;
 async function openDetail(id){
   currentDetailId=id;
   const c=companies.find(x=>x.id===id);
-  $('detailTitle').textContent='Détail — '+(c?c.name:'');
+  $('detailTitle').textContent=t('detail_title_prefix')+' '+(c?c.name:'');
   $('detailPanel').classList.remove('hidden');
   $('detailPanel').scrollIntoView({behavior:'smooth'});
   await Promise.all([loadDetailUsers(),loadDetailConversations()]);
 }
 function closeDetail(){ $('detailPanel').classList.add('hidden'); currentDetailId=null; }
+const DETAIL_ROLE_KEYS={owner:'role_owner',admin:'role_admin',sales:'role_sales',viewer:'role_viewer'};
 async function loadDetailUsers(){
   try{
     const r=await api('/api/superadmin/companies/'+currentDetailId+'/users');
-    const ROLE_LABELS={owner:'👑 Administrateur',admin:'Responsable',sales:'Commercial',viewer:'Lecture seule'};
-    $('detailUsers').innerHTML=(r.users||[]).length? '<table><thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Actions</th></tr></thead><tbody>'+
-      r.users.map(u=>'<tr><td>'+esc(u.name)+'</td><td>'+esc(u.email)+'</td><td>'+esc(ROLE_LABELS[u.role]||u.role)+'</td>'+
-        '<td><div class="actions"><button class="btn" onclick="resetDetailUserPassword(\''+u.id+'\',\''+esc(u.name).replace(/\x27/g,"\\\x27")+'\')">Réinit. mdp</button>'+
-        '<button class="btn danger" onclick="deleteDetailUser(\''+u.id+'\',\''+esc(u.name).replace(/\x27/g,"\\\x27")+'\')">Retirer</button></div></td></tr>').join('')+
-      '</tbody></table>' : '<div class="empty">Aucun membre.</div>';
+    $('detailUsers').innerHTML=(r.users||[]).length? '<table><thead><tr><th>'+t('th_name')+'</th><th>'+t('th_email')+'</th><th>'+t('th_role')+'</th><th>'+t('th_actions')+'</th></tr></thead><tbody>'+
+      r.users.map(u=>'<tr><td>'+esc(u.name)+'</td><td>'+esc(u.email)+'</td><td>'+esc(t(DETAIL_ROLE_KEYS[u.role])||u.role)+'</td>'+
+        '<td><div class="actions"><button class="btn" onclick="resetDetailUserPassword(\''+u.id+'\',\''+esc(u.name).replace(/\x27/g,"\\\x27")+'\')">'+t('btn_reset_password')+'</button>'+
+        '<button class="btn danger" onclick="deleteDetailUser(\''+u.id+'\',\''+esc(u.name).replace(/\x27/g,"\\\x27")+'\')">'+t('btn_remove')+'</button></div></td></tr>').join('')+
+      '</tbody></table>' : '<div class="empty">'+t('empty_members')+'</div>';
   }catch(e){ $('detailUsers').innerHTML='<div class="error">'+esc(e.message)+'</div>'; }
 }
 async function addDetailUser(e){
@@ -215,27 +297,28 @@ async function addDetailUser(e){
   }catch(x){ alert(x.message); }
 }
 async function deleteDetailUser(id,name){
-  if(!confirm('Retirer '+name+' de cette entreprise ?')) return;
+  if(!confirm(tf('confirm_remove_member',{name}))) return;
   try{ await api('/api/superadmin/companies/'+currentDetailId+'/users/'+id,{method:'DELETE'}); await Promise.all([loadDetailUsers(),loadCompanies()]); }
   catch(x){ alert(x.message); }
 }
 async function resetDetailUserPassword(id,name){
-  if(!confirm('Réinitialiser le mot de passe de '+name+' ?')) return;
+  if(!confirm(tf('confirm_reset_password',{name}))) return;
   try{
     const r=await api('/api/superadmin/companies/'+currentDetailId+'/users/'+id+'/reset-password',{method:'POST'});
-    alert('Nouveau mot de passe temporaire pour '+name+' :\n\n'+r.tempPassword);
+    alert(tf('alert_temp_password',{name,pwd:r.tempPassword}));
   }catch(x){ alert(x.message); }
 }
 async function loadDetailConversations(){
   try{
     const r=await api('/api/superadmin/companies/'+currentDetailId+'/conversations');
     $('detailConversations').innerHTML=(r.conversations||[]).length ? r.conversations.map(c=>
-      '<div class="panel" style="box-shadow:none;border:1px solid #edf0f5;margin-bottom:10px"><strong>'+esc(c.prospect||'Contact')+'</strong> · '+esc(c.phone||'—')+
-      (c.messages||[]).map(m=>'<div class="msg '+(m.direction==='in'?'msgIn':'msgOut')+'"><b>'+(m.direction==='in'?'Client':'VENDIA')+':</b> '+esc(m.body)+'</div>').join('')+
-      '</div>').join('') : '<div class="empty">Aucune conversation.</div>';
+      '<div class="panel" style="box-shadow:none;border:1px solid #edf0f5;margin-bottom:10px"><strong>'+esc(c.prospect||t('default_contact'))+'</strong> · '+esc(c.phone||'—')+
+      (c.messages||[]).map(m=>'<div class="msg '+(m.direction==='in'?'msgIn':'msgOut')+'"><b>'+(m.direction==='in'?t('label_client'):'VENDIA')+':</b> '+esc(m.body)+'</div>').join('')+
+      '</div>').join('') : '<div class="empty">'+t('empty_conversations')+'</div>';
   }catch(e){ $('detailConversations').innerHTML='<div class="error">'+esc(e.message)+'</div>'; }
 }
 
+applyI18n();
 if(token){ $('login').classList.add('hidden'); $('app').classList.remove('hidden'); $('logoutBtn').style.display=''; loadCompanies(); }
 </script>
 </body></html>

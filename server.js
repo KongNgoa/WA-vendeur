@@ -648,8 +648,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.3',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.3'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.4',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.4'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -860,14 +860,19 @@ async function handler(req,res) {
   // validé la réception du paiement mobile money.
   if(req.method==='POST'&&u.pathname==='/api/signup') {
     const b=await body(req);
-    if(!b.companyName||!b.ownerName||!b.ownerEmail||!b.ownerPassword) return json(res,400,{error:"Nom de l'entreprise, nom, email et mot de passe requis"});
-    if(String(b.ownerPassword).length<6) return json(res,400,{error:'Le mot de passe doit contenir au moins 6 caractères'});
+    const lang=b.lang==='en'?'en':'fr';
+    const SIGNUP_MSG={
+      fr:{missing:"Nom de l'entreprise, nom, email et mot de passe requis",shortPwd:'Le mot de passe doit contenir au moins 6 caractères',method:'Choisissez un moyen de paiement (Orange Money ou MTN Mobile Money)',payer:'Numéro payeur et référence de la transaction requis pour la validation',emailUsed:'Cet email est déjà utilisé',success:'Compte créé. Il sera activé dès que votre paiement aura été validé — vous serez averti par email.'},
+      en:{missing:'Company name, name, email and password are required',shortPwd:'Password must be at least 6 characters',method:'Choose a payment method (Orange Money or MTN Mobile Money)',payer:'Payer number and transaction reference are required for validation',emailUsed:'This email is already in use',success:'Account created. It will be activated once your payment is confirmed — you will be notified by email.'}
+    }[lang];
+    if(!b.companyName||!b.ownerName||!b.ownerEmail||!b.ownerPassword) return json(res,400,{error:SIGNUP_MSG.missing});
+    if(String(b.ownerPassword).length<6) return json(res,400,{error:SIGNUP_MSG.shortPwd});
     const plan=['Starter','Business','Pro'].includes(b.plan) ? b.plan : 'Starter';
-    if(!['orange_money','mtn_momo'].includes(b.paymentMethod)) return json(res,400,{error:'Choisissez un moyen de paiement (Orange Money ou MTN Mobile Money)'});
-    if(!b.payerPhone||!b.reference) return json(res,400,{error:'Numéro payeur et référence de la transaction requis pour la validation'});
+    if(!['orange_money','mtn_momo'].includes(b.paymentMethod)) return json(res,400,{error:SIGNUP_MSG.method});
+    if(!b.payerPhone||!b.reference) return json(res,400,{error:SIGNUP_MSG.payer});
     const email=String(b.ownerEmail).trim().toLowerCase();
     const existingUser=await query('SELECT id FROM users WHERE email=$1',[email]);
-    if(existingUser.rows[0]) return json(res,409,{error:'Cet email est déjà utilisé'});
+    if(existingUser.rows[0]) return json(res,409,{error:SIGNUP_MSG.emailUsed});
     const amount=planLimits(plan).monthlyPrice;
     const result=await transaction(async client=>{
       const c=await client.query('INSERT INTO companies(name,sector) VALUES($1,$2) RETURNING id',[String(b.companyName).trim(),b.sector||null]);
@@ -887,7 +892,7 @@ async function handler(req,res) {
       '<li>Numéro payeur : '+escHtml(b.payerPhone)+'</li>'+
       '<li>Référence : '+escHtml(b.reference)+'</li></ul>'+
       '<p>Validez depuis le panneau super-admin : /superadmin.html</p>');
-    return json(res,201,{ok:true,companyId:result.companyId,message:"Compte créé. Il sera activé dès que votre paiement aura été validé — vous serez averti par email."});
+    return json(res,201,{ok:true,companyId:result.companyId,message:SIGNUP_MSG.success});
   }
 
   // --- Super-admin : compte séparé des entreprises clientes, vision et
@@ -1688,6 +1693,6 @@ const server=http.createServer((req,res)=>handler(req,res).catch(e=>{console.err
 ensureMigrations().then(()=>ensureSuperAdmin()).catch(e=>console.error('[superadmin] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.3 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.4 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

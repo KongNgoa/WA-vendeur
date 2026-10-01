@@ -9,37 +9,94 @@
 <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
 <link rel="icon" href="assets/favicon.ico">
 <style>
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:760px;margin:40px auto;padding:0 20px;line-height:1.6;color:#1a1a1a}
+  :root{--navy:#0B1442;--blue:#17A2FE;--green:#1FD37A;--gradient:linear-gradient(135deg,var(--blue),var(--green))}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:760px;margin:0 auto 40px;padding:0 20px;line-height:1.6;color:#1a1a1a}
   h1{font-size:1.6rem;margin-bottom:.2em}
   h2{font-size:1.15rem;margin-top:1.8em}
   p,li{color:#333}
   .maj{color:#666;font-size:.9em;margin-bottom:2em}
+  .topbar{display:flex;justify-content:flex-end;padding:16px 20px 0;max-width:760px;margin:0 auto}
+  .langSwitch{display:flex;border:1px solid #d9deea;border-radius:8px;overflow:hidden}
+  .langSwitch button{border:0;background:#fff;color:#172033;opacity:.55;padding:6px 12px;font-weight:700;font-size:12px;cursor:pointer}
+  .langSwitch button.active{opacity:1;background:#eef2ff}
 </style>
 </head>
 <body>
-<h1>Politique de confidentialité — VENDIA</h1>
-<p class="maj">Dernière mise à jour : 28 septembre 2026</p>
+<div class="topbar"><div class="langSwitch" id="langSwitch"><button data-lang="fr" onclick="setLang('fr')">FR</button><button data-lang="en" onclick="setLang('en')">EN</button></div></div>
+<h1 data-i18n="title">Politique de confidentialité — VENDIA</h1>
+<p class="maj" data-i18n="last_update">Dernière mise à jour : 28 septembre 2026</p>
 
-<p>VENDIA est un assistant commercial pour les petites et moyennes entreprises, permettant de gérer les échanges avec leurs prospects et clients, notamment via WhatsApp (API Meta Cloud). Cette page décrit les données que nous traitons et comment elles sont utilisées.</p>
+<p data-i18n="intro">VENDIA est un assistant commercial pour les petites et moyennes entreprises, permettant de gérer les échanges avec leurs prospects et clients, notamment via WhatsApp (API Meta Cloud). Cette page décrit les données que nous traitons et comment elles sont utilisées.</p>
 
-<h2>Données que nous traitons</h2>
+<h2 data-i18n="h_data_title">Données que nous traitons</h2>
 <ul>
-  <li>Informations sur l'entreprise utilisatrice de VENDIA (nom, secteur, coordonnées) ;</li>
-  <li>Informations sur les prospects et clients de cette entreprise (nom, numéro de téléphone, besoin exprimé) ;</li>
-  <li>Contenu des messages échangés (WhatsApp ou saisis manuellement) entre l'entreprise et ses prospects, dans le but d'assurer le suivi commercial ;</li>
-  <li>Informations techniques nécessaires au fonctionnement du service (identifiants de connexion, journaux techniques).</li>
+  <li data-i18n="data_1">Informations sur l'entreprise utilisatrice de VENDIA (nom, secteur, coordonnées) ;</li>
+  <li data-i18n="data_2">Informations sur les prospects et clients de cette entreprise (nom, numéro de téléphone, besoin exprimé) ;</li>
+  <li data-i18n="data_3">Contenu des messages échangés (WhatsApp ou saisis manuellement) entre l'entreprise et ses prospects, dans le but d'assurer le suivi commercial ;</li>
+  <li data-i18n="data_4">Informations techniques nécessaires au fonctionnement du service (identifiants de connexion, journaux techniques).</li>
 </ul>
 
-<h2>Pourquoi nous traitons ces données</h2>
-<p>Ces données sont utilisées exclusivement pour permettre à l'entreprise utilisatrice de VENDIA de suivre ses prospects, répondre à leurs messages (manuellement ou via son assistant commercial IA) et gérer sa relation commerciale.</p>
+<h2 data-i18n="h_why_title">Pourquoi nous traitons ces données</h2>
+<p data-i18n="why_text">Ces données sont utilisées exclusivement pour permettre à l'entreprise utilisatrice de VENDIA de suivre ses prospects, répondre à leurs messages (manuellement ou via son assistant commercial IA) et gérer sa relation commerciale.</p>
 
-<h2>Partage des données</h2>
-<p>Les données ne sont partagées avec aucun tiers à des fins commerciales ou publicitaires. Elles transitent uniquement par les prestataires techniques nécessaires au fonctionnement du service, notamment l'API WhatsApp Business de Meta pour l'envoi et la réception des messages.</p>
+<h2 data-i18n="h_sharing_title">Partage des données</h2>
+<p data-i18n="sharing_text">Les données ne sont partagées avec aucun tiers à des fins commerciales ou publicitaires. Elles transitent uniquement par les prestataires techniques nécessaires au fonctionnement du service, notamment l'API WhatsApp Business de Meta pour l'envoi et la réception des messages.</p>
 
-<h2>Conservation des données</h2>
-<p>Les données sont conservées le temps nécessaire à la relation commerciale entre l'entreprise et ses prospects, et peuvent être supprimées à la demande de l'entreprise utilisatrice.</p>
+<h2 data-i18n="h_retention_title">Conservation des données</h2>
+<p data-i18n="retention_text">Les données sont conservées le temps nécessaire à la relation commerciale entre l'entreprise et ses prospects, et peuvent être supprimées à la demande de l'entreprise utilisatrice.</p>
 
-<h2>Contact</h2>
-<p>Pour toute question concernant cette politique de confidentialité ou pour exercer vos droits sur vos données, contactez-nous à l'adresse : <a href="mailto:kongsalvador10@gmail.com">kongsalvador10@gmail.com</a>.</p>
+<h2 data-i18n="h_contact_title">Contact</h2>
+<p><span data-i18n="contact_text_prefix">Pour toute question concernant cette politique de confidentialité ou pour exercer vos droits sur vos données, contactez-nous à l'adresse :</span> <a href="mailto:kongsalvador10@gmail.com">kongsalvador10@gmail.com</a>.</p>
+
+<script>
+const I18N = {
+fr: {
+  title:"Politique de confidentialité — VENDIA",
+  last_update:"Dernière mise à jour : 28 septembre 2026",
+  intro:"VENDIA est un assistant commercial pour les petites et moyennes entreprises, permettant de gérer les échanges avec leurs prospects et clients, notamment via WhatsApp (API Meta Cloud). Cette page décrit les données que nous traitons et comment elles sont utilisées.",
+  h_data_title:"Données que nous traitons",
+  data_1:"Informations sur l'entreprise utilisatrice de VENDIA (nom, secteur, coordonnées) ;",
+  data_2:"Informations sur les prospects et clients de cette entreprise (nom, numéro de téléphone, besoin exprimé) ;",
+  data_3:"Contenu des messages échangés (WhatsApp ou saisis manuellement) entre l'entreprise et ses prospects, dans le but d'assurer le suivi commercial ;",
+  data_4:"Informations techniques nécessaires au fonctionnement du service (identifiants de connexion, journaux techniques).",
+  h_why_title:"Pourquoi nous traitons ces données",
+  why_text:"Ces données sont utilisées exclusivement pour permettre à l'entreprise utilisatrice de VENDIA de suivre ses prospects, répondre à leurs messages (manuellement ou via son assistant commercial IA) et gérer sa relation commerciale.",
+  h_sharing_title:"Partage des données",
+  sharing_text:"Les données ne sont partagées avec aucun tiers à des fins commerciales ou publicitaires. Elles transitent uniquement par les prestataires techniques nécessaires au fonctionnement du service, notamment l'API WhatsApp Business de Meta pour l'envoi et la réception des messages.",
+  h_retention_title:"Conservation des données",
+  retention_text:"Les données sont conservées le temps nécessaire à la relation commerciale entre l'entreprise et ses prospects, et peuvent être supprimées à la demande de l'entreprise utilisatrice.",
+  h_contact_title:"Contact",
+  contact_text_prefix:"Pour toute question concernant cette politique de confidentialité ou pour exercer vos droits sur vos données, contactez-nous à l'adresse :",
+},
+en: {
+  title:"Privacy Policy — VENDIA",
+  last_update:"Last updated: September 28, 2026",
+  intro:"VENDIA is a sales assistant for small and medium businesses, helping them manage conversations with their leads and customers, notably through WhatsApp (Meta Cloud API). This page describes the data we process and how it is used.",
+  h_data_title:"Data we process",
+  data_1:"Information about the company using VENDIA (name, sector, contact details);",
+  data_2:"Information about that company's leads and customers (name, phone number, expressed need);",
+  data_3:"The content of messages exchanged (via WhatsApp or entered manually) between the company and its leads, for the purpose of sales follow-up;",
+  data_4:"Technical information required for the service to function (login credentials, technical logs).",
+  h_why_title:"Why we process this data",
+  why_text:"This data is used exclusively to let the company using VENDIA track its leads, respond to their messages (manually or via its AI sales assistant) and manage its customer relationships.",
+  h_sharing_title:"Data sharing",
+  sharing_text:"Data is never shared with third parties for commercial or advertising purposes. It only passes through the technical providers required for the service to function, notably Meta's WhatsApp Business API for sending and receiving messages.",
+  h_retention_title:"Data retention",
+  retention_text:"Data is kept for as long as needed for the business relationship between the company and its leads, and may be deleted at the request of the company using VENDIA.",
+  h_contact_title:"Contact",
+  contact_text_prefix:"For any question about this privacy policy or to exercise your rights over your data, contact us at:",
+}
+};
+let lang = localStorage.getItem('vendia_lang') || 'fr';
+function t(key){ const v=(I18N[lang]&&I18N[lang][key])!=null?I18N[lang][key]:(I18N.fr[key]!=null?I18N.fr[key]:key); return v; }
+function applyI18n(){
+  document.documentElement.lang = lang;
+  document.title = t('title');
+  document.querySelectorAll('[data-i18n]').forEach(el=>{ el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('#langSwitch button').forEach(b=>b.classList.toggle('active', b.dataset.lang===lang));
+}
+function setLang(l){ lang=l; localStorage.setItem('vendia_lang', l); applyI18n(); }
+applyI18n();
+</script>
 </body>
 </html>

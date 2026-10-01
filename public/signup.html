@@ -10,8 +10,8 @@
 <style>
 :root{--navy:#0B1442;--navy-light:#152269;--blue:#17A2FE;--green:#1FD37A;--gradient:linear-gradient(135deg,var(--blue),var(--green))}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,sans-serif;background:#f5f7fb;color:#172033}
-header{background:var(--navy);color:white;padding:18px 28px;display:flex;align-items:center;gap:12px}
-header img{height:36px;width:36px;border-radius:9px;display:block}
+header{background:var(--navy);color:white;padding:18px 28px;display:flex;align-items:center;gap:12px;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:12px}header img{height:36px;width:36px;border-radius:9px;display:block}
 h1{margin:0;font-size:22px}.tag{opacity:.75;font-size:13px}
 .wrap{max-width:640px;margin:32px auto;padding:0 18px}
 .panel{background:white;border-radius:18px;padding:24px;box-shadow:0 8px 30px #0000000d;margin-bottom:16px}
@@ -27,47 +27,99 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 .method.active{border-color:var(--blue);background:#f5f7fb}
 .instructions{background:#eef2ff;border-radius:12px;padding:14px;margin:12px 0;font-size:14px}
 .error{color:#b42318;margin-top:10px}.success{color:#18794e;margin-top:10px}.hidden{display:none}.muted{color:#687386;font-size:13px}
+.langSwitch{display:flex;border:1px solid #ffffff33;border-radius:8px;overflow:hidden;flex-shrink:0}.langSwitch button{border:0;background:transparent;color:#fff;opacity:.6;padding:6px 10px;font-weight:700;font-size:12px;cursor:pointer;border-radius:0}.langSwitch button.active{opacity:1;background:#ffffff26}
 @media(max-width:600px){.plans{grid-template-columns:1fr}.methods{grid-template-columns:1fr}form.formgrid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<header><img src="assets/logo-mark-112.png" alt="VENDIA"><div><h1>VENDIA</h1><div class="tag">Créer le compte de votre entreprise</div></div></header>
+<header><div class="brand"><img src="assets/logo-mark-112.png" alt="VENDIA"><div><h1>VENDIA</h1><div class="tag" data-i18n="header_tag">Créer le compte de votre entreprise</div></div></div>
+<div class="langSwitch" id="langSwitch"><button data-lang="fr" onclick="setLang('fr')">FR</button><button data-lang="en" onclick="setLang('en')">EN</button></div></header>
 <main class="wrap">
 
 <section id="form" class="panel">
-<h2>1. Votre forfait</h2>
+<h2 data-i18n="step1_title">1. Votre forfait</h2>
 <div class="plans" id="plans"></div>
 
-<h2>2. Votre entreprise</h2>
+<h2 data-i18n="step2_title">2. Votre entreprise</h2>
 <form class="formgrid" id="signupForm" onsubmit="submitSignup(event)">
-<input id="companyName" placeholder="Nom de l'entreprise" required class="full">
-<input id="sector" placeholder="Secteur d'activité">
+<input id="companyName" placeholder="Nom de l'entreprise" required class="full" data-i18n-placeholder="placeholder_company_name">
+<input id="sector" placeholder="Secteur d'activité" data-i18n-placeholder="placeholder_sector">
 <span></span>
-<input id="ownerName" placeholder="Votre nom complet" required>
-<input id="ownerEmail" type="email" placeholder="Votre email" required>
-<input id="ownerPassword" type="password" placeholder="Mot de passe (min. 6 caractères)" required class="full">
+<input id="ownerName" placeholder="Votre nom complet" required data-i18n-placeholder="placeholder_your_name">
+<input id="ownerEmail" type="email" placeholder="Votre email" required data-i18n-placeholder="placeholder_your_email">
+<input id="ownerPassword" type="password" placeholder="Mot de passe (min. 6 caractères)" required class="full" data-i18n-placeholder="placeholder_password_min6">
 
-<div class="full"><h3 style="margin-bottom:4px">3. Paiement</h3></div>
+<div class="full"><h3 style="margin-bottom:4px" data-i18n="step3_title">3. Paiement</h3></div>
 <div class="full methods" id="methods"></div>
 <div class="full instructions" id="paymentInstructions"></div>
-<input id="payerPhone" placeholder="Votre numéro (celui utilisé pour payer)" required>
-<input id="reference" placeholder="Référence de la transaction" required>
+<input id="payerPhone" placeholder="Votre numéro (celui utilisé pour payer)" required data-i18n-placeholder="placeholder_payer_phone">
+<input id="reference" placeholder="Référence de la transaction" required data-i18n-placeholder="placeholder_reference">
 
-<div class="full"><button class="btn" type="submit">Créer mon compte</button></div>
+<div class="full"><button class="btn" type="submit" data-i18n="btn_create_account">Créer mon compte</button></div>
 </form>
-<p class="muted" style="margin-top:10px">Votre compte sera activé dès que le paiement sera validé (généralement sous quelques heures). Vous serez averti par email.</p>
+<p class="muted" style="margin-top:10px" data-i18n="activation_note">Votre compte sera activé dès que le paiement sera validé (généralement sous quelques heures). Vous serez averti par email.</p>
 <div id="status" style="margin-top:10px"></div>
-<div style="margin-top:14px"><a href="/">Déjà un compte ? Se connecter</a></div>
+<div style="margin-top:14px"><a href="/" data-i18n="already_account_link">Déjà un compte ? Se connecter</a></div>
 </section>
 
 <section id="done" class="panel hidden">
-<h2>✅ Compte créé</h2>
+<h2 data-i18n="done_title">✅ Compte créé</h2>
 <p id="doneMsg"></p>
-<a href="/">Retour à la connexion</a>
+<a href="/" data-i18n="back_to_login">Retour à la connexion</a>
 </section>
 
 </main>
 <script>
+const I18N = {
+fr: {
+  header_tag:"Créer le compte de votre entreprise",
+  step1_title:"1. Votre forfait", step2_title:"2. Votre entreprise", step3_title:"3. Paiement",
+  placeholder_company_name:"Nom de l'entreprise", placeholder_sector:"Secteur d'activité",
+  placeholder_your_name:"Votre nom complet", placeholder_your_email:"Votre email",
+  placeholder_password_min6:"Mot de passe (min. 6 caractères)",
+  placeholder_payer_phone:"Votre numéro (celui utilisé pour payer)", placeholder_reference:"Référence de la transaction",
+  btn_create_account:"Créer mon compte",
+  activation_note:"Votre compte sera activé dès que le paiement sera validé (généralement sous quelques heures). Vous serez averti par email.",
+  already_account_link:"Déjà un compte ? Se connecter",
+  done_title:"✅ Compte créé", back_to_login:"Retour à la connexion",
+  unlimited_members:"Membres illimités", members_count:"{n} membre(s)",
+  orange_money:"🟠 Orange Money", mtn_momo:"🟡 MTN Mobile Money",
+  instructions_text:"Envoyez <strong>{price} FCFA</strong> via <strong>{label}</strong> au numéro <strong>{number}</strong>, puis indiquez ci-dessous le numéro depuis lequel vous avez payé et la référence de la transaction (reçue par SMS).",
+  creating:"Création en cours…", generic_error:"Erreur lors de la création du compte",
+},
+en: {
+  header_tag:"Create your company's account",
+  step1_title:"1. Your plan", step2_title:"2. Your company", step3_title:"3. Payment",
+  placeholder_company_name:"Company name", placeholder_sector:"Business sector",
+  placeholder_your_name:"Your full name", placeholder_your_email:"Your email",
+  placeholder_password_min6:"Password (min. 6 characters)",
+  placeholder_payer_phone:"Your number (the one you paid with)", placeholder_reference:"Transaction reference",
+  btn_create_account:"Create my account",
+  activation_note:"Your account will be activated once payment is confirmed (usually within a few hours). You'll be notified by email.",
+  already_account_link:"Already have an account? Log in",
+  done_title:"✅ Account created", back_to_login:"Back to login",
+  unlimited_members:"Unlimited members", members_count:"{n} member(s)",
+  orange_money:"🟠 Orange Money", mtn_momo:"🟡 MTN Mobile Money",
+  instructions_text:"Send <strong>{price} FCFA</strong> via <strong>{label}</strong> to the number <strong>{number}</strong>, then enter below the number you paid from and the transaction reference (received by SMS).",
+  creating:"Creating account…", generic_error:"Error creating the account",
+}
+};
+let lang = localStorage.getItem('vendia_lang') || 'fr';
+function t(key){ const v=(I18N[lang]&&I18N[lang][key])!=null?I18N[lang][key]:(I18N.fr[key]!=null?I18N.fr[key]:key); return v; }
+function tf(key, vars){ let s=t(key); Object.keys(vars||{}).forEach(k=>{ s=s.split('{'+k+'}').join(vars[k]); }); return s; }
+function applyI18n(){
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-i18n]').forEach(el=>{ el.innerHTML = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el=>{ el.placeholder = t(el.dataset.i18nPlaceholder); });
+  document.querySelectorAll('#langSwitch button').forEach(b=>b.classList.toggle('active', b.dataset.lang===lang));
+}
+function setLang(l){
+  if(lang===l) return;
+  lang=l; localStorage.setItem('vendia_lang', l);
+  applyI18n();
+  if(plansData){ renderPlans(); renderMethods(); renderInstructions(); }
+}
+
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let plansData=null, selectedPlan='Starter', selectedMethod='orange_money';
@@ -82,39 +134,41 @@ function renderPlans(){
     const p=plansData.plans[n];
     return '<div class="plan'+(n===selectedPlan?' active':'')+'" onclick="selectPlan(\''+n+'\')">'+
       '<h4>'+n+'</h4><div class="price">'+Number(p.monthlyPrice).toLocaleString('fr-FR')+' FCFA</div>'+
-      '<div class="muted">'+(p.maxUsers==null?'Membres illimités':p.maxUsers+' membre(s)')+'</div></div>';
+      '<div class="muted">'+(p.maxUsers==null?t('unlimited_members'):tf('members_count',{n:p.maxUsers}))+'</div></div>';
   }).join('');
 }
 function selectPlan(n){ selectedPlan=n; renderPlans(); renderInstructions(); }
 function renderMethods(){
   $('methods').innerHTML=''+
-    '<div class="method'+(selectedMethod==='orange_money'?' active':'')+'" onclick="selectMethod(\'orange_money\')"><strong>🟠 Orange Money</strong></div>'+
-    '<div class="method'+(selectedMethod==='mtn_momo'?' active':'')+'" onclick="selectMethod(\'mtn_momo\')"><strong>🟡 MTN Mobile Money</strong></div>';
+    '<div class="method'+(selectedMethod==='orange_money'?' active':'')+'" onclick="selectMethod(\'orange_money\')"><strong>'+t('orange_money')+'</strong></div>'+
+    '<div class="method'+(selectedMethod==='mtn_momo'?' active':'')+'" onclick="selectMethod(\'mtn_momo\')"><strong>'+t('mtn_momo')+'</strong></div>';
 }
 function selectMethod(m){ selectedMethod=m; renderMethods(); renderInstructions(); }
 function renderInstructions(){
   const price=Number(plansData.plans[selectedPlan].monthlyPrice).toLocaleString('fr-FR');
   const number=selectedMethod==='orange_money'?plansData.payment.orangeMoney:plansData.payment.mtnMomo;
-  const label=selectedMethod==='orange_money'?'Orange Money':'MTN Mobile Money';
-  $('paymentInstructions').innerHTML='Envoyez <strong>'+price+' FCFA</strong> via <strong>'+label+'</strong> au numéro <strong>'+esc(number)+'</strong>, puis indiquez ci-dessous le numéro depuis lequel vous avez payé et la référence de la transaction (reçue par SMS).';
+  const label=selectedMethod==='orange_money'?t('orange_money').replace(/^\S+\s/,''):t('mtn_momo').replace(/^\S+\s/,'');
+  $('paymentInstructions').innerHTML=tf('instructions_text',{price,label,number:esc(number)});
 }
 async function submitSignup(e){
   e.preventDefault();
   const status=$('status');
-  status.innerHTML='Création en cours…'; status.className='muted';
+  status.innerHTML=t('creating'); status.className='muted';
   try{
     const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       companyName:$('companyName').value.trim(), sector:$('sector').value.trim(),
       ownerName:$('ownerName').value.trim(), ownerEmail:$('ownerEmail').value.trim(), ownerPassword:$('ownerPassword').value,
-      plan:selectedPlan, paymentMethod:selectedMethod, payerPhone:$('payerPhone').value.trim(), reference:$('reference').value.trim()
+      plan:selectedPlan, paymentMethod:selectedMethod, payerPhone:$('payerPhone').value.trim(), reference:$('reference').value.trim(),
+      lang
     })});
     const d=await r.json();
-    if(!r.ok) throw new Error(d.error||'Erreur lors de la création du compte');
+    if(!r.ok) throw new Error(d.error||t('generic_error'));
     $('form').classList.add('hidden');
     $('done').classList.remove('hidden');
     $('doneMsg').textContent=d.message;
   }catch(x){ status.className='error'; status.textContent=x.message; }
 }
+applyI18n();
 loadPlans();
 </script>
 </body></html>
