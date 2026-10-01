@@ -128,6 +128,10 @@ CREATE TABLE prospects (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX prospects_company_idx ON prospects(company_id);
+-- Un seul prospect par numéro de téléphone et par entreprise — empêche les
+-- doublons quand plusieurs messages du même contact arrivent en rafale
+-- (voir findOrCreateProspectByPhone dans server.js).
+CREATE UNIQUE INDEX IF NOT EXISTS prospects_company_phone_idx ON prospects(company_id,phone) WHERE phone IS NOT NULL;
 -- Lot "moteur d'action commerciale" (/api/ai/next-action) — idempotent pour les bases déjà déployées.
 -- Pour appliquer uniquement cet ajout sur la base de production existante, sans rejouer tout schema.sql,
 -- utiliser scripts/migrate-add-next-action.js.
@@ -145,6 +149,10 @@ CREATE TABLE conversations (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX conversations_company_idx ON conversations(company_id);
+-- Une seule conversation par contact/canal et par entreprise — empêche les
+-- doublons quand plusieurs messages du même contact arrivent en rafale
+-- (voir findOrCreateWhatsAppConversation dans server.js).
+CREATE UNIQUE INDEX IF NOT EXISTS conversations_company_channel_contact_idx ON conversations(company_id,channel,external_contact) WHERE external_contact IS NOT NULL;
 
 CREATE TABLE messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -17,7 +17,7 @@ npm install
 npm start
 ```
 
-Variables utiles : `PORT`, `DATABASE_URL`, `ANTHROPIC_API_KEY` (réponse IA automatique sur WhatsApp), `ANTHROPIC_MODEL` (optionnel, défaut `claude-haiku-4-5-20251001`), `META_APP_SECRET` (vérification de signature du webhook WhatsApp).
+Variables utiles : `PORT`, `DATABASE_URL`, `ANTHROPIC_API_KEY` (réponse IA automatique sur WhatsApp), `ANTHROPIC_MODEL` (optionnel, défaut `claude-haiku-4-5-20251001`), `META_APP_SECRET` (vérification de signature du webhook WhatsApp), `ENCRYPTION_KEY` (chiffre le jeton d'accès WhatsApp en base — recommandé en production, voir 1.10.6), `REQUIRE_WEBHOOK_SIGNATURE` (optionnel, `true` pour rejeter les webhooks WhatsApp sans signature valide — à activer seulement une fois `META_APP_SECRET` confirmé configuré).
 
 Compte super-admin (vision et contrôle sur toutes les entreprises, via `/superadmin.html`) : `SUPERADMIN_EMAIL`, `SUPERADMIN_PASSWORD` (créés/synchronisés automatiquement au démarrage — changer `SUPERADMIN_PASSWORD` sur Railway suffit à faire tourner le mot de passe), `SUPERADMIN_NAME` (optionnel).
 
@@ -50,5 +50,25 @@ Rapport quotidien (20h, heure du Cameroun) envoyé par email à chaque administr
 ## Onglet Conversations repensé (1.10.5)
 - **Liste de conversations façon messagerie** au lieu d'empiler tous les messages de toutes les conversations sur la même page : chaque contact apparaît comme une seule ligne compacte (avatar, nom/numéro, aperçu du dernier message), triée par message le plus récent. Un clic ouvre la conversation complète dans une fenêtre dédiée.
 - **Heure de chaque message affichée** (heure seule si envoyé aujourd'hui, date + heure sinon), avec des bulles alignées à gauche/droite comme sur WhatsApp pour distinguer client et VENDIA en un coup d'œil.
+
+## Audit sécurité, fiabilité et analytics (1.10.6)
+Suite à un audit complet du code et une étude du marché WhatsApp commerce IA (arrivée de "Meta Business Agent", un concurrent gratuit et natif à la plateforme), cette version corrige les points de sécurité et de fiabilité identifiés et ajoute un premier tableau de bord analytique.
+
+**Sécurité**
+- **Jeton d'accès WhatsApp chiffré en base** (AES-256-GCM) au lieu d'être stocké en clair. Nécessite une variable `ENCRYPTION_KEY` sur Railway (une longue chaîne aléatoire, ex. générée par `openssl rand -hex 32`) ; sans elle, le jeton reste stocké en clair comme avant, avec un avertissement au démarrage du serveur.
+- **Limitation du nombre de tentatives** (rate limiting) sur la connexion, la connexion super-admin, l'inscription et le mot de passe oublié, pour bloquer les tentatives automatisées répétées.
+- **Vérification de la signature des webhooks WhatsApp** : option `REQUIRE_WEBHOOK_SIGNATURE=true` pour rejeter tout webhook dont la signature Meta est invalide ou absente (désactivée par défaut tant que `META_APP_SECRET` n'est pas confirmé configuré sur Railway, pour ne rien casser).
+- **Le testeur "Assistant commercial IA" du tableau de bord respecte désormais le quota mensuel de messages IA** de l'offre, au lieu de pouvoir l'utiliser sans limite.
+
+**Fiabilité**
+- **Doublons évités** quand plusieurs messages du même client arrivent en rafale sur WhatsApp : un seul prospect et une seule conversation sont créés par client, même en cas de messages simultanés.
+- **Messages WhatsApp dupliqués ignorés** (ex. si Meta renvoie deux fois la même notification) grâce à un identifiant unique par message.
+- **Réponses IA et règles métier (score du prospect, transfert vers un humain, prise de rendez-vous, catalogue) fonctionnent désormais aussi bien en anglais qu'en français**, et plus seulement en français.
+- **Le quota mensuel de prospects de l'offre est maintenant appliqué partout** (y compris sur les nouveaux contacts WhatsApp), pas seulement dans l'ajout manuel.
+- **Limites de chargement** ajoutées sur les listes (conversations, prospects, commandes, relances, rendez-vous) pour garder l'application rapide même avec un historique volumineux.
+
+**Nouveau : onglet Analytics**
+- **Taux de réponse**, **temps de réponse moyen**, **taux de conversion prospect → commande** et **messages IA utilisés ce mois** en un coup d'œil.
+- **Graphique des messages reçus sur les 14 derniers jours** pour repérer les pics d'activité.
 
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.

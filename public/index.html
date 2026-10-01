@@ -34,6 +34,10 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 .msgRow.out .msgBubble{background:var(--gradient);color:#fff;border-bottom-right-radius:4px}
 .msgTime{font-size:11px;opacity:.65;margin-top:4px;text-align:right}
 .msgError{color:#b42318;font-size:.85em;margin-top:4px}.msgRow.out .msgError{color:#ffe3dc}
+.sparkline{display:flex;align-items:flex-end;gap:5px;height:110px;padding:24px 4px 20px}
+.sparkline .bar{flex:1;background:var(--gradient);border-radius:4px 4px 0 0;min-height:3px;position:relative}
+.sparkline .bar .val{position:absolute;top:-18px;left:0;right:0;text-align:center;font-size:11px;font-weight:700;color:#172033}
+.sparkline .bar .lbl{position:absolute;bottom:-18px;left:0;right:0;text-align:center;font-size:10px;color:#687386}
 .login{max-width:430px;margin:45px auto}.login h2{margin-top:0}.login input{display:block;margin:10px 0}.error{color:#b42318;margin-top:10px}.success{color:#18794e;margin-top:10px}.hidden{display:none}.empty{padding:28px;text-align:center;color:#687386}
 .langSwitch{display:flex;border:1px solid #ffffff33;border-radius:8px;overflow:hidden}.langSwitch button{border:0;background:transparent;color:#fff;opacity:.6;padding:6px 10px;font-weight:700;font-size:12px;cursor:pointer;border-radius:0}.langSwitch button.active{opacity:1;background:#ffffff26}
 @media(max-width:800px){.stats{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}form.formgrid{grid-template-columns:1fr}.hero h2{font-size:25px}header{padding:15px 18px}}
@@ -71,7 +75,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <button class="active" data-tab="dashboard" onclick="tab('dashboard')">📊 <span data-i18n="nav_dashboard">Tableau de bord</span></button>
 <button data-tab="products" onclick="tab('products')">📦 <span data-i18n="nav_products">Produits</span></button>
 <button data-tab="crm" onclick="tab('crm')">👥 <span data-i18n="nav_crm">CRM</span></button>
-<button data-tab="conversations" onclick="tab('conversations')">💬 <span data-i18n="nav_conversations">Conversations</span></button><button data-tab="orders" onclick="tab('orders')">🛒 <span data-i18n="nav_orders">Commandes</span></button><button data-tab="followups" onclick="tab('followups')">🔁 <span data-i18n="nav_followups">Relances</span></button><button data-tab="assistant" onclick="tab('assistant')">🤖 <span data-i18n="nav_assistant">Assistant IA</span></button><button data-tab="team" onclick="tab('team')">👥 <span data-i18n="nav_team">Équipe</span></button><button data-tab="settings" onclick="tab('settings')">⚙️ <span data-i18n="nav_settings">Réglages WhatsApp</span></button>
+<button data-tab="conversations" onclick="tab('conversations')">💬 <span data-i18n="nav_conversations">Conversations</span></button><button data-tab="orders" onclick="tab('orders')">🛒 <span data-i18n="nav_orders">Commandes</span></button><button data-tab="followups" onclick="tab('followups')">🔁 <span data-i18n="nav_followups">Relances</span></button><button data-tab="analytics" onclick="tab('analytics')">📈 <span data-i18n="nav_analytics">Analytics</span></button><button data-tab="assistant" onclick="tab('assistant')">🤖 <span data-i18n="nav_assistant">Assistant IA</span></button><button data-tab="team" onclick="tab('team')">👥 <span data-i18n="nav_team">Équipe</span></button><button data-tab="settings" onclick="tab('settings')">⚙️ <span data-i18n="nav_settings">Réglages WhatsApp</span></button>
 </nav>
 
 <section id="dashboardTab">
@@ -148,6 +152,15 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <div class="panel"><h3 data-i18n="appointments_title">Rendez-vous</h3> <span class="muted" id="appointmentCount"></span>
 <p class="muted" data-i18n="appointments_note">Détectés automatiquement dans les conversations WhatsApp (livraison, démonstration, appel…). « Proposé » = intention détectée sans jour/heure précis — à clarifier avec le client.</p>
 <div id="appointmentTable"></div></div>
+</section>
+<section id="analyticsTab" class="hidden">
+<div class="stats">
+<div class="stat"><div class="muted" data-i18n="analytics_response_rate">Taux de réponse</div><div class="num" id="anResponseRate">—</div><div class="muted" id="anResponseDetail" style="font-size:12px"></div></div>
+<div class="stat"><div class="muted" data-i18n="analytics_avg_response_time">Temps de réponse moyen</div><div class="num" id="anAvgResponse">—</div></div>
+<div class="stat"><div class="muted" data-i18n="analytics_conversion_rate">Conversion prospect→commande</div><div class="num" id="anConversion">—</div><div class="muted" id="anConversionDetail" style="font-size:12px"></div></div>
+<div class="stat"><div class="muted" data-i18n="analytics_ai_usage">Messages IA (ce mois)</div><div class="num" id="anAiUsage">—</div></div>
+</div>
+<div class="panel"><h3 data-i18n="analytics_messages_14d">Messages reçus — 14 derniers jours</h3><div id="anSparkline"></div></div>
 </section>
 <section id="assistantTab" class="hidden">
 <div class="panel"><h3 data-i18n="ai_personality_title">Personnalité de l'assistant IA</h3>
@@ -247,7 +260,10 @@ fr: {
   placeholder_new_password:"Nouveau mot de passe", save_btn:"Enregistrer",
   hero_title:"Votre entreprise gagne un commercial IA.", hero_subtitle:"Pilotez vos produits, prospects et performances depuis un seul espace.",
   nav_dashboard:"Tableau de bord", nav_products:"Produits", nav_crm:"CRM", nav_conversations:"Conversations",
-  nav_orders:"Commandes", nav_followups:"Relances", nav_assistant:"Assistant IA", nav_team:"Équipe", nav_settings:"Réglages WhatsApp",
+  nav_orders:"Commandes", nav_followups:"Relances", nav_analytics:"Analytics", nav_assistant:"Assistant IA", nav_team:"Équipe", nav_settings:"Réglages WhatsApp",
+  analytics_response_rate:"Taux de réponse", analytics_avg_response_time:"Temps de réponse moyen", analytics_conversion_rate:"Conversion prospect→commande",
+  analytics_ai_usage:"Messages IA (ce mois)", analytics_messages_14d:"Messages reçus — 14 derniers jours", empty_analytics:"Pas encore assez de données pour les statistiques.",
+  analytics_response_detail:"{answered} / {total} messages répondus (30j)", analytics_conversion_detail:"{converted} / {total} prospects convertis", analytics_no_data_30d:"Aucun message reçu sur les 30 derniers jours",
   stat_prospects:"Prospects", stat_hot_prospects:"Prospects chauds", stat_revenue:"CA commandes", stat_followups_due:"Relances à traiter",
   panel_commercial_state:"État commercial", panel_recent_catalog:"Catalogue récent",
   dash_hot:"🔥 Chauds", dash_warm:"🟠 Tièdes", dash_cold:"❄️ Froids", dash_products:"Produits", dash_low_stock:"Stock faible",
@@ -290,7 +306,7 @@ fr: {
   assistant_test_title:"Assistant commercial IA", assistant_test_desc:"Testez une réponse client basée sur votre catalogue et mesurez l'intention d'achat.",
   option_analyze_no_prospect:"Analyser sans prospect", placeholder_test_question:"Ex. Je veux la Nike Air Max, vous livrez à Odza ?",
   btn_analyze:"Analyser la demande", default_reply_placeholder:"Bonjour 👋 Posez une question test.", loading_analyzing:"Analyse en cours…",
-  badge_claude_real:"✅ Réponse Claude (IA réelle)", fallback_badge_nokey:"⚠️ Mode secours — clé IA non configurée", fallback_badge_error:"⚠️ Mode secours — IA momentanément indisponible",
+  badge_claude_real:"✅ Réponse Claude (IA réelle)", fallback_badge_nokey:"⚠️ Mode secours — clé IA non configurée", fallback_badge_error:"⚠️ Mode secours — IA momentanément indisponible", fallback_badge_quota:"⚠️ Mode secours — quota IA mensuel atteint",
   qualification_title:"Qualification automatique", no_signal_detected:"Aucun signal particulier détecté.",
   recommended_action_title:"Action recommandée", label_priority:"Priorité", btn_handoff:"Passer à un humain", btn_schedule_followup:"Programmer la relance",
   action_answer_qualify:"💬 Répondre et qualifier", action_propose_order:"🛒 Proposer la commande", action_follow_up_soon:"⏱️ Relance rapprochée",
@@ -353,7 +369,10 @@ en: {
   placeholder_new_password:"New password", save_btn:"Save",
   hero_title:"Your business just gained an AI sales rep.", hero_subtitle:"Manage your products, leads and performance from one place.",
   nav_dashboard:"Dashboard", nav_products:"Products", nav_crm:"CRM", nav_conversations:"Conversations",
-  nav_orders:"Orders", nav_followups:"Follow-ups", nav_assistant:"AI Assistant", nav_team:"Team", nav_settings:"WhatsApp Settings",
+  nav_orders:"Orders", nav_followups:"Follow-ups", nav_analytics:"Analytics", nav_assistant:"AI Assistant", nav_team:"Team", nav_settings:"WhatsApp Settings",
+  analytics_response_rate:"Response rate", analytics_avg_response_time:"Average response time", analytics_conversion_rate:"Lead→order conversion",
+  analytics_ai_usage:"AI messages (this month)", analytics_messages_14d:"Messages received — last 14 days", empty_analytics:"Not enough data yet for statistics.",
+  analytics_response_detail:"{answered} / {total} messages answered (30d)", analytics_conversion_detail:"{converted} / {total} leads converted", analytics_no_data_30d:"No messages received in the last 30 days",
   stat_prospects:"Leads", stat_hot_prospects:"Hot leads", stat_revenue:"Order revenue", stat_followups_due:"Follow-ups due",
   panel_commercial_state:"Sales overview", panel_recent_catalog:"Recent catalog",
   dash_hot:"🔥 Hot", dash_warm:"🟠 Warm", dash_cold:"❄️ Cold", dash_products:"Products", dash_low_stock:"Low stock",
@@ -396,7 +415,7 @@ en: {
   assistant_test_title:"AI sales assistant", assistant_test_desc:"Test a client reply based on your catalog and measure purchase intent.",
   option_analyze_no_prospect:"Analyze without a lead", placeholder_test_question:"E.g. I want the Nike Air Max, do you deliver to Odza?",
   btn_analyze:"Analyze request", default_reply_placeholder:"Hello 👋 Ask a test question.", loading_analyzing:"Analyzing…",
-  badge_claude_real:"✅ Claude reply (real AI)", fallback_badge_nokey:"⚠️ Fallback mode — AI key not configured", fallback_badge_error:"⚠️ Fallback mode — AI temporarily unavailable",
+  badge_claude_real:"✅ Claude reply (real AI)", fallback_badge_nokey:"⚠️ Fallback mode — AI key not configured", fallback_badge_error:"⚠️ Fallback mode — AI temporarily unavailable", fallback_badge_quota:"⚠️ Fallback mode — monthly AI quota reached",
   qualification_title:"Automatic qualification", no_signal_detected:"No particular signal detected.",
   recommended_action_title:"Recommended action", label_priority:"Priority", btn_handoff:"Hand off to a human", btn_schedule_followup:"Schedule follow-up",
   action_answer_qualify:"💬 Reply and qualify", action_propose_order:"🛒 Propose the order", action_follow_up_soon:"⏱️ Follow up soon",
@@ -631,12 +650,13 @@ async function load() {
 function tab(name) {
   currentTab=name;
   document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  ['dashboard','products','crm','assistant','conversations','orders','followups','team','settings'].forEach(x => $(x+'Tab').classList.toggle('hidden', x !== name));
+  ['dashboard','products','crm','assistant','conversations','orders','followups','analytics','team','settings'].forEach(x => $(x+'Tab').classList.toggle('hidden', x !== name));
   if (name === 'products') renderProducts();
   if (name === 'crm') renderCRM();
   if (name === 'conversations') renderConversations();
   if (name === 'orders') renderOrders();
   if (name === 'followups') { renderFollowups(); renderAppointments(); }
+  if (name === 'analytics') loadAnalytics();
   if (name === 'team') loadTeam();
   if (name === 'assistant') loadAiSettings();
   if (name === 'settings') { loadWhatsappSettings(); loadPaymentSettings(); }
@@ -1133,6 +1153,33 @@ async function cancelAppointment(id){
   }catch(x){alert(x.message);}
 }
 
+function formatDuration(seconds){
+  if(seconds==null) return '—';
+  if(seconds<60) return Math.round(seconds)+(lang==='en'?'s':'s');
+  if(seconds<3600) return Math.round(seconds/60)+(lang==='en'?'min':'min');
+  return (seconds/3600).toFixed(1)+(lang==='en'?'h':'h');
+}
+async function loadAnalytics(){
+  const spark=$('anSparkline');
+  $('anResponseRate').textContent='…'; $('anAvgResponse').textContent='…'; $('anConversion').textContent='…'; $('anAiUsage').textContent='…';
+  spark.innerHTML='';
+  try{
+    const a=await api('/api/analytics');
+    $('anResponseRate').textContent=a.responseRate.pct!=null ? a.responseRate.pct+'%' : '—';
+    $('anResponseDetail').textContent=a.responseRate.total ? tf('analytics_response_detail',{answered:a.responseRate.answered,total:a.responseRate.total}) : t('analytics_no_data_30d');
+    $('anAvgResponse').textContent=formatDuration(a.avgResponseSeconds);
+    $('anConversion').textContent=a.conversion.pct!=null ? a.conversion.pct+'%' : '—';
+    $('anConversionDetail').textContent=a.conversion.totalProspects ? tf('analytics_conversion_detail',{converted:a.conversion.converted,total:a.conversion.totalProspects}) : '';
+    $('anAiUsage').textContent=a.aiUsage.limit!=null ? (a.aiUsage.used+' / '+a.aiUsage.limit) : String(a.aiUsage.used);
+    const max=Math.max(1,...a.messagesByDay.map(d=>d.count));
+    spark.innerHTML='<div class="sparkline">'+a.messagesByDay.map(d=>{
+      const h=Math.round(d.count/max*100);
+      const lbl=new Date(d.day+'T00:00:00').toLocaleDateString(lang==='en'?'en-GB':'fr-FR',{day:'2-digit',month:'2-digit'});
+      return '<div class="bar" style="height:'+h+'%" title="'+esc(lbl)+' — '+d.count+'"><span class="val">'+(d.count||'')+'</span><span class="lbl">'+esc(lbl)+'</span></div>';
+    }).join('')+'</div>';
+  }catch(e){ console.error(e); spark.innerHTML='<div class="empty">'+t('empty_analytics')+'</div>'; }
+}
+
 async function ask() {
   const text=$('q').value.trim(); if(!text)return;
   $('reply').textContent=t('loading_analyzing');
@@ -1147,7 +1194,7 @@ async function ask() {
     $('reply').textContent=d.reply;
     $('reply').innerHTML += d.provider==='anthropic'
       ? ' <span class="badge" style="margin-left:6px">'+t('badge_claude_real')+'</span>'
-      : ' <span class="badge hot" style="margin-left:6px">'+(d.aiUnavailable?t('fallback_badge_nokey'):t('fallback_badge_error'))+'</span>';
+      : ' <span class="badge hot" style="margin-left:6px">'+(d.quotaExceeded?t('fallback_badge_quota'):d.aiUnavailable?t('fallback_badge_nokey'):t('fallback_badge_error'))+'</span>';
     const x=q.qualification;
     const cls=x.score>=70?'hot':x.score<40?'cold':'';
     $('qualification').innerHTML='<div class="panel" style="box-shadow:none;border:1px solid #edf0f5;margin:0"><strong>'+t('qualification_title')+'</strong><div style="margin-top:8px"><span class="badge '+cls+'">'+esc(statusLabel(x.status))+' · '+x.score+'/100</span> '+(x.orderIntent?'<span class="badge">'+t('badge_order_intent')+'</span>':'')+'</div><div class="muted" style="margin-top:8px">'+esc(x.reasons.join(' · ')||t('no_signal_detected'))+'</div></div>' +

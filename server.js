@@ -24,6 +24,66 @@ const token = () => crypto.randomBytes(32).toString('hex');
 const escHtml = v => String(v ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const genTempPassword = () => crypto.randomBytes(9).toString('base64url');
 
+// Chiffrement au repos des secrets sensibles (jetons d'accès WhatsApp) avant
+// stockage en base — AES-256-GCM avec une clé dérivée de ENCRYPTION_KEY
+// (n'importe quelle longueur/format en entrée, toujours réduite à 32 octets
+// via SHA-256). Sans ENCRYPTION_KEY configuré, on continue de stocker en
+// clair (comportement historique, pour ne pas casser un déploiement existant)
+// mais un avertissement est journalisé au démarrage — voir plus bas. Les
+// valeurs déjà en clair en base (avant l'ajout de ce chiffrement, ou si la
+// clé n'est toujours pas configurée) restent lisibles : encryptSecret() est
+// un no-op sans clé, et decryptSecret() renvoie tel quel tout ce qui ne porte
+// pas le préfixe 'enc1:' plutôt que d'échouer.
+const ENC_PREFIX = 'enc1:';
+function encryptionKey() {
+  const k = process.env.ENCRYPTION_KEY;
+  return k ? crypto.createHash('sha256').update(k).digest() : null;
+}
+function encryptSecret(plain) {
+  if (!plain) return null;
+  const key = encryptionKey();
+  if (!key) return String(plain);
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const enc = Buffer.concat([cipher.update(String(plain), 'utf8'), cipher.final()]);
+  return ENC_PREFIX + Buffer.concat([iv, cipher.getAuthTag(), enc]).toString('base64');
+}
+function decryptSecret(stored) {
+  if (!stored) return null;
+  if (!stored.startsWith(ENC_PREFIX)) return stored; // valeur historique en clair, ou chiffrement non configuré
+  const key = encryptionKey();
+  if (!key) { console.error('[crypto] ENCRYPTION_KEY absent — impossible de déchiffrer un secret chiffré'); return null; }
+  try {
+    const buf = Buffer.from(stored.slice(ENC_PREFIX.length), 'base64');
+    const iv = buf.subarray(0, 12), tag = buf.subarray(12, 28), enc = buf.subarray(28);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8');
+  } catch (e) { console.error('[crypto] echec dechiffrement:', e.message); return null; }
+}
+
+// Limiteur de débit simple en mémoire (par IP + route) — suffisant pour une
+// instance unique Railway. Protège les routes publiques sensibles
+// (connexion, inscription, mot de passe oublié) contre le brute-force et le
+// spam, sans dépendance externe (pas de Redis). Fenêtre glissante.
+const rateLimitBuckets = new Map();
+function rateLimited(key, max, windowMs) {
+  const now = Date.now();
+  let arr = rateLimitBuckets.get(key);
+  if (!arr) { arr = []; rateLimitBuckets.set(key, arr); }
+  while (arr.length && now - arr[0] > windowMs) arr.shift();
+  if (arr.length >= max) return true;
+  arr.push(now);
+  if (arr.length === 0) rateLimitBuckets.delete(key);
+  return false;
+}
+function clientIp(req) {
+  const xf = req.headers['x-forwarded-for'];
+  if (xf) return String(xf).split(',')[0].trim();
+  return req.socket?.remoteAddress || 'unknown';
+}
+const tooManyRequests = res => json(res, 429, { error: 'Trop de tentatives. Réessayez dans quelques minutes.' });
+
 // Sessions persistées en base (table 'sessions') plutôt qu'en mémoire du
 // process : sans ça, chaque redéploiement (fréquent sur Railway) déconnectait
 // tout le monde instantanément et sans prévenir. Une session est soit celle
@@ -96,12 +156,19 @@ async function sendEmail(to, subject, html) {
 // Vérifie que le POST du webhook vient bien de Meta (HMAC-SHA256 du corps
 // brut avec le secret de l'App, comparé en temps constant) plutôt que
 // d'accepter n'importe quelle requête pointant vers cette URL publique.
-// Si META_APP_SECRET n'est pas encore configuré, on laisse passer en journalisant
-// un avertissement (pour ne pas casser le webhook existant avant la mise à jour
-// de la variable d'environnement), mais ça doit être corrigé rapidement.
+// Si META_APP_SECRET n'est pas configuré, le comportement par défaut reste
+// permissif (pour ne pas casser un webhook déjà en production avant que la
+// variable d'environnement soit ajoutée) : on journalise un avertissement à
+// chaque appel non vérifié. Une fois META_APP_SECRET confirmé configuré sur
+// Railway, définir REQUIRE_WEBHOOK_SIGNATURE=true pour basculer en mode
+// strict (rejet si la signature est absente/invalide) — voir README.
 function verifyMetaSignature(req, raw) {
   const secret = process.env.META_APP_SECRET;
-  if (!secret) { console.warn('[webhook] META_APP_SECRET non configuré — vérification de signature désactivée (à corriger)'); return true; }
+  if (!secret) {
+    if (process.env.REQUIRE_WEBHOOK_SIGNATURE === 'true') { console.error('[webhook] META_APP_SECRET absent alors que REQUIRE_WEBHOOK_SIGNATURE=true — requête rejetée'); return false; }
+    console.warn('[webhook] META_APP_SECRET non configuré — vérification de signature désactivée (voir README : REQUIRE_WEBHOOK_SIGNATURE)');
+    return true;
+  }
   const header = req.headers['x-hub-signature-256'] || '';
   const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(raw).digest('hex');
   const a = Buffer.from(header), b = Buffer.from(expected);
@@ -148,15 +215,20 @@ async function ensureSuperAdmin() {
 }
 
 async function dashboard(companyId) {
-  const [company,products,prospects,orders,conversations,followups,subscription,appointments] = await Promise.all([
+  // Note : les conversations ne sont volontairement PAS chargées ici — le
+  // dashboard client les récupère séparément via GET /api/conversations
+  // (qui plafonne déjà les messages par fil) juste après ce chargement
+  // initial ; les requêter deux fois doublait inutilement la charge, et sans
+  // plafond ici c'était justement la requête qui grossissait sans limite
+  // avec l'historique (voir audit).
+  const [company,products,prospects,orders,followups,subscription,appointments] = await Promise.all([
     query('SELECT id,name,sector,ai_name AS "aiName",ai_tone AS "aiTone",ai_language AS "aiLanguage",ai_rules AS "aiRules",ai_auto_reply_enabled AS "aiAutoReplyEnabled" FROM companies WHERE id=$1',[companyId]),
     query('SELECT id,name,category,price,stock,created_at AS "createdAt" FROM products WHERE company_id=$1 ORDER BY created_at DESC',[companyId]),
-    query('SELECT id,name,phone,need,value,score,status,order_intent AS "orderIntent",last_contact AS "lastContact",next_action AS "nextAction",next_action_priority AS "nextActionPriority",next_action_reason AS "nextActionReason",next_action_at AS "nextActionAt",created_at AS "createdAt" FROM prospects WHERE company_id=$1 ORDER BY score DESC,created_at DESC',[companyId]),
-    query('SELECT o.id,o.order_number AS number,p.name AS client,o.amount,o.status,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC',[companyId]),
-    query(`SELECT c.id,c.external_contact AS phone,p.name,COALESCE(json_agg(json_build_object('id',m.id,'from',m.direction,'text',m.body) ORDER BY m.created_at) FILTER (WHERE m.id IS NOT NULL),'[]') AS messages FROM conversations c LEFT JOIN prospects p ON p.id=c.prospect_id LEFT JOIN messages m ON m.conversation_id=c.id WHERE c.company_id=$1 GROUP BY c.id,p.name ORDER BY c.created_at DESC`,[companyId]),
-    query('SELECT id,due_at AS "dueAt",status,text,prospect_id AS "prospectId",source,cancelled_reason AS "cancelledReason" FROM followups WHERE company_id=$1 ORDER BY due_at NULLS LAST',[companyId]),
+    query('SELECT id,name,phone,need,value,score,status,order_intent AS "orderIntent",last_contact AS "lastContact",next_action AS "nextAction",next_action_priority AS "nextActionPriority",next_action_reason AS "nextActionReason",next_action_at AS "nextActionAt",created_at AS "createdAt" FROM prospects WHERE company_id=$1 ORDER BY score DESC,created_at DESC LIMIT 500',[companyId]),
+    query('SELECT o.id,o.order_number AS number,p.name AS client,o.amount,o.status,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC LIMIT 500',[companyId]),
+    query('SELECT id,due_at AS "dueAt",status,text,prospect_id AS "prospectId",source,cancelled_reason AS "cancelledReason" FROM followups WHERE company_id=$1 ORDER BY due_at NULLS LAST LIMIT 500',[companyId]),
     query('SELECT plan,status,monthly_price AS "monthlyPrice",next_billing_at AS "nextBillingAt" FROM subscriptions WHERE company_id=$1',[companyId]),
-    query(`SELECT a.id,a.prospect_id AS "prospectId",p.name AS prospect,a.type,a.scheduled_at AS "scheduledAt",a.status FROM appointments a LEFT JOIN prospects p ON p.id=a.prospect_id WHERE a.company_id=$1 ORDER BY a.scheduled_at NULLS LAST,a.created_at DESC`,[companyId])
+    query(`SELECT a.id,a.prospect_id AS "prospectId",p.name AS prospect,a.type,a.scheduled_at AS "scheduledAt",a.status FROM appointments a LEFT JOIN prospects p ON p.id=a.prospect_id WHERE a.company_id=$1 ORDER BY a.scheduled_at NULLS LAST,a.created_at DESC LIMIT 500`,[companyId])
   ]);
   const ps=prospects.rows, os=orders.rows;
   const plan=subscription.rows[0]?.plan;
@@ -170,7 +242,7 @@ async function dashboard(companyId) {
     products:products.rows,
     prospects:ps,
     orders:os,
-    conversations:conversations.rows,
+    conversations:[],
     followups:followups.rows,
     appointments:appointments.rows,
     subscription:subscription.rows[0],
@@ -198,7 +270,7 @@ async function dashboard(companyId) {
 function extractCustomerData(text, current={}) {
   const q=String(text||'').trim();
   const phone=(q.match(/(?:\+?237[\s.-]?)?(?:6\d{8}|2\d{8})\b/)||[])[0]||current.phone||null;
-  const nameMatch=q.match(/(?:je suis|moi c'est|moi c’est|nom[: ]+|je m'appelle|je m’appelle)\s+([A-Za-zÀ-ÿ' -]{2,40})/i);
+  const nameMatch=q.match(/(?:je suis|moi c'est|moi c’est|nom[: ]+|je m'appelle|je m’appelle|my name is|i'm|i am|this is)\s+([A-Za-zÀ-ÿ' -]{2,40})/i);
   const name=nameMatch ? nameMatch[1].trim().replace(/\\s+/g,' ') : current.name||null;
   const locMatch=q.match(/(?:à|a|sur|dans|vers|quartier)\s+([A-Za-zÀ-ÿ' -]{2,35})(?=\\s+(?:svp|s'il|pour|et|,|\.|$))/i);
   const location=locMatch ? locMatch[1].trim() : null;
@@ -211,20 +283,20 @@ function classifyLead(text, products=[], prospect={}) {
   const reasons=[];
   const add=(points,reason)=>{ score+=points; reasons.push((points>0?'+':'')+points+' '+reason); };
 
-  if (/acheter|commande|commander|je prends|je veux|réserver|reserver|prendre/.test(q)) add(30,'intention d’achat');
-  if (/prix|combien|tarif|coût|cout/.test(q)) add(10,'question prix');
-  if (/dispon|stock|avez-vous|avez vous/.test(q)) add(10,'vérification de disponibilité');
-  if (/livr|livraison|expéd|exped|où|ou\b/.test(q)) add(5,'logistique');
-  if (/aujourd|maintenant|urgent|rapidement|ce soir|demain/.test(q)) add(15,'urgence');
-  if (/budget|fcfa|€|euro|payer|paiement|momo|orange money/.test(q)) add(10,'budget/paiement évoqué');
+  if (/acheter|commande|commander|je prends|je veux|réserver|reserver|prendre|\bbuy\b|\bpurchase\b|\border\b|i want|i'll take|i will take/.test(q)) add(30,'intention d’achat');
+  if (/prix|combien|tarif|coût|cout|\bprice\b|how much|\bcost\b/.test(q)) add(10,'question prix');
+  if (/dispon|stock|avez-vous|avez vous|available|in stock|do you have/.test(q)) add(10,'vérification de disponibilité');
+  if (/livr|livraison|expéd|exped|où|ou\b|\bdeliver|delivery|shipping|\bwhere\b/.test(q)) add(5,'logistique');
+  if (/aujourd|maintenant|urgent|rapidement|ce soir|demain|\btoday\b|\bnow\b|urgent|asap|tomorrow|tonight/.test(q)) add(15,'urgence');
+  if (/budget|fcfa|€|euro|payer|paiement|momo|orange money|\bpay\b|payment|\$|usd/.test(q)) add(10,'budget/paiement évoqué');
   if (products.some(p=>q.includes(String(p.name||'').toLowerCase()))) add(15,'produit du catalogue identifié');
   if (prospect.phone) add(5,'contact connu');
   if (prospect.value>0) add(5,'valeur potentielle renseignée');
-  if (/juste regarder|simplement regarder|pas intéress|pas interesse|je réfléchis|je reflechis|plus tard/.test(q)) add(-15,'intention faible');
+  if (/juste regarder|simplement regarder|pas intéress|pas interesse|je réfléchis|je reflechis|plus tard|just looking|not interested|i'll think about it|maybe later|not now/.test(q)) add(-15,'intention faible');
   score=Math.max(score,Number(prospect.score||0));
   score=Math.max(0,Math.min(100,score));
   const status=score>=70?'Chaud':score>=40?'Tiède':'Froid';
-  const orderIntent=/acheter|commande|commander|je prends|je veux|réserver|reserver/.test(q);
+  const orderIntent=/acheter|commande|commander|je prends|je veux|réserver|reserver|\bbuy\b|\bpurchase\b|\border\b|i want|i'll take/.test(q);
   return {score,status,orderIntent,reasons};
 }
 
@@ -233,8 +305,8 @@ function classifyLead(text, products=[], prospect={}) {
 // déclenche jamais lui-même un envoi de message réel (WhatsApp ou autre).
 // Ponctuation tolérante : sur WhatsApp, les apostrophes sont très souvent
 // omises ou remplacées par une espace (« quelqu un » au lieu de « quelqu'un »).
-const HANDOFF_PHRASES = /parler\s+(?:à|a)\s+(?:un|quelqu['’]?\s?un|une\s+personne)|passez[\s-]?moi|je\s+veux\s+(?:un\s+)?(?:humain|conseiller|responsable)|(?:humain|conseiller|responsable)\s+svp|besoin\s+d['’]?\s?un\s+humain|appelez[\s-]?moi\s+quelqu['’]?\s?un/i;
-const HANDOFF_SENSITIVE = /r[ée]clamation|remboursement|rembours(?:er|é)|litige|plainte|arnaque|escroqu|avocat|juridique|paiement\s+(?:bloqu[ée]|refus[ée]|non\s+pass[ée])|erreur\s+de\s+paiement|m[ée]content|insatisfait|d[ée]ç[ue]/i;
+const HANDOFF_PHRASES = /parler\s+(?:à|a)\s+(?:un|quelqu['’]?\s?un|une\s+personne)|passez[\s-]?moi|je\s+veux\s+(?:un\s+)?(?:humain|conseiller|responsable)|(?:humain|conseiller|responsable)\s+svp|besoin\s+d['’]?\s?un\s+humain|appelez[\s-]?moi\s+quelqu['’]?\s?un|(?:talk|speak)\s+to\s+(?:a\s+)?(?:human|person|someone|agent|representative)|(?:connect|transfer)\s+me\s+to\s+(?:a\s+)?(?:human|agent|someone)|i\s+(?:want|need)\s+(?:a\s+)?(?:human|agent|representative)|(?:human|agent|representative)[,\s]+please/i;
+const HANDOFF_SENSITIVE = /r[ée]clamation|remboursement|rembours(?:er|é)|litige|plainte|arnaque|escroqu|avocat|juridique|paiement\s+(?:bloqu[ée]|refus[ée]|non\s+pass[ée])|erreur\s+de\s+paiement|m[ée]content|insatisfait|d[ée]ç[ue]|\brefund\b|\bcomplaint\b|\bdispute\b|chargeback|\bscam\b|fraud(?:ulent)?|\blawyer\b|legal action|payment\s+(?:failed|blocked|declined|not\s+going\s+through)|this\s+is\s+a\s+scam|\bunhappy\b|dissatisfied|disappointed|not\s+happy/i;
 
 function determineNextAction(text, qualification) {
   const q = String(text || '');
@@ -274,19 +346,21 @@ const APPOINTMENT_TYPE_HINTS = [
   [/livr/i, 'Livraison'],
   [/appel|m['’]appeler|me joindre/i, 'Appel'],
 ];
-const APPOINTMENT_INTENT = /\b(rendez[- ]vous|rdv|passer (?:chez|vous voir)|venir (?:chez|vous voir)|on se voit|programmer|planifier|caler|fixer un moment)\b/i;
+const APPOINTMENT_INTENT = /\b(rendez[- ]vous|rdv|passer (?:chez|vous voir)|venir (?:chez|vous voir)|on se voit|programmer|planifier|caler|fixer un moment|appointment|meet(?:ing)?|schedule|book (?:a|an) (?:time|slot|call|visit)|set up (?:a|an) (?:time|call|meeting)|let'?s meet)\b/i;
 const WEEKDAYS_FR = ['dimanche','lundi','mardi','mercredi','jeudi','vendredi','samedi'];
+const WEEKDAYS_EN = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
 
 function parseAppointmentSlot(text, now) {
   const q = String(text||'').toLowerCase();
   const base = now || cameroonNow();
   let date = null;
 
-  if (/après[- ]demain/.test(q)) { date = new Date(base); date.setUTCDate(date.getUTCDate()+2); }
-  else if (/\bdemain\b/.test(q)) { date = new Date(base); date.setUTCDate(date.getUTCDate()+1); }
-  else if (/\baujourd['’]?hui\b|\bce soir\b/.test(q)) { date = new Date(base); }
+  if (/après[- ]demain|day after tomorrow/.test(q)) { date = new Date(base); date.setUTCDate(date.getUTCDate()+2); }
+  else if (/\bdemain\b|\btomorrow\b/.test(q)) { date = new Date(base); date.setUTCDate(date.getUTCDate()+1); }
+  else if (/\baujourd['’]?hui\b|\bce soir\b|\btoday\b|\btonight\b/.test(q)) { date = new Date(base); }
   else {
-    const wd = WEEKDAYS_FR.findIndex(d => new RegExp('\\b'+d+'\\b').test(q));
+    const wdFr = WEEKDAYS_FR.findIndex(d => new RegExp('\\b'+d+'\\b').test(q));
+    const wd = wdFr !== -1 ? wdFr : WEEKDAYS_EN.findIndex(d => new RegExp('\\b'+d+'\\b').test(q));
     if (wd !== -1) {
       date = new Date(base);
       const todayWd = date.getUTCDay();
@@ -307,9 +381,9 @@ function parseAppointmentSlot(text, now) {
   const tm = q.match(/\b(\d{1,2})\s*[h:]\s*(\d{2})?\b/);
   let hour = 9, minute = 0; // heure par défaut si le client ne précise que le jour
   if (tm) { hour = Math.min(23, Number(tm[1])); minute = tm[2] ? Number(tm[2]) : 0; }
-  else if (/matin/.test(q)) hour = 9;
-  else if (/apr[eè]s[- ]midi/.test(q)) hour = 15;
-  else if (/soir/.test(q)) hour = 18;
+  else if (/matin|morning/.test(q)) hour = 9;
+  else if (/apr[eè]s[- ]midi|afternoon/.test(q)) hour = 15;
+  else if (/soir|evening|night/.test(q)) hour = 18;
   date.setUTCHours(hour, minute, 0, 0);
   // `base`/`date` portent l'heure du Cameroun encodée dans les champs UTC
   // (voir cameroonNow()) — on revient ici au véritable instant UTC (Cameroun
@@ -372,12 +446,13 @@ async function syncAutoFollowup(companyId, prospectId, nextAction) {
 
 function ai(text, products=[]) {
   const q=String(text||'').toLowerCase();
-  if(q.includes('prix')||q.includes('combien')) return products.length ? products.map(p=>`${p.name}: ${Number(p.price).toLocaleString('fr-FR')} FCFA`).join(' · ')+'. Lequel vous intéresse ?' : 'Je peux vous renseigner sur nos produits. Quel article recherchez-vous ?';
-  if(q.includes('dispon')||q.includes('stock')) return 'Oui, dites-moi le produit souhaité et je vérifie le stock.';
-  if(q.includes('livr')) return 'Oui. Quel est votre quartier pour organiser la livraison ?';
-  if(q.includes('acheter')||q.includes('commande')) return 'Avec plaisir. Donnez-moi votre nom, téléphone, produit et localisation pour préparer la commande.';
-  if(q.includes('humain')||q.includes('conseiller')) return 'Bien sûr. Je transmets votre demande à un conseiller humain.';
-  return 'Bonjour 👋 Je suis votre assistant commercial. Que puis-je faire pour vous ?';
+  const isEn = /\b(price|how much|cost|stock|available|deliver|delivery|buy|order|human|agent)\b/.test(q) && !/[àâéèêëîïôûüç]/.test(q);
+  if(q.includes('prix')||q.includes('combien')||q.includes('price')||q.includes('how much')) return products.length ? products.map(p=>`${p.name}: ${Number(p.price).toLocaleString('fr-FR')} FCFA`).join(' · ')+(isEn?'. Which one interests you?':'. Lequel vous intéresse ?') : (isEn?'I can tell you about our products. Which item are you looking for?':'Je peux vous renseigner sur nos produits. Quel article recherchez-vous ?');
+  if(q.includes('dispon')||q.includes('stock')||q.includes('available')) return isEn?'Yes, tell me which product and I\'ll check stock.':'Oui, dites-moi le produit souhaité et je vérifie le stock.';
+  if(q.includes('livr')||q.includes('deliver')) return isEn?'Yes. What\'s your area for delivery?':'Oui. Quel est votre quartier pour organiser la livraison ?';
+  if(q.includes('acheter')||q.includes('commande')||q.includes('buy')||q.includes('order')) return isEn?'With pleasure. Give me your name, phone, product and location to prepare the order.':'Avec plaisir. Donnez-moi votre nom, téléphone, produit et localisation pour préparer la commande.';
+  if(q.includes('humain')||q.includes('conseiller')||q.includes('human')||q.includes('agent')) return isEn?'Of course. I\'m passing your request to a team member.':'Bien sûr. Je transmets votre demande à un conseiller humain.';
+  return isEn?'Hello 👋 I\'m your sales assistant. How can I help you?':'Bonjour 👋 Je suis votre assistant commercial. Que puis-je faire pour vous ?';
 }
 
 // Envoi WhatsApp réel (phase 3, Meta WhatsApp Cloud API). Règle impérative,
@@ -457,7 +532,7 @@ async function sendWhatsAppProductList(company, toPhone, products) {
 // Le client demande à voir le catalogue en texte libre ("vous avez quoi
 // comme produits ?", "catalogue", "menu"…) — déclenche l'envoi de la liste
 // interactive ci-dessus plutôt qu'une réponse IA classique.
-const CATALOG_INTENT = /\b(catalogue?|liste des produits|vos produits|vos articles|qu[’']?avez[- ]vous|qu avez vous|montrez?[- ]moi|montre moi vos|voir (?:le |vos )?produits|c['’]est quoi vos produits|menu produits)\b/i;
+const CATALOG_INTENT = /\b(catalogue?|liste des produits|vos produits|vos articles|qu[’']?avez[- ]vous|qu avez vous|montrez?[- ]moi|montre moi vos|voir (?:le |vos )?produits|c['’]est quoi vos produits|menu produits|catalog|product list|your products|what do you (?:have|sell)|show me (?:your|the) products?|see (?:your|the) products?|products? menu)\b/i;
 
 // Convertit un message WhatsApp entrant (texte libre OU réponse à un message
 // interactif) en texte exploitable par le pipeline existant (qualification,
@@ -585,7 +660,74 @@ async function maybeSendWhatsApp(companyId, conv, text) {
   const c = await query('SELECT whatsapp_phone_number_id AS "whatsappPhoneNumberId",whatsapp_access_token AS "whatsappAccessToken" FROM companies WHERE id=$1', [companyId]);
   const company = c.rows[0];
   if (!company?.whatsappPhoneNumberId || !company?.whatsappAccessToken) return null;
+  company.whatsappAccessToken = decryptSecret(company.whatsappAccessToken);
+  if (!company.whatsappAccessToken) return { error: 'Jeton WhatsApp illisible (chiffrement) — reconfigurez-le dans Réglages.' };
   return sendWhatsAppMessage(company, conv.phone, text);
+}
+
+// Statut du quota mensuel de nouveaux prospects (plan Starter/Business/Pro —
+// voir PLAN_LIMITS). limit=null signifie illimité. Utilisé à la fois pour la
+// création manuelle (POST /api/prospects) et pour la création automatique
+// depuis un message WhatsApp entrant (ingestMessage ci-dessous) — jusqu'ici
+// cette limite n'était affichée nulle part côté serveur, jamais appliquée.
+async function prospectQuotaStatus(companyId) {
+  const s = await query('SELECT plan FROM subscriptions WHERE company_id=$1',[companyId]);
+  const limit = planLimits(s.rows[0]?.plan).maxProspectsPerMonth;
+  if (limit == null) return { allowed: true, limit: null };
+  const c = await query("SELECT COUNT(*)::int AS n FROM prospects WHERE company_id=$1 AND created_at >= date_trunc('month', now())",[companyId]);
+  return { allowed: c.rows[0].n < limit, limit, count: c.rows[0].n };
+}
+
+// Retrouve ou crée le prospect associé à un numéro de téléphone, en évitant
+// la création en double quand deux messages du même contact arrivent presque
+// simultanément (rafale de webhooks) : on retente une lecture si l'insertion
+// se heurte à la contrainte unique prospects_company_phone_idx (ajoutée par
+// ensureMigrations — voir audit, point "race condition"). Fonctionne aussi
+// sans cette contrainte (ancienne base non encore migrée), simplement sans la
+// protection anti-doublon dans ce cas précis. Renvoie null si le quota mensuel
+// de prospects du forfait est atteint ET qu'aucun prospect existant n'a été
+// trouvé pour ce numéro (dégradé : le message est quand même traité et reçoit
+// une réponse IA, mais sans fiche CRM créée — voir ingestMessage).
+async function findOrCreateProspectByPhone(companyId, phone, name, needText) {
+  if (phone) {
+    const existing = await query('SELECT id FROM prospects WHERE company_id=$1 AND phone=$2 ORDER BY created_at DESC LIMIT 1',[companyId,phone]);
+    if (existing.rows[0]) return existing.rows[0].id;
+  }
+  const quota = await prospectQuotaStatus(companyId);
+  if (!quota.allowed) {
+    console.warn('[prospects] quota mensuel atteint companyId=%s limite=%s — nouveau contact non enregistre en CRM',companyId,quota.limit);
+    return null;
+  }
+  try {
+    const created = await query('INSERT INTO prospects(company_id,name,phone,need,value,score,status,order_intent,last_contact) VALUES($1,$2,$3,$4,0,0,$5,false,now()) RETURNING id',[companyId,name,phone,needText,'Nouveau']);
+    return created.rows[0].id;
+  } catch (e) {
+    if (e.code === '23505' && phone) { // doublon créé entre-temps par une requête concurrente — on relit la ligne gagnante
+      const r2 = await query('SELECT id FROM prospects WHERE company_id=$1 AND phone=$2 ORDER BY created_at DESC LIMIT 1',[companyId,phone]);
+      if (r2.rows[0]) return r2.rows[0].id;
+    }
+    throw e;
+  }
+}
+
+// Même principe que ci-dessus pour les conversations WhatsApp : évite deux
+// conversations distinctes pour le même contact quand plusieurs messages
+// arrivent en rafale (voir audit, point "race condition"). S'appuie sur
+// conversations_company_channel_contact_idx quand elle existe.
+async function findOrCreateWhatsAppConversation(companyId, from) {
+  const select = () => query('SELECT id,prospect_id AS "prospectId",external_contact AS phone,channel FROM conversations WHERE company_id=$1 AND channel=\'whatsapp\' AND external_contact=$2 ORDER BY created_at DESC LIMIT 1',[companyId,from]);
+  const existing = await select();
+  if (existing.rows[0]) return existing.rows[0];
+  try {
+    const created = await query('INSERT INTO conversations(company_id,prospect_id,channel,external_contact) VALUES($1,NULL,\'whatsapp\',$2) RETURNING id,prospect_id AS "prospectId",external_contact AS phone,channel',[companyId,from]);
+    return created.rows[0];
+  } catch (e) {
+    if (e.code === '23505') {
+      const r2 = await select();
+      if (r2.rows[0]) return r2.rows[0];
+    }
+    throw e;
+  }
 }
 
 // Logique partagée d'ingestion d'un message dans une conversation, utilisée à
@@ -610,15 +752,9 @@ async function ingestMessage(companyId, conversationId, conv, b) {
   if(direction==='in') {
     if(!prospectId) {
       const phone=b.phone||conv.phone||null;
-      const existing=phone ? await query('SELECT id FROM prospects WHERE company_id=$1 AND phone=$2 ORDER BY created_at DESC LIMIT 1',[companyId,phone]) : {rows:[]};
-      if(existing.rows[0]) {
-        prospectId=existing.rows[0].id;
-      } else {
-        const name=(b.name||'').trim()||null;
-        const created=await query('INSERT INTO prospects(company_id,name,phone,need,value,score,status,order_intent,last_contact) VALUES($1,$2,$3,$4,0,0,$5,false,now()) RETURNING id',[companyId,name,phone,text,'Nouveau']);
-        prospectId=created.rows[0].id;
-      }
-      await query('UPDATE conversations SET prospect_id=$1 WHERE id=$2 AND company_id=$3',[prospectId,conversationId,companyId]);
+      const name=(b.name||'').trim()||null;
+      prospectId=await findOrCreateProspectByPhone(companyId,phone,name,text);
+      if(prospectId) await query('UPDATE conversations SET prospect_id=$1 WHERE id=$2 AND company_id=$3',[prospectId,conversationId,companyId]);
     }
 
     const d=await query('SELECT name,price,stock FROM products WHERE company_id=$1 ORDER BY created_at',[companyId]);
@@ -648,8 +784,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.5',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.5'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.6',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.6'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -710,19 +846,23 @@ async function handler(req,res) {
           const targetCompanyId=companyRow?.id;
           if(!targetCompanyId) { console.error('Webhook WhatsApp: aucune entreprise pour phone_number_id',phoneNumberId); continue; }
           if(companyRow.suspended||!companyRow.approvedAt) { console.warn('[webhook] entreprise suspendue ou non validée companyId=%s — message ignoré',targetCompanyId); continue; }
+          companyRow.whatsappAccessToken=decryptSecret(companyRow.whatsappAccessToken);
           console.log('[webhook] routing %d message(s) to companyId=%s',messages.length,targetCompanyId);
           const contact=(value.contacts||[])[0];
           const contactName=contact?.profile?.name||null;
           for(const msg of messages) {
             const from=String(msg.from||'').replace(/^237/,''); // aligné sur le format local déjà utilisé dans l'app (ex. prospects saisis manuellement)
             if(!from) continue;
-            const text=extractInboundText(msg);
-            let conv=await query('SELECT id,prospect_id AS "prospectId",external_contact AS phone,channel FROM conversations WHERE company_id=$1 AND channel=\'whatsapp\' AND external_contact=$2 ORDER BY created_at DESC LIMIT 1',[targetCompanyId,from]);
-            let conversationRow=conv.rows[0];
-            if(!conversationRow) {
-              const created=await query('INSERT INTO conversations(company_id,prospect_id,channel,external_contact) VALUES($1,NULL,\'whatsapp\',$2) RETURNING id,prospect_id AS "prospectId",external_contact AS phone,channel',[targetCompanyId,from]);
-              conversationRow=created.rows[0];
+            // Déduplication : Meta peut renvoyer deux fois le même événement
+            // (retry réseau, accusé non reçu à temps) — on n'ingère chaque
+            // message WhatsApp qu'une seule fois (voir audit, table déjà
+            // prévue dans le schéma mais jusqu'ici jamais utilisée).
+            if(msg.id) {
+              const dedup=await query('INSERT INTO webhook_events(provider,external_event_id,payload) VALUES($1,$2,$3) ON CONFLICT (provider,external_event_id) DO NOTHING RETURNING id',['whatsapp_cloud',msg.id,JSON.stringify({phoneNumberId,from,type:msg.type})]).catch(e=>{console.error('[webhook] dedup indisponible (table manquante?) — poursuite sans dedup:',e.message); return {rows:[{id:'nodedupe'}]};});
+              if(!dedup.rows[0]) { console.log('[webhook] message déjà traité (dedup) id=%s — ignoré',msg.id); continue; }
             }
+            const text=extractInboundText(msg);
+            const conversationRow=await findOrCreateWhatsAppConversation(targetCompanyId,from);
             const ingestResult=await ingestMessage(targetCompanyId,conversationRow.id,conversationRow,{body:text,direction:'in',phone:from,name:contactName,providerMessageId:msg.id||null});
 
             // Prise de rendez-vous automatisée : un client qui exprime une
@@ -795,6 +935,7 @@ async function handler(req,res) {
   await ensureDemo();
 
   if(req.method==='POST'&&u.pathname==='/api/login') {
+    if(rateLimited('login:'+clientIp(req),10,5*60*1000)) return tooManyRequests(res);
     const b=await body(req);
     const r=await query('SELECT u.id,u.name,u.email,u.company_id,u.password_hash,u.password_salt,c.name AS company_name,c.suspended,c.approved_at AS "approvedAt" FROM users u JOIN companies c ON c.id=u.company_id WHERE u.email=$1',[b.email]);
     const user=r.rows[0];
@@ -814,6 +955,7 @@ async function handler(req,res) {
   // réponse est volontairement identique que l'email existe ou non, pour ne
   // pas permettre de deviner quels emails sont enregistrés dans VENDIA.
   if(req.method==='POST'&&u.pathname==='/api/forgot-password') {
+    if(rateLimited('forgot:'+clientIp(req),5,10*60*1000)) return tooManyRequests(res);
     const b=await body(req);
     const email=String(b.email||'').trim().toLowerCase();
     if(email) {
@@ -859,6 +1001,7 @@ async function handler(req,res) {
   // passerelle d'authentification plus bas) tant que le super-admin n'a pas
   // validé la réception du paiement mobile money.
   if(req.method==='POST'&&u.pathname==='/api/signup') {
+    if(rateLimited('signup:'+clientIp(req),5,10*60*1000)) return tooManyRequests(res);
     const b=await body(req);
     const lang=b.lang==='en'?'en':'fr';
     const SIGNUP_MSG={
@@ -901,6 +1044,7 @@ async function handler(req,res) {
   // ci-dessous : un jeton de session super-admin n'a pas de companyId, et
   // réciproquement un jeton d'entreprise n'ouvre aucune route super-admin.
   if(req.method==='POST'&&u.pathname==='/api/superadmin/login') {
+    if(rateLimited('sa-login:'+clientIp(req),10,5*60*1000)) return tooManyRequests(res);
     const b=await body(req);
     const r=await query('SELECT id,name,email,password_hash,password_salt FROM super_admins WHERE email=$1',[String(b.email||'').trim().toLowerCase()]);
     const sa=r.rows[0];
@@ -1058,6 +1202,49 @@ async function handler(req,res) {
   if(req.method==='GET'&&u.pathname==='/api/bootstrap') return json(res,200,await dashboard(companyId));
   if(req.method==='GET'&&u.pathname==='/api/dashboard') return json(res,200,await dashboard(companyId));
 
+  // Tableau de bord analytics (taux de réponse, temps de réponse moyen,
+  // conversion prospect→commande, volume de messages sur 14 jours) — absent
+  // jusqu'ici au-delà des compteurs bruts déjà sur le dashboard principal,
+  // repéré comme argument de vente manquant face aux standards du marché.
+  if(req.method==='GET'&&u.pathname==='/api/analytics') {
+    const [respRow,convRow,byDay,plan]=await Promise.all([
+      query(`WITH inbound AS (
+        SELECT m.id,m.created_at,
+          (SELECT MIN(m2.created_at) FROM messages m2 WHERE m2.conversation_id=m.conversation_id AND m2.direction='out' AND m2.created_at>m.created_at) AS next_out
+        FROM messages m JOIN conversations c ON c.id=m.conversation_id
+        WHERE c.company_id=$1 AND m.direction='in' AND m.created_at >= now() - interval '30 days'
+      )
+      SELECT COUNT(*)::int AS total,COUNT(next_out)::int AS answered,
+             AVG(EXTRACT(EPOCH FROM (next_out-created_at)))::int AS "avgSeconds"
+      FROM inbound`,[companyId]),
+      query(`SELECT
+        (SELECT COUNT(*)::int FROM prospects WHERE company_id=$1) AS total,
+        (SELECT COUNT(DISTINCT prospect_id)::int FROM orders WHERE company_id=$1 AND prospect_id IS NOT NULL) AS converted`,[companyId]),
+      query(`SELECT date_trunc('day',m.created_at) AS day,COUNT(*)::int AS n
+        FROM messages m JOIN conversations c ON c.id=m.conversation_id
+        WHERE c.company_id=$1 AND m.direction='in' AND m.created_at >= now() - interval '14 days'
+        GROUP BY 1 ORDER BY 1`,[companyId]),
+      query('SELECT plan FROM subscriptions WHERE company_id=$1',[companyId])
+    ]);
+    const resp=respRow.rows[0]||{total:0,answered:0,avgSeconds:null};
+    const conv=convRow.rows[0]||{total:0,converted:0};
+    const byDayMap=new Map(byDay.rows.map(r=>[new Date(r.day).toISOString().slice(0,10),r.n]));
+    const messagesByDay=[];
+    for(let i=13;i>=0;i--) {
+      const d=new Date(); d.setUTCDate(d.getUTCDate()-i);
+      const key=d.toISOString().slice(0,10);
+      messagesByDay.push({day:key,count:byDayMap.get(key)||0});
+    }
+    const aiUsage=await getAiUsage(companyId,plan.rows[0]?.plan);
+    return json(res,200,{
+      responseRate:{total:resp.total,answered:resp.answered,pct:resp.total?Math.round(resp.answered/resp.total*100):null},
+      avgResponseSeconds:resp.avgSeconds,
+      conversion:{totalProspects:conv.total,converted:conv.converted,pct:conv.total?Math.round(conv.converted/conv.total*100):null},
+      messagesByDay,
+      aiUsage
+    });
+  }
+
   if(req.method==='GET'&&u.pathname==='/api/me') {
     const r=await query('SELECT id,name,email,role FROM users WHERE id=$1',[session.userId]);
     return json(res,200,{me:r.rows[0]||null});
@@ -1115,7 +1302,7 @@ async function handler(req,res) {
   // Rendez-vous (livraison, démo, appel…) détectés automatiquement dans les
   // conversations WhatsApp entrantes — voir APPOINTMENT_INTENT/parseAppointmentSlot.
   if(req.method==='GET'&&u.pathname==='/api/appointments') {
-    const r=await query(`SELECT a.id,a.prospect_id AS "prospectId",p.name AS prospect,p.phone,a.type,a.scheduled_at AS "scheduledAt",a.status,a.created_at AS "createdAt" FROM appointments a LEFT JOIN prospects p ON p.id=a.prospect_id WHERE a.company_id=$1 ORDER BY a.scheduled_at NULLS LAST,a.created_at DESC`,[companyId]);
+    const r=await query(`SELECT a.id,a.prospect_id AS "prospectId",p.name AS prospect,p.phone,a.type,a.scheduled_at AS "scheduledAt",a.status,a.created_at AS "createdAt" FROM appointments a LEFT JOIN prospects p ON p.id=a.prospect_id WHERE a.company_id=$1 ORDER BY a.scheduled_at NULLS LAST,a.created_at DESC LIMIT 500`,[companyId]);
     return json(res,200,{appointments:r.rows});
   }
   const apMatch=u.pathname.match(/^\/api\/appointments\/([0-9a-f-]+)$/i);
@@ -1139,14 +1326,15 @@ async function handler(req,res) {
       await query('UPDATE companies SET whatsapp_verify_token=$1 WHERE id=$2',[vt,companyId]);
       row.verifyToken=vt;
     }
+    const clearToken=decryptSecret(row.accessToken);
     const proto=req.headers['x-forwarded-proto']||'https';
     return json(res,200,{
       phoneNumberId:row.phoneNumberId||null,
-      accessTokenSet:Boolean(row.accessToken),
-      accessTokenPreview:row.accessToken?('••••'+row.accessToken.slice(-4)):null,
+      accessTokenSet:Boolean(clearToken),
+      accessTokenPreview:clearToken?('••••'+clearToken.slice(-4)):null,
       verifyToken:row.verifyToken,
       webhookUrl:proto+'://'+req.headers.host+'/webhooks/whatsapp',
-      configured:Boolean(row.phoneNumberId&&row.accessToken)
+      configured:Boolean(row.phoneNumberId&&clearToken)
     });
   }
   if(req.method==='PUT'&&u.pathname==='/api/settings/whatsapp') {
@@ -1154,15 +1342,16 @@ async function handler(req,res) {
     if(!b.phoneNumberId||!b.accessToken) return json(res,400,{error:'ID du numéro et jeton d\'accès requis'});
     const existing=await query('SELECT whatsapp_verify_token AS "verifyToken" FROM companies WHERE id=$1',[companyId]);
     const verifyToken=existing.rows[0]?.verifyToken||crypto.randomBytes(12).toString('hex');
-    await query('UPDATE companies SET whatsapp_phone_number_id=$1,whatsapp_access_token=$2,whatsapp_verify_token=$3 WHERE id=$4',[String(b.phoneNumberId).trim(),String(b.accessToken).trim(),verifyToken,companyId]);
+    await query('UPDATE companies SET whatsapp_phone_number_id=$1,whatsapp_access_token=$2,whatsapp_verify_token=$3 WHERE id=$4',[String(b.phoneNumberId).trim(),encryptSecret(String(b.accessToken).trim()),verifyToken,companyId]);
     return json(res,200,{ok:true});
   }
   if(req.method==='POST'&&u.pathname==='/api/settings/whatsapp/test') {
     const c=await query('SELECT whatsapp_phone_number_id AS "phoneNumberId",whatsapp_access_token AS "accessToken" FROM companies WHERE id=$1',[companyId]);
     const row=c.rows[0];
-    if(!row?.phoneNumberId||!row?.accessToken) return json(res,400,{ok:false,error:'Renseigne d\'abord l\'ID du numéro et le jeton d\'accès'});
+    const clearToken=row?decryptSecret(row.accessToken):null;
+    if(!row?.phoneNumberId||!clearToken) return json(res,400,{ok:false,error:'Renseigne d\'abord l\'ID du numéro et le jeton d\'accès'});
     try {
-      const resp=await fetch(`https://graph.facebook.com/${WHATSAPP_API_VERSION}/${row.phoneNumberId}?fields=display_phone_number,verified_name`,{headers:{'Authorization':'Bearer '+row.accessToken}});
+      const resp=await fetch(`https://graph.facebook.com/${WHATSAPP_API_VERSION}/${row.phoneNumberId}?fields=display_phone_number,verified_name`,{headers:{'Authorization':'Bearer '+clearToken}});
       const data=await resp.json().catch(()=>({}));
       if(!resp.ok) return json(res,200,{ok:false,error:data?.error?.message||('Erreur WhatsApp (HTTP '+resp.status+')')});
       return json(res,200,{ok:true,displayPhoneNumber:data.display_phone_number||null,verifiedName:data.verified_name||null});
@@ -1301,12 +1490,14 @@ async function handler(req,res) {
   }
 
   if(req.method==='GET'&&u.pathname==='/api/prospects') {
-    const r=await query('SELECT id,name,phone,need,value,score,status,order_intent AS "orderIntent",last_contact AS "lastContact",next_action AS "nextAction",next_action_priority AS "nextActionPriority",next_action_reason AS "nextActionReason",next_action_at AS "nextActionAt",created_at AS "createdAt" FROM prospects WHERE company_id=$1 ORDER BY score DESC,created_at DESC',[companyId]);
+    const r=await query('SELECT id,name,phone,need,value,score,status,order_intent AS "orderIntent",last_contact AS "lastContact",next_action AS "nextAction",next_action_priority AS "nextActionPriority",next_action_reason AS "nextActionReason",next_action_at AS "nextActionAt",created_at AS "createdAt" FROM prospects WHERE company_id=$1 ORDER BY score DESC,created_at DESC LIMIT 500',[companyId]);
     return json(res,200,{prospects:r.rows});
   }
   if(req.method==='POST'&&u.pathname==='/api/prospects') {
     const b=await body(req);
     if(!b.name&& !b.phone) return json(res,400,{error:'Nom ou téléphone requis'});
+    const quota=await prospectQuotaStatus(companyId);
+    if(!quota.allowed) return json(res,403,{error:'Limite de '+quota.limit+' prospects par mois atteinte pour votre forfait. Passez à un forfait supérieur pour continuer.'});
     const score=Math.max(0,Math.min(100,Number(b.score||0)));
     const r=await query('INSERT INTO prospects(company_id,name,phone,need,value,score,status,order_intent,last_contact) VALUES($1,$2,$3,$4,$5,$6,$7,$8,now()) RETURNING id,name,phone,need,value,score,status,order_intent AS "orderIntent",last_contact AS "lastContact"',[companyId,b.name||null,b.phone||null,b.need||null,Number(b.value||0),score,b.status||'Nouveau',Boolean(b.orderIntent)]);
     return json(res,201,{prospect:r.rows[0]});
@@ -1329,17 +1520,24 @@ async function handler(req,res) {
 
   if(req.method==='POST'&&u.pathname==='/api/ai/reply') {
     const b=await body(req);
-    const [d,c,pr]=await Promise.all([
+    const [d,c,pr,sub]=await Promise.all([
       query('SELECT name,category,price,stock FROM products WHERE company_id=$1 ORDER BY created_at',[companyId]),
       query('SELECT name,sector,ai_name AS "aiName",ai_tone AS "aiTone",ai_language AS "aiLanguage",ai_rules AS "aiRules",payment_orange_money AS "paymentOrangeMoney",payment_mtn_momo AS "paymentMtnMomo" FROM companies WHERE id=$1',[companyId]),
-      b.prospectId ? query('SELECT status,need FROM prospects WHERE id=$1 AND company_id=$2',[b.prospectId,companyId]) : Promise.resolve({rows:[]})
+      b.prospectId ? query('SELECT status,need FROM prospects WHERE id=$1 AND company_id=$2',[b.prospectId,companyId]) : Promise.resolve({rows:[]}),
+      query('SELECT plan FROM subscriptions WHERE company_id=$1',[companyId])
     ]);
     // Teste le VRAI moteur IA (Claude) utilisé sur WhatsApp quand la clé est
     // configurée, avec le catalogue et la personnalité réels de l'entreprise
     // — plutôt que la réponse de secours à mots-clés (fallback-demo), pour
     // que ce panneau serve de vérification fiable après un changement de clé.
+    // Soumis au même quota mensuel que les réponses WhatsApp réelles (sinon
+    // ce testeur permettait un nombre illimité d'appels Anthropic gratuits).
+    const usage=await getAiUsage(companyId,sub.rows[0]?.plan);
+    if(usage.remaining!==null && usage.remaining<=0) {
+      return json(res,200,{reply:ai(b.text,d.rows),provider:'fallback-demo',quotaExceeded:true});
+    }
     const real = await generateAiReply(c.rows[0]||{}, pr.rows[0]||null, d.rows, [{direction:'in',body:b.text}]);
-    if(real) return json(res,200,{reply:real,provider:'anthropic'});
+    if(real) { await incrementAiUsage(companyId); return json(res,200,{reply:real,provider:'anthropic'}); }
     return json(res,200,{reply:ai(b.text,d.rows),provider:'fallback-demo',aiUnavailable:!process.env.ANTHROPIC_API_KEY});
   }
 
@@ -1394,10 +1592,18 @@ async function handler(req,res) {
     return json(res,201,{followup:r.rows[0]});
   }
   if(req.method==='GET'&&u.pathname==='/api/conversations') {
+    // Les 50 derniers messages par conversation seulement (sous-requête
+    // latérale), pas tout l'historique — sans ce plafond, cette requête
+    // grossit sans limite avec le temps et ralentit chaque chargement du
+    // dashboard pour toutes les entreprises (voir audit). Les 500
+    // conversations les plus récentes par entreprise, dans le même esprit.
     const r=await query(`SELECT c.id,c.channel,c.external_contact AS phone,c.prospect_id AS "prospectId",p.name AS prospect, c.created_at AS "createdAt",
-      COALESCE(json_agg(json_build_object('id',m.id,'direction',m.direction,'body',m.body,'createdAt',m.created_at,'providerError',m.provider_error) ORDER BY m.created_at) FILTER (WHERE m.id IS NOT NULL),'[]') AS messages
-      FROM conversations c LEFT JOIN prospects p ON p.id=c.prospect_id LEFT JOIN messages m ON m.conversation_id=c.id
-      WHERE c.company_id=$1 GROUP BY c.id,p.name ORDER BY MAX(m.created_at) DESC NULLS LAST,c.created_at DESC`,[companyId]);
+      COALESCE((SELECT json_agg(x ORDER BY x."createdAt") FROM (
+        SELECT m.id,m.direction,m.body,m.created_at AS "createdAt",m.provider_error AS "providerError"
+        FROM messages m WHERE m.conversation_id=c.id ORDER BY m.created_at DESC LIMIT 50
+      ) x),'[]') AS messages
+      FROM conversations c LEFT JOIN prospects p ON p.id=c.prospect_id
+      WHERE c.company_id=$1 ORDER BY c.created_at DESC LIMIT 500`,[companyId]);
     return json(res,200,{conversations:r.rows});
   }
   if(req.method==='POST'&&u.pathname==='/api/conversations') {
@@ -1426,7 +1632,7 @@ async function handler(req,res) {
     return json(res,201,{order:r.rows[0]});
   }
   if(req.method==='GET'&&u.pathname==='/api/orders') {
-    const r=await query('SELECT o.id,o.order_number AS number,o.prospect_id AS "prospectId",p.name AS client,o.amount,o.status,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC',[companyId]);
+    const r=await query('SELECT o.id,o.order_number AS number,o.prospect_id AS "prospectId",p.name AS client,o.amount,o.status,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC LIMIT 500',[companyId]);
     return json(res,200,{orders:r.rows});
   }
   const orderMatch=u.pathname.match(/^\/api\/orders\/([0-9a-f-]+)$/i);
@@ -1437,7 +1643,7 @@ async function handler(req,res) {
     return json(res,200,{order:r.rows[0]});
   }
   if(req.method==='GET'&&u.pathname==='/api/followups') {
-    const r=await query('SELECT f.id,f.prospect_id AS "prospectId",p.name AS prospect,f.text,f.due_at AS "dueAt",f.status,f.source,f.cancelled_reason AS "cancelledReason",f.sent_at AS "sentAt",f.created_at AS "createdAt" FROM followups f LEFT JOIN prospects p ON p.id=f.prospect_id WHERE f.company_id=$1 ORDER BY f.due_at NULLS LAST',[companyId]);
+    const r=await query('SELECT f.id,f.prospect_id AS "prospectId",p.name AS prospect,f.text,f.due_at AS "dueAt",f.status,f.source,f.cancelled_reason AS "cancelledReason",f.sent_at AS "sentAt",f.created_at AS "createdAt" FROM followups f LEFT JOIN prospects p ON p.id=f.prospect_id WHERE f.company_id=$1 ORDER BY f.due_at NULLS LAST LIMIT 500',[companyId]);
     return json(res,200,{followups:r.rows});
   }
   if(req.method==='PUT'&&u.pathname.startsWith('/api/followups/')) {
@@ -1682,17 +1888,38 @@ async function ensureMigrations() {
        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
      )`,
     'CREATE INDEX IF NOT EXISTS appointments_company_idx ON appointments(company_id, scheduled_at)',
+    // Lot "audit sécurité/fiabilité" — idempotent. Déduplication des webhooks
+    // Meta (table prévue de longue date dans schema.sql mais jamais créée
+    // automatiquement au démarrage) + contraintes uniques anti-doublon pour
+    // conversations/prospects (voir findOrCreateWhatsAppConversation /
+    // findOrCreateProspectByPhone). Si des doublons existent déjà en base
+    // (tests précédents), la création de l'index concerné échoue proprement
+    // (erreur journalisée, statement suivant exécuté quand même) sans casser
+    // le démarrage — la protection anti-doublon ne sera simplement pas
+    // active tant que ces doublons n'auront pas été nettoyés manuellement.
+    `CREATE TABLE IF NOT EXISTS webhook_events (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       provider TEXT NOT NULL,
+       external_event_id TEXT,
+       payload JSONB NOT NULL,
+       received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+       UNIQUE(provider, external_event_id)
+     )`,
+    'CREATE UNIQUE INDEX IF NOT EXISTS conversations_company_channel_contact_idx ON conversations(company_id,channel,external_contact) WHERE external_contact IS NOT NULL',
+    'CREATE UNIQUE INDEX IF NOT EXISTS prospects_company_phone_idx ON prospects(company_id,phone) WHERE phone IS NOT NULL',
   ];
   for (const stmt of statements) {
     try { await query(stmt); } catch(e) { console.error('[migrations] echec:',stmt.split('\n')[0],e.message); }
   }
   console.log('[migrations] verifiees au demarrage');
+  if (!process.env.ENCRYPTION_KEY) console.warn('[securite] ENCRYPTION_KEY non configuré — les jetons d\'accès WhatsApp sont stockés en clair en base (voir README)');
+  if (!process.env.META_APP_SECRET) console.warn('[securite] META_APP_SECRET non configuré — la signature des webhooks WhatsApp entrants n\'est pas vérifiée (voir README)');
 }
 
 const server=http.createServer((req,res)=>handler(req,res).catch(e=>{console.error(e);json(res,500,{error:'Erreur serveur'});}));
 ensureMigrations().then(()=>ensureSuperAdmin()).catch(e=>console.error('[superadmin] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.5 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.6 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});
