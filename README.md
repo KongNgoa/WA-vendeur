@@ -47,4 +47,8 @@ Rapport quotidien (20h, heure du Cameroun) envoyé par email à chaque administr
 - **Les 4 pages sont désormais bilingues** : le super-admin, la page d'inscription et la politique de confidentialité disposent maintenant du même sélecteur FR/EN que le tableau de bord, avec la même préférence mémorisée sur l'appareil (partagée entre toutes les pages).
 - **Les messages d'erreur et de confirmation de l'inscription en ligne** (`/api/signup`) s'affichent eux aussi dans la langue choisie par le client au moment de l'inscription.
 
+## Onglet Conversations repensé (1.10.5)
+- **Liste de conversations façon messagerie** au lieu d'empiler tous les messages de toutes les conversations sur la même page : chaque contact apparaît comme une seule ligne compacte (avatar, nom/numéro, aperçu du dernier message), triée par message le plus récent. Un clic ouvre la conversation complète dans une fenêtre dédiée.
+- **Heure de chaque message affichée** (heure seule si envoyé aujourd'hui, date + heure sinon), avec des bulles alignées à gauche/droite comme sur WhatsApp pour distinguer client et VENDIA en un coup d'œil.
+
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.

@@ -24,6 +24,16 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 8px
 .usageBlink{animation:usageBlink 1s step-start infinite}@keyframes usageBlink{50%{opacity:.35}}
 form.formgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px}.formgrid .full{grid-column:1/-1}
 input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px;background:white}.chat{display:flex;gap:8px}.chat input{flex:1}.reply{margin-top:12px;background:#f0f4ff;padding:13px;border-radius:10px;min-height:22px}
+.convRow{display:flex;align-items:center;gap:14px;padding:14px 10px;border-bottom:1px solid #edf0f5;cursor:pointer;transition:background .15s}.convRow:hover{background:#f7f9fc}.convRow:last-child{border-bottom:0}
+.convAvatar{flex:0 0 auto;width:42px;height:42px;border-radius:50%;background:var(--gradient);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
+.convInfo{flex:1;min-width:0}.convTop{display:flex;justify-content:space-between;align-items:baseline;gap:8px}.convTop strong{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.convTime{color:#687386;font-size:12px;white-space:nowrap}
+.convBottom{display:flex;justify-content:space-between;gap:10px;margin-top:2px}.convPhone{color:#687386;font-size:12.5px;white-space:nowrap}.convPreview{color:#687386;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;text-align:right}
+.msgRow{display:flex;margin-bottom:10px}.msgRow.out{justify-content:flex-end}.msgRow.in{justify-content:flex-start}
+.msgBubble{max-width:78%;padding:10px 13px;border-radius:14px;font-size:14px;line-height:1.4;word-wrap:break-word}
+.msgRow.in .msgBubble{background:#f0f2f6;color:#172033;border-bottom-left-radius:4px}
+.msgRow.out .msgBubble{background:var(--gradient);color:#fff;border-bottom-right-radius:4px}
+.msgTime{font-size:11px;opacity:.65;margin-top:4px;text-align:right}
+.msgError{color:#b42318;font-size:.85em;margin-top:4px}.msgRow.out .msgError{color:#ffe3dc}
 .login{max-width:430px;margin:45px auto}.login h2{margin-top:0}.login input{display:block;margin:10px 0}.error{color:#b42318;margin-top:10px}.success{color:#18794e;margin-top:10px}.hidden{display:none}.empty{padding:28px;text-align:center;color:#687386}
 .langSwitch{display:flex;border:1px solid #ffffff33;border-radius:8px;overflow:hidden}.langSwitch button{border:0;background:transparent;color:#fff;opacity:.6;padding:6px 10px;font-weight:700;font-size:12px;cursor:pointer;border-radius:0}.langSwitch button.active{opacity:1;background:#ffffff26}
 @media(max-width:800px){.stats{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}form.formgrid{grid-template-columns:1fr}.hero h2{font-size:25px}header{padding:15px 18px}}
@@ -110,6 +120,12 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <input id="vPhone" placeholder="Téléphone / contact" required data-i18n-placeholder="placeholder_phone_contact"><select id="vProspect"><option value="" data-i18n="option_associate_prospect">Associer à un prospect (optionnel)</option></select>
 <div class="full"><button class="btn primary" data-i18n="btn_new_conversation">Nouvelle conversation</button></div></form>
 <div id="conversationList"></div></div>
+<div id="conversationModal" style="position:fixed;inset:0;background:#0008;z-index:100;display:none;align-items:center;justify-content:center;padding:18px">
+<div style="background:white;border-radius:18px;max-width:620px;width:100%;max-height:85vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px #0004">
+<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;padding:20px 22px 14px;border-bottom:1px solid #edf0f5"><div><h3 id="modalConvName" style="margin:0">Client</h3><div class="muted" id="modalConvPhone"></div></div><button class="btn" onclick="closeConversationModal()" data-i18n="btn_close">Fermer</button></div>
+<div id="modalConvThread" style="flex:1;overflow:auto;padding:18px 22px"></div>
+<form onsubmit="sendMessage(event)" style="display:flex;gap:8px;padding:14px 22px;border-top:1px solid #edf0f5"><input id="modalConvInput" placeholder="Répondre au client" required data-i18n-placeholder="placeholder_reply_client"><button class="btn primary" data-i18n="btn_send">Envoyer</button></form>
+</div></div>
 </section>
 <section id="ordersTab" class="hidden">
 <div class="panel"><h3 data-i18n="orders_new_title">Nouvelle commande</h3>
@@ -253,7 +269,7 @@ fr: {
   prompt_name:"Nom", prompt_phone:"Téléphone", prompt_need:"Besoin", prompt_score:"Score 0–100", prompt_status:"Statut", prompt_value_fcfa:"Valeur potentielle en FCFA",
   confirm_delete_prospect:"Supprimer ce prospect du CRM ?",
   placeholder_phone_contact:"Téléphone / contact", option_associate_prospect:"Associer à un prospect (optionnel)",
-  btn_new_conversation:"Nouvelle conversation", empty_conversations:"Aucune conversation.", label_client:"Client",
+  btn_new_conversation:"Nouvelle conversation", empty_conversations:"Aucune conversation.", label_client:"Client", conv_no_messages:"Aucun message pour l'instant.",
   whatsapp_send_failed_prefix:"⚠ Échec envoi WhatsApp :", placeholder_reply_client:"Répondre au client", btn_send:"Envoyer",
   orders_new_title:"Nouvelle commande", option_choose_prospect:"Choisir le prospect", placeholder_amount:"Montant (FCFA)",
   ostatus_en_attente:"En attente", ostatus_confirmee:"Confirmée", ostatus_en_preparation:"En préparation", ostatus_livree:"Livrée", ostatus_annulee:"Annulée",
@@ -359,7 +375,7 @@ en: {
   prompt_name:"Name", prompt_phone:"Phone", prompt_need:"Need", prompt_score:"Score 0–100", prompt_status:"Status", prompt_value_fcfa:"Potential value in FCFA",
   confirm_delete_prospect:"Delete this lead from the CRM?",
   placeholder_phone_contact:"Phone / contact", option_associate_prospect:"Link to a lead (optional)",
-  btn_new_conversation:"New conversation", empty_conversations:"No conversations yet.", label_client:"Client",
+  btn_new_conversation:"New conversation", empty_conversations:"No conversations yet.", label_client:"Client", conv_no_messages:"No messages yet.",
   whatsapp_send_failed_prefix:"⚠ WhatsApp send failed:", placeholder_reply_client:"Reply to the client", btn_send:"Send",
   orders_new_title:"New order", option_choose_prospect:"Choose a lead", placeholder_amount:"Amount (FCFA)",
   ostatus_en_attente:"Pending", ostatus_confirmee:"Confirmed", ostatus_en_preparation:"Preparing", ostatus_livree:"Delivered", ostatus_annulee:"Cancelled",
@@ -769,7 +785,7 @@ function viewProspect(id){
 }
 function closeProspectModal(){ $('prospectModal').style.display='none'; }
 function goToAssistantFromProspect(id){ closeProspectModal(); tab('assistant'); $('aiProspect').value=id; $('q').focus(); }
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeProspectModal();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeProspectModal();closeConversationModal();}});
 
 async function editProspect(id) {
   const p=data.prospects.find(x=>x.id===id); if(!p)return;
@@ -792,33 +808,88 @@ async function deleteProspect(id) {
 }
 
 
+let currentConvId=null;
+function convInitials(name){
+  const s=(name||'').trim();
+  if(!s) return '#';
+  const parts=s.split(/\s+/);
+  return (parts[0][0]+(parts[1]?parts[1][0]:'')).toUpperCase();
+}
+function timeFmt(d){
+  if(!d) return '';
+  const dt=new Date(d), now=new Date(), locale=lang==='en'?'en-GB':'fr-FR';
+  const sameDay=dt.toDateString()===now.toDateString();
+  return sameDay
+    ? dt.toLocaleTimeString(locale,{hour:'2-digit',minute:'2-digit'})
+    : dt.toLocaleDateString(locale,{day:'2-digit',month:'2-digit'})+' '+dt.toLocaleTimeString(locale,{hour:'2-digit',minute:'2-digit'});
+}
+function sortedConversations(){
+  return [...data.conversations].sort((a,b)=>{
+    const la=(a.messages||[]).length?a.messages[a.messages.length-1].createdAt:a.createdAt;
+    const lb=(b.messages||[]).length?b.messages[b.messages.length-1].createdAt:b.createdAt;
+    return new Date(lb||0)-new Date(la||0);
+  });
+}
 function renderConversations(){
   const list=$('conversationList');
-  list.innerHTML=data.conversations.length
-    ? data.conversations.map(c=>'<div class="panel" style="box-shadow:none;border:1px solid #edf0f5"><strong>'+esc(c.prospect||t('label_client'))+'</strong> · '+esc(c.phone||'—')+'<div class="muted">'+esc(c.channel||'whatsapp')+'</div>'+
-      (c.messages||[]).map(m=>'<div style="padding:8px;margin-top:6px;background:'+(m.direction==='in'?'#f5f7fb':'#f0f4ff')+';border-radius:8px"><b>'+(m.direction==='in'?t('label_client'):'VENDIA')+':</b> '+esc(m.body)+(m.providerError?'<div style="color:#c0392b;font-size:.85em;margin-top:4px">'+t('whatsapp_send_failed_prefix')+' '+esc(m.providerError)+'</div>':'')+'</div>').join('')+
-      '<form onsubmit="sendMessage(event,\''+c.id+'\')" class="conversation-form" style="display:flex;gap:8px;margin-top:10px"><input placeholder="'+t('placeholder_reply_client')+'" required><button class="btn primary">'+t('btn_send')+'</button></form></div>').join('')
-    : '<div class="empty">'+t('empty_conversations')+'</div>';
+  if(!data.conversations.length){ list.innerHTML='<div class="empty">'+t('empty_conversations')+'</div>'; return; }
+  list.innerHTML=sortedConversations().map(c=>{
+    const msgs=c.messages||[];
+    const last=msgs[msgs.length-1];
+    const name=c.prospect||t('label_client');
+    const rawPreview=last?String(last.body||''):'';
+    const preview=last?esc(rawPreview.length>60?rawPreview.slice(0,60)+'…':rawPreview):t('conv_no_messages');
+    return '<div class="convRow" onclick="openConversationModal(\''+c.id+'\')">'+
+      '<div class="convAvatar">'+esc(convInitials(name))+'</div>'+
+      '<div class="convInfo"><div class="convTop"><strong>'+esc(name)+'</strong>'+(last?'<span class="convTime">'+esc(timeFmt(last.createdAt))+'</span>':'')+'</div>'+
+      '<div class="convBottom"><span class="convPhone">'+esc(c.phone||'—')+'</span><span class="convPreview">'+preview+'</span></div></div>'+
+      '</div>';
+  }).join('');
 }
+function renderConversationThread(c){
+  const el=$('modalConvThread');
+  const msgs=c.messages||[];
+  el.innerHTML=msgs.length ? msgs.map(m=>{
+    const out=m.direction!=='in';
+    return '<div class="msgRow '+(out?'out':'in')+'"><div class="msgBubble">'+esc(m.body)+
+      (m.providerError?'<div class="msgError">'+t('whatsapp_send_failed_prefix')+' '+esc(m.providerError)+'</div>':'')+
+      '<div class="msgTime">'+esc(timeFmt(m.createdAt))+'</div></div></div>';
+  }).join('') : '<div class="empty">'+t('conv_no_messages')+'</div>';
+  el.scrollTop=el.scrollHeight;
+}
+function openConversationModal(id){
+  const c=data.conversations.find(x=>x.id===id);
+  if(!c) return;
+  currentConvId=id;
+  $('modalConvName').textContent=c.prospect||t('label_client');
+  $('modalConvPhone').textContent=(c.phone||'—')+' · '+(c.channel||'whatsapp');
+  renderConversationThread(c);
+  $('conversationModal').style.display='flex';
+  setTimeout(()=>{const i=$('modalConvInput'); if(i) i.focus();},0);
+}
+function closeConversationModal(){ $('conversationModal').style.display='none'; currentConvId=null; }
 async function saveConversation(e){
   e.preventDefault();
   try{
-    await api('/api/conversations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    const r=await api('/api/conversations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       phone:$('vPhone').value.trim(),prospectId:$('vProspect').value.trim()||null
     })});
     e.target.reset();
     await loadConversations();
+    if(r&&r.conversation&&r.conversation.id) openConversationModal(r.conversation.id);
   }catch(x){alert(x.message);}
 }
-async function sendMessage(e,id){
+async function sendMessage(e){
   e.preventDefault();
-  const input=e.target.querySelector('input');
-  const body=input.value.trim();
-  if(!body)return;
+  const input=$('modalConvInput');
+  const bodyText=input.value.trim();
+  if(!bodyText||!currentConvId)return;
   try{
-    await api('/api/conversations/'+id+'/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({direction:'out',body})});
+    await api('/api/conversations/'+currentConvId+'/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({direction:'out',body:bodyText})});
     input.value='';
     await loadConversations();
+    const c=data.conversations.find(x=>x.id===currentConvId);
+    if(c) renderConversationThread(c);
   }catch(x){alert(x.message);}
 }
 async function loadConversations(){
