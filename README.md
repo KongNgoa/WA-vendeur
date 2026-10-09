@@ -87,6 +87,12 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - **Pensée pour le référencement et le partage** : aperçu riche (titre, description, photo) dans Facebook/WhatsApp, données structurées schema.org (produits, prix en XAF, disponibilité), lien canonique.
 - **Sûre** : tout le contenu est échappé, la page disparaît (404) si l'entreprise la désactive, est suspendue ou n'est pas encore validée, et les requêtes répétées sont limitées par IP.
 
+## Paiement manuel amélioré (1.10.14)
+- **Nouvel onglet "Abonnement"** (administrateur de l'équipe uniquement) : forfait, prix, date d'échéance et jours restants, numéro Orange Money / MTN à payer (copiable), formulaire de renouvellement ou de changement de forfait, historique des paiements avec leur statut. Une bannière prévient 5 jours avant l'échéance et après.
+- **Chaque paiement validé prolonge l'abonnement de 30 jours** à partir de l'échéance en cours (plus de perte si on paie en avance). Les abonnements actifs existants reçoivent 30 jours à partir du déploiement. L'accès n'est jamais coupé automatiquement : la bannière sert de rappel et le super-admin garde la main.
+- **Anti-doublon** : une même référence de transaction (insensible aux espaces, tirets et majuscules) ne peut pas servir deux fois, ni à l'inscription ni au renouvellement ; référence trop courte refusée ; un seul paiement en attente par entreprise.
+- **Super-admin** : les demandes de renouvellement sont repérées par un badge "Renouvellement" et signalées par e-mail ; l'e-mail d'activation indique la nouvelle date d'échéance.
+
 ## Photos de produits (1.10.12 → 1.10.13)
 - **Téléversement direct à l'ajout d'un produit** : un champ "Photo du produit" permet de choisir une image depuis le téléphone ou l'ordinateur ; elle est réduite dans le navigateur (JPEG, 1600 px max) puis stockée en base (table `product_images`, servie sur `/img/<id>`). Le lien collé à la main reste possible, et le bouton 📷 du catalogue change la photo d'un produit existant.
 - La photo est utilisée partout : catalogue, vitrine web, envoi d'images par l'IA sur WhatsApp et affiches du Studio promo (même domaine, donc toujours intégrable). Contrôles côté serveur : 2 Mo max, JPEG/PNG/WebP vérifiés sur le contenu, 500 photos max par entreprise.

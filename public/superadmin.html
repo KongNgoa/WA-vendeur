@@ -91,7 +91,7 @@ fr: {
   new_company_title:"Nouvelle entreprise", placeholder_company_name:"Nom de l'entreprise", placeholder_sector:"Secteur",
   placeholder_owner_name:"Nom du propriétaire", placeholder_owner_email:"Email du propriétaire", placeholder_password_min6:"Mot de passe (min. 6 caractères)",
   btn_create_company:"Créer l'entreprise",
-  commissions_title:"Commissions de parrainage à verser", th_referrer:"Parrain", th_payout_phone:"Numéro de versement", th_referred:"Filleul", btn_mark_paid:"Marquer comme versée",
+  badge_renewal:"Renouvellement", commissions_title:"Commissions de parrainage à verser", th_referrer:"Parrain", th_payout_phone:"Numéro de versement", th_referred:"Filleul", btn_mark_paid:"Marquer comme versée",
   empty_commissions:"Aucune commission à verser.", confirm_pay_commission:"Confirmer que cette commission a bien été versée au parrain ?", payout_phone_missing:"non renseigné",
   pending_payments_title:"Validations de paiement en attente", companies_title:"Entreprises",
   detail_default_title:"Détail", btn_close:"Fermer", members_title:"Membres", placeholder_name:"Nom",
@@ -122,7 +122,7 @@ en: {
   new_company_title:"New company", placeholder_company_name:"Company name", placeholder_sector:"Sector",
   placeholder_owner_name:"Owner's name", placeholder_owner_email:"Owner's email", placeholder_password_min6:"Password (min. 6 characters)",
   btn_create_company:"Create company",
-  commissions_title:"Referral commissions to pay", th_referrer:"Referrer", th_payout_phone:"Payout number", th_referred:"Referred", btn_mark_paid:"Mark as paid",
+  badge_renewal:"Renewal", commissions_title:"Referral commissions to pay", th_referrer:"Referrer", th_payout_phone:"Payout number", th_referred:"Referred", btn_mark_paid:"Mark as paid",
   empty_commissions:"No commissions to pay.", confirm_pay_commission:"Confirm this commission has been paid to the referrer?", payout_phone_missing:"not provided",
   pending_payments_title:"Pending payment approvals", companies_title:"Companies",
   detail_default_title:"Details", btn_close:"Close", members_title:"Members", placeholder_name:"Name",
@@ -227,7 +227,7 @@ async function payCommission(id){
 function renderPending(list){
   $('pendingCount').textContent='('+list.length+')';
   $('pendingTable').innerHTML = list.length ? '<table><thead><tr><th>'+t('th_company')+'</th><th>'+t('th_plan')+'</th><th>'+t('th_amount')+'</th><th>'+t('th_method')+'</th><th>'+t('th_payer')+'</th><th>'+t('th_reference')+'</th><th>'+t('th_actions')+'</th></tr></thead><tbody>'+
-    list.map(p=>'<tr><td><strong>'+esc(p.companyName)+'</strong></td><td>'+esc(p.plan)+'</td><td>'+money(p.amount)+'</td>'+
+    list.map(p=>'<tr><td><strong>'+esc(p.companyName)+'</strong>'+(p.renewal?' <span class="badge">'+t('badge_renewal')+'</span>':'')+'</td><td>'+esc(p.plan)+'</td><td>'+money(p.amount)+'</td>'+
       '<td>'+(p.method==='orange_money'?'🟠 Orange Money':'🟡 MTN MoMo')+'</td><td>'+esc(p.payerPhone||'—')+'</td><td>'+esc(p.reference||'—')+'</td>'+
       '<td><div class="actions"><button class="btn primary" onclick="approvePayment(\''+p.id+'\')">'+t('btn_approve')+'</button><button class="btn danger" onclick="rejectPayment(\''+p.id+'\')">'+t('btn_reject')+'</button></div></td></tr>').join('')+
     '</tbody></table>' : '<div class="empty">'+t('empty_pending')+'</div>';

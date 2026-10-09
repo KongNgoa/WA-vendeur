@@ -51,6 +51,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <body>
 <header><div class="brand"><img src="assets/logo-mark-112.png" alt="VENDIA"><div><h1>VENDIA <span id="companyNameTag" class="tag"></span></h1><div class="tag" data-i18n="tagline">Le commercial IA qui travaille pour vous 24h/24</div></div></div><div class="actions" style="align-items:center"><div class="langSwitch" id="langSwitch"><button data-lang="fr" onclick="setLang('fr')">FR</button><button data-lang="en" onclick="setLang('en')">EN</button></div><span class="badge" data-i18n="beta_badge">BÊTA</span><button class="btn" style="margin-left:8px" onclick="logout()" data-i18n="logout_btn">Déconnexion</button></div></header>
 <main class="wrap">
+<div id="billingBanner" class="hidden" style="margin-bottom:12px"></div>
 <section id="login" class="login">
 <h2 data-i18n="login_title">Connexion</h2><p class="muted" data-i18n="login_subtitle">Connectez-vous pour accéder à votre espace commercial.</p>
 <input id="email" type="email" value="demo@wavendeur.local" placeholder="Email" data-i18n-placeholder="placeholder_email"><input id="password" type="password" value="demo1234" placeholder="Mot de passe" data-i18n-placeholder="placeholder_password">
@@ -80,7 +81,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <button class="active" data-tab="dashboard" onclick="tab('dashboard')">📊 <span data-i18n="nav_dashboard">Tableau de bord</span></button>
 <button data-tab="products" onclick="tab('products')">📦 <span data-i18n="nav_products">Produits</span></button>
 <button data-tab="crm" onclick="tab('crm')">👥 <span data-i18n="nav_crm">CRM</span></button>
-<button data-tab="conversations" onclick="tab('conversations')">💬 <span data-i18n="nav_conversations">Conversations</span></button><button data-tab="orders" onclick="tab('orders')">🛒 <span data-i18n="nav_orders">Commandes</span></button><button data-tab="followups" onclick="tab('followups')">🔁 <span data-i18n="nav_followups">Relances</span></button><button data-tab="analytics" onclick="tab('analytics')">📈 <span data-i18n="nav_analytics">Analytics</span></button><button data-tab="assistant" onclick="tab('assistant')">🤖 <span data-i18n="nav_assistant">Assistant IA</span></button><button data-tab="team" onclick="tab('team')">👥 <span data-i18n="nav_team">Équipe</span></button><button data-tab="promo" onclick="tab('promo')">🎨 <span data-i18n="nav_promo">Studio promo</span></button><button data-tab="referral" onclick="tab('referral')">🤝 <span data-i18n="nav_referral">Parrainage</span></button><button data-tab="settings" onclick="tab('settings')">⚙️ <span data-i18n="nav_settings">Réglages WhatsApp</span></button>
+<button data-tab="conversations" onclick="tab('conversations')">💬 <span data-i18n="nav_conversations">Conversations</span></button><button data-tab="orders" onclick="tab('orders')">🛒 <span data-i18n="nav_orders">Commandes</span></button><button data-tab="followups" onclick="tab('followups')">🔁 <span data-i18n="nav_followups">Relances</span></button><button data-tab="analytics" onclick="tab('analytics')">📈 <span data-i18n="nav_analytics">Analytics</span></button><button data-tab="assistant" onclick="tab('assistant')">🤖 <span data-i18n="nav_assistant">Assistant IA</span></button><button data-tab="team" onclick="tab('team')">👥 <span data-i18n="nav_team">Équipe</span></button><button data-tab="promo" onclick="tab('promo')">🎨 <span data-i18n="nav_promo">Studio promo</span></button><button data-tab="billing" onclick="tab('billing')">💳 <span data-i18n="nav_billing">Abonnement</span></button><button data-tab="referral" onclick="tab('referral')">🤝 <span data-i18n="nav_referral">Parrainage</span></button><button data-tab="settings" onclick="tab('settings')">⚙️ <span data-i18n="nav_settings">Réglages WhatsApp</span></button>
 </nav>
 
 <section id="dashboardTab">
@@ -259,6 +260,23 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <div id="posterStatus" style="margin-top:10px"></div>
 </div>
 </section>
+<section id="billingTab" class="hidden">
+<div class="panel"><h3 data-i18n="billing_title">Mon abonnement</h3>
+<div class="stats" id="billStats" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))"></div>
+<div id="billOwnerOnly" class="muted hidden" data-i18n="billing_owner_only">Seul l'administrateur de l'équipe peut gérer l'abonnement.</div>
+</div>
+<div class="panel" id="billRenewPanel"><h3 data-i18n="billing_renew_title">Renouveler ou changer de forfait</h3>
+<p class="muted" id="billPendingNote"></p>
+<form class="formgrid" id="billForm" onsubmit="submitRenewal(event)">
+<div><label class="muted" data-i18n="billing_plan_label">Forfait</label><select id="billPlan" onchange="updateBillingInstructions()"></select></div>
+<div><label class="muted" data-i18n="billing_method_label">Payer avec</label><select id="billMethod" onchange="updateBillingInstructions()"><option value="orange_money">🟠 Orange Money</option><option value="mtn_momo">🟡 MTN Mobile Money</option></select></div>
+<div class="full panel" style="background:#f5f7fb;margin:0"><div id="billInstructions"></div><button type="button" class="btn" onclick="copyBillNumber()" data-i18n="billing_copy_number">Copier le numéro</button></div>
+<input id="billPayer" placeholder="Votre numéro (celui utilisé pour payer)" required data-i18n-placeholder="placeholder_payer_phone">
+<input id="billRef" placeholder="Référence de la transaction" required data-i18n-placeholder="placeholder_reference">
+<div class="full"><button class="btn primary" id="billBtn" data-i18n="billing_submit">J'ai payé — envoyer pour validation</button> <span id="billStatus"></span></div></form>
+</div>
+<div class="panel"><h3 data-i18n="billing_history_title">Historique des paiements</h3><div id="billHistory"></div></div>
+</section>
 <section id="referralTab" class="hidden">
 <div class="panel"><h3 data-i18n="referral_title">Parrainez et gagnez</h3>
 <p class="muted" id="refDesc"></p>
@@ -346,6 +364,13 @@ fr: {
   dash_prospects_month:"Prospects ce mois", dash_unlimited:"illimité", empty_products_dash:"Aucun produit.", stock_label:"Stock",
   product_photo_label:"Photo du produit (optionnel)", product_photo_uploading:"Envoi de la photo…", product_photo_ok:"Photo ajoutée.", product_photo_error:"Impossible de lire cette image.",
   btn_change_photo:"Changer la photo",
+  placeholder_payer_phone:"Votre numéro (celui utilisé pour payer)", placeholder_reference:"Référence de la transaction", billing_th_date:"Date", billing_th_ref:"Référence", nav_billing:"Abonnement", billing_title:"Mon abonnement", billing_owner_only:"Seul l'administrateur de l'équipe peut gérer l'abonnement.", billing_renew_title:"Renouveler ou changer de forfait",
+  billing_plan_label:"Forfait", billing_method_label:"Payer avec", billing_price:"Prix mensuel", billing_until:"Actif jusqu'au", billing_days_left:"{n} jour(s) restant(s)", billing_expired:"Échéance dépassée",
+  billing_instructions:"Envoyez <strong>{price} FCFA</strong> par <strong>{label}</strong> au numéro {number}, puis indiquez ci-dessous le numéro depuis lequel vous avez payé et la référence de la transaction (reçue par SMS).",
+  billing_copy_number:"Copier le numéro", billing_submit:"J'ai payé — envoyer pour validation", billing_sent:"Envoyé ! Nous validons votre paiement sous peu.",
+  billing_pending_note:"Votre paiement est en cours de validation : vous serez prévenu dès qu'il sera confirmé.", billing_renew_hint:"Chaque paiement validé prolonge votre abonnement de 30 jours à partir de l'échéance actuelle.",
+  billing_history_title:"Historique des paiements", billing_no_history:"Aucun paiement enregistré.", billing_st_pending:"⏳ En attente", billing_st_approved:"✅ Validé", billing_st_rejected:"❌ Refusé",
+  billing_banner_late:"Votre abonnement est arrivé à échéance. Renouvelez-le pour ne pas être interrompu.", billing_banner_soon:"Votre abonnement expire dans {n} jour(s).", billing_banner_btn:"Renouveler",
   nav_promo:"Studio promo", promo_title:"Studio promo", promo_desc:"Créez en quelques secondes un texte et une affiche pour un produit de votre catalogue, prêts à publier en statut WhatsApp ou sur les réseaux sociaux.", promo_empty:"Ajoutez d'abord un produit à votre catalogue.",
   promo_product_label:"Produit", promo_format_label:"Type de texte", promo_format_status:"Statut WhatsApp", promo_format_post:"Publication Facebook / Instagram", promo_format_broadcast:"Message à un client",
   btn_generate_text:"✨ Générer le texte", btn_generating:"Génération…", placeholder_promo_text:"Le texte apparaîtra ici — vous pouvez le modifier.", btn_copy_text:"Copier le texte",
@@ -483,6 +508,13 @@ en: {
   dash_prospects_month:"Leads this month", dash_unlimited:"unlimited", empty_products_dash:"No products.", stock_label:"Stock",
   product_photo_label:"Product photo (optional)", product_photo_uploading:"Uploading photo…", product_photo_ok:"Photo added.", product_photo_error:"Could not read this image.",
   btn_change_photo:"Change photo",
+  placeholder_payer_phone:"Your number (the one you paid with)", placeholder_reference:"Transaction reference", billing_th_date:"Date", billing_th_ref:"Reference", nav_billing:"Subscription", billing_title:"My subscription", billing_owner_only:"Only the team administrator can manage the subscription.", billing_renew_title:"Renew or change plan",
+  billing_plan_label:"Plan", billing_method_label:"Pay with", billing_price:"Monthly price", billing_until:"Active until", billing_days_left:"{n} day(s) left", billing_expired:"Past due",
+  billing_instructions:"Send <strong>{price} FCFA</strong> via <strong>{label}</strong> to the number {number}, then enter below the number you paid from and the transaction reference (received by SMS).",
+  billing_copy_number:"Copy number", billing_submit:"I paid — send for validation", billing_sent:"Sent! We will confirm your payment shortly.",
+  billing_pending_note:"Your payment is being validated: you will be notified once it is confirmed.", billing_renew_hint:"Each confirmed payment extends your subscription by 30 days from the current due date.",
+  billing_history_title:"Payment history", billing_no_history:"No payments recorded.", billing_st_pending:"⏳ Pending", billing_st_approved:"✅ Confirmed", billing_st_rejected:"❌ Rejected",
+  billing_banner_late:"Your subscription is past due. Renew it to avoid interruption.", billing_banner_soon:"Your subscription expires in {n} day(s).", billing_banner_btn:"Renew",
   nav_promo:"Promo studio", promo_title:"Promo studio", promo_desc:"Create a text and a poster for a product in your catalog in seconds, ready to post on WhatsApp Status or social media.", promo_empty:"Add a product to your catalog first.",
   promo_product_label:"Product", promo_format_label:"Text type", promo_format_status:"WhatsApp Status", promo_format_post:"Facebook / Instagram post", promo_format_broadcast:"Message to a customer",
   btn_generate_text:"✨ Generate text", btn_generating:"Generating…", placeholder_promo_text:"The text will appear here — you can edit it.", btn_copy_text:"Copy text",
@@ -782,7 +814,7 @@ async function load() {
 function tab(name) {
   currentTab=name;
   document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  ['dashboard','products','crm','assistant','conversations','orders','followups','analytics','team','promo','referral','settings'].forEach(x => $(x+'Tab').classList.toggle('hidden', x !== name));
+  ['dashboard','products','crm','assistant','conversations','orders','followups','analytics','team','promo','billing','referral','settings'].forEach(x => $(x+'Tab').classList.toggle('hidden', x !== name));
   if (name === 'products') { renderProducts(); renderOnboardingTemplates(); }
   if (name === 'crm') renderCRM();
   if (name === 'conversations') renderConversations();
@@ -791,6 +823,7 @@ function tab(name) {
   if (name === 'analytics') loadAnalytics();
   if (name === 'team') loadTeam();
   if (name === 'promo') loadPromo();
+  if (name === 'billing') loadBilling();
   if (name === 'referral') loadReferral();
   if (name === 'assistant') loadAiSettings();
   if (name === 'settings') { loadWhatsappSettings(); loadShopSettings(); loadPaymentSettings(); }
@@ -798,6 +831,7 @@ function tab(name) {
 
 function renderAll() {
   $('companyNameTag').textContent = data.company?.name ? '— '+data.company.name : '';
+  renderBillingBanner();
   renderDashboard(); renderProducts(); renderCRM(); renderConversations(); renderOrders(); renderFollowups(); renderAppointments(); populateProspectSelects(); initAiAutoReplyToggle(); renderAiUsagePanel();
 }
 function initAiAutoReplyToggle() {
@@ -1503,6 +1537,55 @@ async function copyPromoText(){
 function sharePromoText(){
   const v=$('promoText').value.trim(); if(!v) return;
   window.open('https://wa.me/?text='+encodeURIComponent(v),'_blank','noopener');
+}
+
+// Abonnement : échéance, renouvellement manuel (mobile money) et historique
+let billing=null;
+function billDate(d){ return new Date(d).toLocaleDateString(lang==='en'?'en-GB':'fr-FR',{day:'numeric',month:'long',year:'numeric'}); }
+function renderBillingBanner(){
+  const el=$('billingBanner'), nb=data.subscription?.nextBillingAt;
+  if(!el) return;
+  if(!nb){ el.classList.add('hidden'); return; }
+  const days=Math.ceil((new Date(nb)-Date.now())/86400000);
+  if(days>5){ el.classList.add('hidden'); return; }
+  const late=days<=0;
+  el.innerHTML='<div class="panel" style="border:2px solid '+(late?'#d62839':'#e9b949')+';margin:0;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>'+(late?'⚠️ '+t('billing_banner_late'):'⏳ '+tf('billing_banner_soon',{n:days}))+'</span><button class="btn primary" onclick="tab(\'billing\')">'+t('billing_banner_btn')+'</button></div>';
+  el.classList.remove('hidden');
+}
+async function loadBilling(){
+  $('billOwnerOnly').classList.add('hidden');
+  try{ billing=await api('/api/billing'); }
+  catch(e){ $('billStats').innerHTML=''; $('billOwnerOnly').classList.remove('hidden'); $('billRenewPanel').classList.add('hidden'); $('billHistory').innerHTML=''; return; }
+  $('billRenewPanel').classList.remove('hidden');
+  const d=billing.daysLeft;
+  const until=billing.nextBillingAt?billDate(billing.nextBillingAt):'—';
+  const left=d===null?'':(d<=0?t('billing_expired'):tf('billing_days_left',{n:d}));
+  $('billStats').innerHTML='<div class="stat"><div class="muted">'+t('billing_plan_label')+'</div><div class="num">'+esc(billing.plan||'—')+'</div></div>'+
+    '<div class="stat"><div class="muted">'+t('billing_price')+'</div><div class="num">'+money(billing.monthlyPrice)+'</div></div>'+
+    '<div class="stat"><div class="muted">'+t('billing_until')+'</div><div class="num" style="font-size:20px">'+until+'</div><div class="muted">'+left+'</div></div>';
+  const sel=$('billPlan'), cur=sel.value||billing.plan;
+  sel.innerHTML=Object.entries(billing.plans).map(([n,p])=>'<option value="'+n+'">'+n+' — '+money(p)+'</option>').join('');
+  if([...sel.options].some(o=>o.value===cur)) sel.value=cur;
+  $('billPendingNote').textContent=billing.pending?t('billing_pending_note'):t('billing_renew_hint');
+  $('billBtn').disabled=!!billing.pending;
+  updateBillingInstructions();
+  const st={pending:'billing_st_pending',approved:'billing_st_approved',rejected:'billing_st_rejected'};
+  $('billHistory').innerHTML=billing.history.length?'<table><thead><tr><th>'+t('billing_th_date')+'</th><th>'+t('billing_plan_label')+'</th><th>'+t('th_amount')+'</th><th>'+t('billing_th_ref')+'</th><th>'+t('th_status')+'</th></tr></thead><tbody>'+
+    billing.history.map(h=>'<tr><td>'+billDate(h.createdAt)+'</td><td>'+esc(h.plan)+'</td><td>'+money(h.amount)+'</td><td>'+esc(h.reference||'—')+'</td><td>'+t(st[h.status]||'billing_st_pending')+'</td></tr>').join('')+'</tbody></table>':'<div class="empty">'+t('billing_no_history')+'</div>';
+}
+function billNumber(){ return $('billMethod').value==='orange_money'?billing.payment.orangeMoney:billing.payment.mtnMomo; }
+function updateBillingInstructions(){
+  if(!billing) return;
+  const label=$('billMethod').value==='orange_money'?'Orange Money':'MTN Mobile Money';
+  $('billInstructions').innerHTML=tf('billing_instructions',{price:Number(billing.plans[$('billPlan').value]).toLocaleString('fr-FR'),label:label,number:'<strong>'+esc(billNumber())+'</strong>'});
+}
+async function copyBillNumber(){ try{ await navigator.clipboard.writeText(billNumber()); $('billStatus').innerHTML='<span class="badge">'+t('shop_link_copied')+'</span>'; }catch(e){} }
+async function submitRenewal(e){
+  e.preventDefault(); $('billStatus').innerHTML='';
+  try{
+    await api('/api/billing/renew',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan:$('billPlan').value,paymentMethod:$('billMethod').value,payerPhone:$('billPayer').value.trim(),reference:$('billRef').value.trim()})});
+    $('billRef').value=''; await loadBilling(); $('billStatus').innerHTML='<span class="badge">'+t('billing_sent')+'</span>';
+  }catch(x){ $('billStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
 }
 
 // Parrainage

@@ -306,3 +306,7 @@ CREATE INDEX IF NOT EXISTS referral_commissions_referrer_idx ON referral_commiss
 -- Photos de produits téléversées (1.10.12)
 CREATE TABLE IF NOT EXISTS product_images (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE, data BYTEA NOT NULL, mime TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS product_images_company_idx ON product_images(company_id);
+
+-- Paiement manuel : anti-doublon de référence et échéance d'abonnement (1.10.14)
+ALTER TABLE payment_requests ADD COLUMN IF NOT EXISTS reference_norm TEXT;
+CREATE INDEX IF NOT EXISTS payment_requests_refnorm_idx ON payment_requests(reference_norm);
