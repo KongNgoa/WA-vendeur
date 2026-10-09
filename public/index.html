@@ -80,7 +80,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <button class="active" data-tab="dashboard" onclick="tab('dashboard')">📊 <span data-i18n="nav_dashboard">Tableau de bord</span></button>
 <button data-tab="products" onclick="tab('products')">📦 <span data-i18n="nav_products">Produits</span></button>
 <button data-tab="crm" onclick="tab('crm')">👥 <span data-i18n="nav_crm">CRM</span></button>
-<button data-tab="conversations" onclick="tab('conversations')">💬 <span data-i18n="nav_conversations">Conversations</span></button><button data-tab="orders" onclick="tab('orders')">🛒 <span data-i18n="nav_orders">Commandes</span></button><button data-tab="followups" onclick="tab('followups')">🔁 <span data-i18n="nav_followups">Relances</span></button><button data-tab="analytics" onclick="tab('analytics')">📈 <span data-i18n="nav_analytics">Analytics</span></button><button data-tab="assistant" onclick="tab('assistant')">🤖 <span data-i18n="nav_assistant">Assistant IA</span></button><button data-tab="team" onclick="tab('team')">👥 <span data-i18n="nav_team">Équipe</span></button><button data-tab="referral" onclick="tab('referral')">🤝 <span data-i18n="nav_referral">Parrainage</span></button><button data-tab="settings" onclick="tab('settings')">⚙️ <span data-i18n="nav_settings">Réglages WhatsApp</span></button>
+<button data-tab="conversations" onclick="tab('conversations')">💬 <span data-i18n="nav_conversations">Conversations</span></button><button data-tab="orders" onclick="tab('orders')">🛒 <span data-i18n="nav_orders">Commandes</span></button><button data-tab="followups" onclick="tab('followups')">🔁 <span data-i18n="nav_followups">Relances</span></button><button data-tab="analytics" onclick="tab('analytics')">📈 <span data-i18n="nav_analytics">Analytics</span></button><button data-tab="assistant" onclick="tab('assistant')">🤖 <span data-i18n="nav_assistant">Assistant IA</span></button><button data-tab="team" onclick="tab('team')">👥 <span data-i18n="nav_team">Équipe</span></button><button data-tab="promo" onclick="tab('promo')">🎨 <span data-i18n="nav_promo">Studio promo</span></button><button data-tab="referral" onclick="tab('referral')">🤝 <span data-i18n="nav_referral">Parrainage</span></button><button data-tab="settings" onclick="tab('settings')">⚙️ <span data-i18n="nav_settings">Réglages WhatsApp</span></button>
 </nav>
 
 <section id="dashboardTab">
@@ -230,6 +230,32 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 </div>
 </section>
 
+<section id="promoTab" class="hidden">
+<div class="panel"><h3 data-i18n="promo_title">Studio promo</h3>
+<p class="muted" data-i18n="promo_desc">Créez en quelques secondes un texte et une affiche pour un produit de votre catalogue, prêts à publier en statut WhatsApp ou sur les réseaux sociaux.</p>
+<div id="promoEmpty" class="empty hidden" data-i18n="promo_empty">Ajoutez d'abord un produit à votre catalogue.</div>
+<div id="promoBody">
+<div class="formgrid">
+<div><label class="muted" data-i18n="promo_product_label">Produit</label><select id="promoProduct" onchange="drawPoster()"></select></div>
+<div><label class="muted" data-i18n="promo_format_label">Type de texte</label><select id="promoFormat"><option value="status" data-i18n="promo_format_status">Statut WhatsApp</option><option value="post" data-i18n="promo_format_post">Publication Facebook / Instagram</option><option value="broadcast" data-i18n="promo_format_broadcast">Message à un client</option></select></div>
+<div class="full"><button type="button" class="btn primary" id="promoGenBtn" onclick="generatePromoTextUi()" data-i18n="btn_generate_text">Générer le texte</button></div>
+<div class="full"><textarea id="promoText" rows="8" style="width:100%" placeholder="Le texte apparaîtra ici — vous pouvez le modifier." data-i18n-placeholder="placeholder_promo_text"></textarea></div>
+<div class="full"><button type="button" class="btn" onclick="copyPromoText()" data-i18n="btn_copy_text">Copier le texte</button> <button type="button" class="btn" onclick="sharePromoText()" data-i18n="btn_share_whatsapp">Partager sur WhatsApp</button></div>
+</div>
+<div id="promoStatus" style="margin-top:10px"></div>
+</div>
+</div>
+<div class="panel" id="posterPanel"><h3 data-i18n="promo_poster_title">Affiche</h3>
+<div class="formgrid">
+<div><label class="muted" data-i18n="promo_size_label">Format</label><select id="posterSize" onchange="drawPoster()"><option value="story" data-i18n="promo_size_story">Statut WhatsApp (9:16)</option><option value="square" data-i18n="promo_size_square">Carré (1:1)</option></select></div>
+<div><label class="muted" data-i18n="promo_theme_label">Couleurs</label><select id="posterTheme" onchange="drawPoster()"><option value="brand" data-i18n="promo_theme_brand">Bleu et vert</option><option value="gold" data-i18n="promo_theme_gold">Nuit et or</option><option value="red" data-i18n="promo_theme_red">Rouge vif</option><option value="green" data-i18n="promo_theme_green">Vert nature</option></select></div>
+<input id="posterHeadline" class="full" maxlength="24" placeholder="Accroche (ex. NOUVEAUTÉ, PROMO)" data-i18n-placeholder="placeholder_poster_headline" oninput="drawPoster()">
+</div>
+<canvas id="posterCanvas" style="width:100%;max-width:340px;border-radius:14px;display:block;margin:14px 0;box-shadow:0 4px 16px rgba(0,0,0,.18)"></canvas>
+<div><button type="button" class="btn primary" onclick="downloadPoster()" data-i18n="btn_download_poster">Télécharger l'affiche</button> <button type="button" class="btn hidden" id="posterShareBtn" onclick="sharePoster()" data-i18n="btn_share_poster">Partager l'affiche</button></div>
+<div id="posterStatus" style="margin-top:10px"></div>
+</div>
+</section>
 <section id="referralTab" class="hidden">
 <div class="panel"><h3 data-i18n="referral_title">Parrainez et gagnez</h3>
 <p class="muted" id="refDesc"></p>
@@ -315,6 +341,14 @@ fr: {
   panel_commercial_state:"État commercial", panel_recent_catalog:"Catalogue récent",
   dash_hot:"🔥 Chauds", dash_warm:"🟠 Tièdes", dash_cold:"❄️ Froids", dash_products:"Produits", dash_low_stock:"Stock faible",
   dash_prospects_month:"Prospects ce mois", dash_unlimited:"illimité", empty_products_dash:"Aucun produit.", stock_label:"Stock",
+  nav_promo:"Studio promo", promo_title:"Studio promo", promo_desc:"Créez en quelques secondes un texte et une affiche pour un produit de votre catalogue, prêts à publier en statut WhatsApp ou sur les réseaux sociaux.", promo_empty:"Ajoutez d'abord un produit à votre catalogue.",
+  promo_product_label:"Produit", promo_format_label:"Type de texte", promo_format_status:"Statut WhatsApp", promo_format_post:"Publication Facebook / Instagram", promo_format_broadcast:"Message à un client",
+  btn_generate_text:"✨ Générer le texte", btn_generating:"Génération…", placeholder_promo_text:"Le texte apparaîtra ici — vous pouvez le modifier.", btn_copy_text:"Copier le texte",
+  promo_poster_title:"Affiche", promo_size_label:"Format", promo_size_story:"Statut WhatsApp (9:16)", promo_size_square:"Carré (1:1)", promo_theme_label:"Couleurs",
+  promo_theme_brand:"Bleu et vert", promo_theme_gold:"Nuit et or", promo_theme_red:"Rouge vif", promo_theme_green:"Vert nature",
+  placeholder_poster_headline:"Accroche (ex. NOUVEAUTÉ, PROMO)", btn_download_poster:"Télécharger l'affiche", btn_share_poster:"Partager l'affiche",
+  promo_copied:"Texte copié.", promo_ai_ok:"Texte rédigé par l'IA", promo_no_ai:"IA indisponible : modèle de texte utilisé", promo_quota:"Quota IA du mois atteint : modèle de texte utilisé", promo_fallback:"Modèle de texte utilisé",
+  promo_photo_failed:"La photo de ce produit n'a pas pu être intégrée à l'affiche (le site qui l'héberge l'interdit). Hébergez-la ailleurs ou ajoutez-la après téléchargement.", promo_default_headline:"Nouveau", poster_order_cta:"Commandez sur WhatsApp", poster_powered:"Propulsé par VENDIA",
   nav_referral:"Parrainage", referral_title:"Parrainez et gagnez", referral_desc:"Partagez votre lien : pour chaque entreprise qui s'abonne grâce à vous, vous gagnez {p} % de son paiement (sur ses {n} premiers paiements). Les commissions vous sont versées par mobile money.",
   referral_link_label:"Votre lien de parrainage", referral_code_label:"Votre code :", btn_share_whatsapp:"Partager sur WhatsApp",
   referral_share_text:"Découvre VENDIA, l'assistant commercial IA qui répond à tes clients sur WhatsApp 24h/24 : {link}",
@@ -442,6 +476,14 @@ en: {
   panel_commercial_state:"Sales overview", panel_recent_catalog:"Recent catalog",
   dash_hot:"🔥 Hot", dash_warm:"🟠 Warm", dash_cold:"❄️ Cold", dash_products:"Products", dash_low_stock:"Low stock",
   dash_prospects_month:"Leads this month", dash_unlimited:"unlimited", empty_products_dash:"No products.", stock_label:"Stock",
+  nav_promo:"Promo studio", promo_title:"Promo studio", promo_desc:"Create a text and a poster for a product in your catalog in seconds, ready to post on WhatsApp Status or social media.", promo_empty:"Add a product to your catalog first.",
+  promo_product_label:"Product", promo_format_label:"Text type", promo_format_status:"WhatsApp Status", promo_format_post:"Facebook / Instagram post", promo_format_broadcast:"Message to a customer",
+  btn_generate_text:"✨ Generate text", btn_generating:"Generating…", placeholder_promo_text:"The text will appear here — you can edit it.", btn_copy_text:"Copy text",
+  promo_poster_title:"Poster", promo_size_label:"Format", promo_size_story:"WhatsApp Status (9:16)", promo_size_square:"Square (1:1)", promo_theme_label:"Colors",
+  promo_theme_brand:"Blue and green", promo_theme_gold:"Night and gold", promo_theme_red:"Bright red", promo_theme_green:"Nature green",
+  placeholder_poster_headline:"Headline (e.g. NEW, SALE)", btn_download_poster:"Download poster", btn_share_poster:"Share poster",
+  promo_copied:"Text copied.", promo_ai_ok:"Text written by AI", promo_no_ai:"AI unavailable: text template used", promo_quota:"Monthly AI quota reached: text template used", promo_fallback:"Text template used",
+  promo_photo_failed:"This product's photo could not be placed on the poster (its host blocks it). Host it elsewhere or add it after downloading.", promo_default_headline:"New", poster_order_cta:"Order on WhatsApp", poster_powered:"Powered by VENDIA",
   nav_referral:"Referrals", referral_title:"Refer and earn", referral_desc:"Share your link: for every business that subscribes through you, you earn {p}% of its payment (on its first {n} payments). Commissions are paid out by mobile money.",
   referral_link_label:"Your referral link", referral_code_label:"Your code:", btn_share_whatsapp:"Share on WhatsApp",
   referral_share_text:"Check out VENDIA, the AI sales assistant that answers your customers on WhatsApp 24/7: {link}",
@@ -733,7 +775,7 @@ async function load() {
 function tab(name) {
   currentTab=name;
   document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  ['dashboard','products','crm','assistant','conversations','orders','followups','analytics','team','referral','settings'].forEach(x => $(x+'Tab').classList.toggle('hidden', x !== name));
+  ['dashboard','products','crm','assistant','conversations','orders','followups','analytics','team','promo','referral','settings'].forEach(x => $(x+'Tab').classList.toggle('hidden', x !== name));
   if (name === 'products') { renderProducts(); renderOnboardingTemplates(); }
   if (name === 'crm') renderCRM();
   if (name === 'conversations') renderConversations();
@@ -741,6 +783,7 @@ function tab(name) {
   if (name === 'followups') { renderFollowups(); renderAppointments(); }
   if (name === 'analytics') loadAnalytics();
   if (name === 'team') loadTeam();
+  if (name === 'promo') loadPromo();
   if (name === 'referral') loadReferral();
   if (name === 'assistant') loadAiSettings();
   if (name === 'settings') { loadWhatsappSettings(); loadShopSettings(); loadPaymentSettings(); }
@@ -1265,6 +1308,165 @@ async function testWhatsappSettings(){
       ? '<span class="badge">'+t('test_success_prefix')+' '+esc(r.verifiedName||r.displayPhoneNumber||t('test_verified_number'))+'</span>'
       : '<span class="error">'+t('test_fail_prefix')+' '+esc(r.error||t('test_fail_default'))+'</span>';
   }catch(x){ $('wStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
+}
+
+// Studio promo : le texte vient du serveur, l'affiche est dessinée ici (canvas)
+// puis exportée en PNG. La photo produit n'est intégrée que si son site
+// l'autorise (CORS) : sinon l'affiche s'affiche sans photo, mais reste
+// toujours téléchargeable.
+let promoShop=null, posterImg=null, posterImgFor='', posterPhotoFailed=false;
+const POSTER_THEMES={
+  brand:{bg:['#1f6feb','#1fa971'],ink:'#ffffff',accent:'#ffd84d',accentInk:'#10223f'},
+  gold:{bg:['#0b1b33','#1a2f55'],ink:'#ffffff',accent:'#e9b949',accentInk:'#1a1203'},
+  red:{bg:['#d62839','#7a1020'],ink:'#ffffff',accent:'#ffd84d',accentInk:'#3a0a10'},
+  green:{bg:['#1b7a4b','#0d3b27'],ink:'#ffffff',accent:'#f4e285',accentInk:'#0d3b27'}
+};
+async function loadPromo(){
+  const prods=data.products||[];
+  $('promoEmpty').classList.toggle('hidden',prods.length>0);
+  $('promoBody').classList.toggle('hidden',!prods.length);
+  $('posterPanel').classList.toggle('hidden',!prods.length);
+  const sel=$('promoProduct'), cur=sel.value;
+  sel.innerHTML=prods.map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');
+  if(cur && [...sel.options].some(o=>o.value===cur)) sel.value=cur;
+  $('posterShareBtn').classList.toggle('hidden',!canSharePosterFile());
+  if(!promoShop){ try{ promoShop=await api('/api/settings/shop'); }catch(e){ promoShop={}; } }
+  if(prods.length) drawPoster();
+}
+function posterProduct(){ const ps=data.products||[]; return ps.find(p=>p.id===$('promoProduct').value)||ps[0]; }
+function posterRoundRect(ctx,x,y,w,h,r){
+  r=Math.min(r,w/2,h/2); ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+function posterFit(ctx,text,maxW){
+  text=String(text); if(ctx.measureText(text).width<=maxW) return text;
+  while(text.length>1 && ctx.measureText(text+'…').width>maxW) text=text.slice(0,-1);
+  return text.trimEnd()+'…';
+}
+function posterWrap(ctx,text,maxW,maxLines){
+  const words=String(text).split(/\s+/).filter(Boolean), lines=[]; let cur='';
+  for(let i=0;i<words.length;i++){
+    const test=cur?cur+' '+words[i]:words[i];
+    if(ctx.measureText(test).width<=maxW||!cur){ cur=test; }
+    else { lines.push(cur); cur=words[i]; if(lines.length===maxLines-1){ cur=words.slice(i).join(' '); break; } }
+  }
+  if(cur) lines.push(cur);
+  lines[lines.length-1]=posterFit(ctx,lines[lines.length-1]||'',maxW);
+  return lines;
+}
+function posterNumber(){
+  const d=String(promoShop?.whatsapp||''); if(!d) return '';
+  return (d.startsWith('237')&&d.length===12) ? '+237 '+d.slice(3,6)+' '+d.slice(6,9)+' '+d.slice(9) : '+'+d;
+}
+function drawPoster(){
+  const p=posterProduct(); if(!p) return;
+  const key=p.id+'|'+(p.imageUrl||'');
+  if(posterImgFor!==key){
+    posterImgFor=key; posterImg=null; posterPhotoFailed=false;
+    if(p.imageUrl){
+      const im=new Image(); im.crossOrigin='anonymous'; im.referrerPolicy='no-referrer';
+      im.onload=()=>{ if(posterImgFor===key){ posterImg=im; drawPoster(); } };
+      im.onerror=()=>{ if(posterImgFor===key){ posterPhotoFailed=true; drawPoster(); } };
+      im.src=p.imageUrl;
+    }
+  }
+  const cv=$('posterCanvas'), square=$('posterSize').value==='square';
+  const W=1080, H=square?1080:1920; cv.width=W; cv.height=H;
+  const ctx=cv.getContext('2d'), th=POSTER_THEMES[$('posterTheme').value]||POSTER_THEMES.brand;
+  const FONT='"Segoe UI",Roboto,Helvetica,Arial,sans-serif', pad=70;
+  const g=ctx.createLinearGradient(0,0,W,H); g.addColorStop(0,th.bg[0]); g.addColorStop(1,th.bg[1]);
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  ctx.globalAlpha=.10; ctx.fillStyle='#fff';
+  ctx.beginPath(); ctx.arc(W*.95,H*.08,W*.32,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(W*.02,H*.95,W*.26,0,Math.PI*2); ctx.fill();
+  ctx.globalAlpha=1; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  // en-tête : entreprise + accroche
+  let y=square?96:130;
+  ctx.fillStyle=th.ink; ctx.font='700 '+(square?40:46)+'px '+FONT;
+  ctx.fillText(posterFit(ctx,String(data.company?.name||'').toUpperCase(),W-2*pad),W/2,y);
+  const headline=($('posterHeadline').value.trim()||t('promo_default_headline')).toUpperCase();
+  y+=square?30:50;
+  ctx.font='800 '+(square?44:54)+'px '+FONT;
+  const hw=Math.min(W-2*pad,ctx.measureText(headline).width+90), hh=square?76:92;
+  posterRoundRect(ctx,(W-hw)/2,y,hw,hh,hh/2); ctx.fillStyle=th.accent; ctx.fill();
+  ctx.fillStyle=th.accentInk; ctx.fillText(posterFit(ctx,headline,hw-60),W/2,y+hh*0.68);
+  const photoTop=y+hh+(square?30:50);
+  // pied de page, appel à l'action, prix et nom du produit (de bas en haut)
+  let by=H-(square?36:60);
+  ctx.font='500 '+(square?24:28)+'px '+FONT; ctx.fillStyle=th.ink; ctx.globalAlpha=.7;
+  ctx.fillText(t('poster_powered'),W/2,by); ctx.globalAlpha=1;
+  by-=square?58:84;
+  const num=posterNumber();
+  if(num){ ctx.font='800 '+(square?54:66)+'px '+FONT; ctx.fillStyle=th.accent; ctx.fillText(num,W/2,by); by-=square?56:72; }
+  ctx.font='600 '+(square?34:40)+'px '+FONT; ctx.fillStyle=th.ink; ctx.fillText(t('poster_order_cta'),W/2,by);
+  by-=square?48:72;
+  const price=money(p.price).replace(/[  ]/g,' ');
+  ctx.font='900 '+(square?84:104)+'px '+FONT;
+  const pw=Math.min(W-2*pad,ctx.measureText(price).width+120), phh=square?124:150;
+  by-=phh; posterRoundRect(ctx,(W-pw)/2,by,pw,phh,phh/2); ctx.fillStyle=th.accent; ctx.fill();
+  ctx.fillStyle=th.accentInk; ctx.fillText(posterFit(ctx,price,pw-70),W/2,by+phh*0.7);
+  by-=square?36:56;
+  const nameSize=square?56:72, lh=square?64:82;
+  ctx.font='800 '+nameSize+'px '+FONT; ctx.fillStyle=th.ink;
+  const lines=posterWrap(ctx,p.name,W-2*pad,2);
+  for(let i=lines.length-1;i>=0;i--){ ctx.fillText(lines[i],W/2,by); by-=lh; }
+  const photoBottom=by+lh-nameSize-24;
+  // photo (ou pastille « sac » si pas de photo exploitable)
+  const bx=pad, bw=W-2*pad, bh=photoBottom-photoTop;
+  if(bh>180){
+    ctx.save(); posterRoundRect(ctx,bx,photoTop,bw,bh,40); ctx.clip();
+    if(posterImg){
+      const s=Math.max(bw/posterImg.width,bh/posterImg.height), dw=posterImg.width*s, dh=posterImg.height*s;
+      ctx.drawImage(posterImg,bx+(bw-dw)/2,photoTop+(bh-dh)/2,dw,dh);
+    } else {
+      ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fillRect(bx,photoTop,bw,bh);
+      ctx.font=Math.round(Math.min(bw,bh)*0.42)+'px '+FONT; ctx.textBaseline='middle'; ctx.fillStyle='#fff';
+      ctx.fillText('🛍️',W/2,photoTop+bh/2);
+    }
+    ctx.restore();
+    posterRoundRect(ctx,bx,photoTop,bw,bh,40); ctx.lineWidth=6; ctx.strokeStyle='rgba(255,255,255,.55)'; ctx.stroke();
+  }
+  $('posterStatus').innerHTML = (p.imageUrl && posterPhotoFailed) ? '<span class="muted">'+t('promo_photo_failed')+'</span>' : '';
+}
+function posterFileName(){
+  const p=posterProduct();
+  return 'affiche-'+String((p&&p.name)||'produit').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40)+'.png';
+}
+function downloadPoster(){
+  $('posterCanvas').toBlob(b=>{
+    if(!b) return;
+    const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=posterFileName();
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  },'image/png');
+}
+function canSharePosterFile(){
+  try{ return !!(navigator.canShare && navigator.canShare({files:[new File([''],'a.png',{type:'image/png'})]})); }catch(e){ return false; }
+}
+function sharePoster(){
+  $('posterCanvas').toBlob(async b=>{
+    if(!b) return;
+    try{ await navigator.share({files:[new File([b],posterFileName(),{type:'image/png'})],text:$('promoText').value||''}); }catch(e){}
+  },'image/png');
+}
+async function generatePromoTextUi(){
+  const pid=$('promoProduct').value; if(!pid) return;
+  const btn=$('promoGenBtn'); btn.disabled=true; btn.textContent=t('btn_generating'); $('promoStatus').innerHTML='';
+  try{
+    const r=await api('/api/promo/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({productId:pid,format:$('promoFormat').value,lang})});
+    $('promoText').value=r.text;
+    const msg=r.provider==='anthropic'?'promo_ai_ok':(r.quotaExceeded?'promo_quota':(r.aiUnavailable?'promo_no_ai':'promo_fallback'));
+    $('promoStatus').innerHTML='<span class="badge">'+t(msg)+'</span>';
+  }catch(x){ $('promoStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
+  btn.disabled=false; btn.textContent=t('btn_generate_text');
+}
+async function copyPromoText(){
+  const v=$('promoText').value; if(!v) return;
+  try{ await navigator.clipboard.writeText(v); $('promoStatus').innerHTML='<span class="badge">'+t('promo_copied')+'</span>'; }
+  catch(x){ $('promoText').select(); }
+}
+function sharePromoText(){
+  const v=$('promoText').value.trim(); if(!v) return;
+  window.open('https://wa.me/?text='+encodeURIComponent(v),'_blank','noopener');
 }
 
 // Parrainage
