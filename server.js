@@ -268,7 +268,7 @@ async function releaseBlockedOrders(companyId) {
 const ORDER_PUBLIC_COLS = `o.id,o.order_number AS number,
   CASE WHEN o.status='Bloquée' THEN NULL ELSE COALESCE(p.name,o.customer_name) END AS client,
   CASE WHEN o.status='Bloquée' THEN NULL ELSE COALESCE(p.phone,o.customer_phone) END AS phone,
-  o.amount,o.status,o.source,o.product_name AS "productName",o.quantity,
+  o.amount,o.status,o.source,o.notify_result AS notify,o.product_name AS "productName",o.quantity,
   CASE WHEN o.status='Bloquée' THEN NULL ELSE o.delivery_address END AS address,
   CASE WHEN o.status='Bloquée' THEN NULL ELSE o.note END AS note,o.created_at AS "createdAt"`;
 
@@ -888,8 +888,28 @@ async function sendWhatsAppMessage(company, toPhone, text) {
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
-      return { error: data?.error?.message || ('Erreur WhatsApp (HTTP ' + resp.status + ')') };
+      return { error: data?.error?.message || ('Erreur WhatsApp (HTTP ' + resp.status + ')'), outsideWindow: data?.error?.code === 131047 || /re-?engage|24.?hour/i.test(data?.error?.message || '') };
     }
+    return { providerMessageId: data?.messages?.[0]?.id || null };
+  } catch (e) {
+    return { error: 'Connexion à WhatsApp impossible : ' + e.message };
+  }
+}
+
+// Message « modèle » (template) approuvé par Meta : seul type de message
+// autorisé hors de la fenêtre de 24 h après le dernier message du client.
+async function sendWhatsAppTemplate(company, toPhone, name, lang, params) {
+  const to = formatWhatsAppPhone(toPhone);
+  if (!to) return { error: 'Numéro de destinataire invalide' };
+  try {
+    const resp = await fetch(`https://graph.facebook.com/${WHATSAPP_API_VERSION}/${company.whatsappPhoneNumberId}/messages`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + company.whatsappAccessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'template', template: { name, language: { code: lang || 'fr' },
+        components: [{ type: 'body', parameters: params.map(p => ({ type: 'text', text: String(p).slice(0, 200) })) }] } })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { error: data?.error?.message || ('Erreur WhatsApp (HTTP ' + resp.status + ')') };
     return { providerMessageId: data?.messages?.[0]?.id || null };
   } catch (e) {
     return { error: 'Connexion à WhatsApp impossible : ' + e.message };
@@ -1102,6 +1122,57 @@ async function maybeSendWhatsApp(companyId, conv, text) {
   return sendWhatsAppMessage(company, conv.phone, text);
 }
 
+// Notifications automatiques de suivi de commande (WhatsApp). Activées par
+// l'entreprise (companies.order_notify_enabled). Message libre d'abord (gratuit
+// dans la fenêtre de 24 h) ; si le client n'a pas écrit récemment, repli sur un
+// modèle Meta approuvé (order_notify_template : {{1}} prénom, {{2}} n° de
+// commande, {{3}} statut) s'il est configuré. Jamais bloquant pour la commande.
+const ORDER_NOTIFY_STATUSES = ['Confirmée', 'En préparation', 'Livrée', 'Annulée'];
+function orderNotifyText(en, company, name, number, status) {
+  const hi = name ? (en ? 'Hello ' : 'Bonjour ') + name : (en ? 'Hello' : 'Bonjour');
+  const T = en ? {
+    'Confirmée': `${hi}, your order ${number} at ${company} is confirmed ✅. We will get it ready for you.`,
+    'En préparation': `${hi}, your order ${number} at ${company} is being prepared 📦.`,
+    'Livrée': `${hi}, your order ${number} at ${company} has been delivered 🎉. Thank you for your trust!`,
+    'Annulée': `${hi}, your order ${number} at ${company} has been cancelled. Reply to this message if you need help.`
+  } : {
+    'Confirmée': `${hi}, votre commande ${number} chez ${company} est confirmée ✅. Nous la préparons pour vous.`,
+    'En préparation': `${hi}, votre commande ${number} chez ${company} est en cours de préparation 📦.`,
+    'Livrée': `${hi}, votre commande ${number} chez ${company} a été livrée 🎉. Merci de votre confiance !`,
+    'Annulée': `${hi}, votre commande ${number} chez ${company} a été annulée. Répondez à ce message si vous avez besoin d'aide.`
+  };
+  return T[status];
+}
+async function notifyOrderStatus(companyId, orderId, status) {
+  if (!ORDER_NOTIFY_STATUSES.includes(status)) return null;
+  try {
+    const r = await query(`SELECT o.order_number AS number,o.last_notified_status AS last,COALESCE(p.name,o.customer_name) AS name,COALESCE(p.phone,o.customer_phone) AS phone,
+        c.name AS company,c.ai_language AS lang,c.order_notify_enabled AS enabled,c.order_notify_template AS tpl,c.order_notify_lang AS tplLang,
+        c.whatsapp_phone_number_id AS "whatsappPhoneNumberId",c.whatsapp_access_token AS "whatsappAccessToken"
+      FROM orders o JOIN companies c ON c.id=o.company_id LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.id=$1 AND o.company_id=$2`, [orderId, companyId]);
+    const o = r.rows[0];
+    if (!o || !o.enabled) return null;
+    if (o.last === status) return null; // déjà notifié pour ce statut
+    const save = async result => { await query('UPDATE orders SET last_notified_status=$1,notify_result=$2 WHERE id=$3', [status, result, orderId]); return result; };
+    if (!o.phone) return save('failed: pas de numéro client');
+    if (!o.whatsappPhoneNumberId || !o.whatsappAccessToken) return save('failed: WhatsApp non configuré');
+    const company = { whatsappPhoneNumberId: o.whatsappPhoneNumberId, whatsappAccessToken: decryptSecret(o.whatsappAccessToken) };
+    if (!company.whatsappAccessToken) return save('failed: jeton WhatsApp illisible');
+    const first = String(o.name || '').trim().split(/\s+/)[0] || '';
+    const text = orderNotifyText(/^en/i.test(o.lang || ''), o.company, first, o.number, status);
+    let sent = await sendWhatsAppMessage(company, o.phone, text);
+    if (sent.error && sent.outsideWindow && o.tpl) {
+      sent = await sendWhatsAppTemplate(company, o.phone, o.tpl, o.tplLang || 'fr', [first || 'client', o.number, status]);
+      if (!sent.error) return save('sent: modèle');
+    }
+    if (sent.error) return save('failed: ' + (sent.outsideWindow && !o.tpl ? 'client hors fenêtre 24 h — configurez un modèle Meta' : sent.error).slice(0, 200));
+    return save('sent');
+  } catch (e) {
+    console.error('[order-notify] echec orderId=%s: %s', orderId, e.message);
+    return null;
+  }
+}
+
 // Statut du quota mensuel de nouveaux prospects (plan Starter/Business/Pro —
 // voir PLAN_LIMITS). limit=null signifie illimité. Utilisé à la fois pour la
 // création manuelle (POST /api/prospects) et pour la création automatique
@@ -1221,8 +1292,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.21',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.21'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.22',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.22'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -1958,6 +2029,20 @@ async function handler(req,res) {
   // automatiquement (désactivé) à la première lecture pour que l'entreprise le
   // voie tout de suite ; elle choisit ensuite de l'activer. Une vitrine ne peut
   // être activée qu'avec un numéro WhatsApp valide (c'est son bouton principal).
+  // Notifications WhatsApp automatiques de suivi de commande (propriétaire/admin).
+  if(u.pathname==='/api/settings/order-notify' && (req.method==='GET'||req.method==='PATCH')) {
+    if(req.method==='PATCH') {
+      if(!['owner','admin'].includes(await getUserRole(session.userId))) return json(res,403,{error:'Réservé au propriétaire ou à un administrateur.'});
+      const b=await body(req);
+      const tpl=String(b.template||'').trim();
+      if(tpl && !/^[a-z0-9_]{1,512}$/.test(tpl)) return json(res,400,{error:'Nom de modèle invalide : minuscules, chiffres et _ uniquement (tel que dans Meta).'});
+      const lang=String(b.lang||'fr').trim();
+      if(!/^[a-z]{2}(_[A-Z]{2})?$/.test(lang)) return json(res,400,{error:'Code langue invalide (ex. fr, en, en_US).'});
+      await query('UPDATE companies SET order_notify_enabled=$1,order_notify_template=$2,order_notify_lang=$3 WHERE id=$4',[Boolean(b.enabled),tpl||null,lang,companyId]);
+    }
+    const r=await query('SELECT order_notify_enabled AS enabled,order_notify_template AS template,order_notify_lang AS lang FROM companies WHERE id=$1',[companyId]);
+    return json(res,200,{enabled:r.rows[0].enabled,template:r.rows[0].template||'',lang:r.rows[0].lang||'fr'});
+  }
   if(req.method==='GET'&&u.pathname==='/api/settings/shop') {
     let r=await query('SELECT name,shop_slug AS slug,shop_enabled AS enabled,shop_whatsapp AS whatsapp,shop_tagline AS tagline,shop_fb_pixel AS "fbPixel",shop_tiktok_pixel AS "tiktokPixel" FROM companies WHERE id=$1',[companyId]);
     let row=r.rows[0];
@@ -2549,7 +2634,9 @@ async function handler(req,res) {
       return u2;
     });
     if(!r.rows[0]) return json(res,404,{error:'Commande introuvable'});
-    return json(res,200,{order:r.rows[0]});
+    let notify=null;
+    if(cur.rows[0] && cur.rows[0].status!==r.rows[0].status) notify=await notifyOrderStatus(companyId,r.rows[0].id,r.rows[0].status);
+    return json(res,200,{order:r.rows[0],notify});
   }
   if(req.method==='GET'&&u.pathname==='/api/followups') {
     const r=await query('SELECT f.id,f.prospect_id AS "prospectId",p.name AS prospect,f.text,f.due_at AS "dueAt",f.status,f.source,f.cancelled_reason AS "cancelledReason",f.sent_at AS "sentAt",f.created_at AS "createdAt" FROM followups f LEFT JOIN prospects p ON p.id=f.prospect_id WHERE f.company_id=$1 ORDER BY f.due_at NULLS LAST LIMIT 500',[companyId]);
@@ -2831,7 +2918,7 @@ async function ensureMigrations() {
     "ALTER TABLE prospects ADD COLUMN IF NOT EXISTS stage TEXT NOT NULL DEFAULT 'Nouveau'",
     "UPDATE prospects SET stage=status WHERE status IN ('Nouveau','À contacter','En discussion','Gagné','Perdu')",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT",
-    // Commandes passées depuis la vitrine web (1.10.21) : détail du produit, de la
+    // Commandes passées depuis la vitrine web (1.10.22) : détail du produit, de la
     // livraison et du client (le prospect peut manquer si le quota CRM est atteint).
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id) ON DELETE SET NULL",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_name TEXT",
@@ -2842,6 +2929,11 @@ async function ensureMigrations() {
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_phone TEXT",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manuel'",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS stock_reserved BOOLEAN NOT NULL DEFAULT false",
+    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS order_notify_enabled BOOLEAN NOT NULL DEFAULT false",
+    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS order_notify_template TEXT",
+    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS order_notify_lang TEXT NOT NULL DEFAULT 'fr'",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS last_notified_status TEXT",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS notify_result TEXT",
     // Membre de l'équipe ayant traité la commande (dernier changement de statut / création manuelle).
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS handled_by UUID REFERENCES users(id) ON DELETE SET NULL",
     "CREATE TABLE IF NOT EXISTS product_images (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE, data BYTEA NOT NULL, mime TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
@@ -2886,6 +2978,6 @@ const server=http.createServer((req,res)=>handler(req,res).catch(e=>{ if(e&&e.st
 ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>console.error('[demarrage] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.21 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.22 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

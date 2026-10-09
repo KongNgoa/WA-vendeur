@@ -332,6 +332,15 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 </div>
 <p class="muted" id="metaConfigNote"></p>
 </div>
+<div class="panel"><h3 data-i18n="notify_title">Suivi de commande automatique (WhatsApp)</h3>
+<p class="muted" data-i18n="notify_desc">Quand vous passez une commande en Confirmée, En préparation, Livrée ou Annulée, le client reçoit automatiquement un message WhatsApp. WhatsApp n'autorise un message libre que dans les 24 h suivant le dernier message du client : au-delà, un modèle approuvé par Meta est nécessaire (facultatif ci-dessous).</p>
+<form class="formgrid" onsubmit="saveOrderNotify(event)">
+<label class="full"><input type="checkbox" id="nEnabled" style="width:auto"> <span data-i18n="notify_enable">Envoyer les mises à jour de commande aux clients</span></label>
+<div><label class="muted" data-i18n="notify_tpl_label">Nom du modèle Meta (optionnel)</label><input id="nTpl" maxlength="100" placeholder="ex. suivi_commande"></div>
+<div><label class="muted" data-i18n="notify_lang_label">Langue du modèle</label><input id="nLang" maxlength="5" value="fr" placeholder="fr"></div>
+<p class="muted full" data-i18n="notify_tpl_help" style="margin:0">Modèle (catégorie Utility) avec 3 variables dans le corps : {{1}} prénom du client, {{2}} numéro de commande, {{3}} statut. Exemple : « Bonjour {{1}}, votre commande {{2}} est maintenant : {{3}}. »</p>
+<div class="full"><button class="btn primary" data-i18n="save_btn">Enregistrer</button></div>
+</form><div id="nStatus" style="margin-top:10px"></div></div>
 <div class="panel"><h3 data-i18n="shop_title">Vitrine web (boutique en ligne)</h3>
 <p class="muted" data-i18n="shop_desc">Une page publique générée depuis votre catalogue, à partager sur Facebook, TikTok ou Instagram. Chaque produit a un bouton « Commander sur WhatsApp » : la vente se conclut dans la conversation avec votre assistant.</p>
 <form class="formgrid" onsubmit="saveShopSettings(event)">
@@ -376,6 +385,7 @@ fr: {
   nav_orders:"Commandes", nav_followups:"Relances", nav_analytics:"Analytics", nav_assistant:"Assistant IA", nav_team:"Équipe", nav_settings:"Réglages WhatsApp",
   analytics_response_rate:"Taux de réponse", analytics_avg_response_time:"Temps de réponse moyen", analytics_conversion_rate:"Conversion prospect→commande",
   sales_title:"Ventes & performance", sales_7d:"7 jours", sales_30d:"30 jours", sales_90d:"90 jours", sales_delivered:"CA livré", sales_pipeline:"En cours", sales_orders:"Commandes", sales_basket:"Panier moyen", sales_vs_prev:"vs période préc.", sales_source:"{shop} vitrine · {other} autres", sales_funnel:"Entonnoir : discussion → commande", sales_orders_14d:"Commandes — 14 derniers jours", sales_top:"Produits les plus vendus", sales_team:"Performance de l'équipe", sales_f_contacts:"Contacts", sales_f_engaged:"En discussion / intention d'achat", sales_f_ordered:"Ont commandé", sales_f_delivered:"Livrés", sales_th_product:"Produit", sales_th_units:"Unités", sales_th_revenue:"CA", sales_th_member:"Membre", sales_th_handled:"Commandes traitées", sales_th_deliv:"Livrées", sales_no_top:"Pas encore de ventes de produits sur la période (commandes vitrine uniquement).",
+  notify_title:"Suivi de commande automatique (WhatsApp)", notify_desc:"Quand vous passez une commande en Confirmée, En préparation, Livrée ou Annulée, le client reçoit automatiquement un message WhatsApp. WhatsApp n'autorise un message libre que dans les 24 h suivant le dernier message du client : au-delà, un modèle approuvé par Meta est nécessaire (facultatif ci-dessous).", notify_enable:"Envoyer les mises à jour de commande aux clients", notify_tpl_label:"Nom du modèle Meta (optionnel)", notify_lang_label:"Langue du modèle", notify_tpl_help:"Modèle (catégorie Utility) avec 3 variables dans le corps : {{1}} prénom du client, {{2}} numéro de commande, {{3}} statut. Exemple : « Bonjour {{1}}, votre commande {{2}} est maintenant : {{3}}. »", notify_saved:"Réglage enregistré", notify_sent:"Client prévenu", notify_failed:"Client non prévenu", notify_failed_alert:"Le statut est changé, mais le client n'a pas pu être prévenu par WhatsApp :",
   analytics_ai_usage:"Messages IA (ce mois)", analytics_messages_14d:"Messages reçus — 14 derniers jours", empty_analytics:"Pas encore assez de données pour les statistiques.",
   analytics_response_detail:"{answered} / {total} messages répondus (30j)", analytics_conversion_detail:"{converted} / {total} prospects convertis", analytics_no_data_30d:"Aucun message reçu sur les 30 derniers jours",
   stat_prospects:"Prospects", stat_hot_prospects:"Prospects chauds", stat_revenue:"CA commandes", stat_followups_due:"Relances à traiter",
@@ -534,6 +544,7 @@ en: {
   nav_orders:"Orders", nav_followups:"Follow-ups", nav_analytics:"Analytics", nav_assistant:"AI Assistant", nav_team:"Team", nav_settings:"WhatsApp Settings",
   analytics_response_rate:"Response rate", analytics_avg_response_time:"Average response time", analytics_conversion_rate:"Lead→order conversion",
   sales_title:"Sales & performance", sales_7d:"7 days", sales_30d:"30 days", sales_90d:"90 days", sales_delivered:"Delivered revenue", sales_pipeline:"In progress", sales_orders:"Orders", sales_basket:"Average basket", sales_vs_prev:"vs prev. period", sales_source:"{shop} storefront · {other} other", sales_funnel:"Funnel: conversation → order", sales_orders_14d:"Orders — last 14 days", sales_top:"Best-selling products", sales_team:"Team performance", sales_f_contacts:"Contacts", sales_f_engaged:"In discussion / buying intent", sales_f_ordered:"Ordered", sales_f_delivered:"Delivered", sales_th_product:"Product", sales_th_units:"Units", sales_th_revenue:"Revenue", sales_th_member:"Member", sales_th_handled:"Orders handled", sales_th_deliv:"Delivered", sales_no_top:"No product sales yet in this period (storefront orders only).",
+  notify_title:"Automatic order tracking (WhatsApp)", notify_desc:"When you set an order to Confirmed, In preparation, Delivered or Cancelled, the customer automatically gets a WhatsApp message. WhatsApp only allows a free-form message within 24 h of the customer's last message: beyond that, a Meta-approved template is required (optional below).", notify_enable:"Send order updates to customers", notify_tpl_label:"Meta template name (optional)", notify_lang_label:"Template language", notify_tpl_help:"Template (Utility category) with 3 variables in the body: {{1}} customer first name, {{2}} order number, {{3}} status. Example: \"Hello {{1}}, your order {{2}} is now: {{3}}.\"", notify_saved:"Setting saved", notify_sent:"Customer notified", notify_failed:"Customer not notified", notify_failed_alert:"The status was changed, but the customer could not be notified on WhatsApp:",
   analytics_ai_usage:"AI messages (this month)", analytics_messages_14d:"Messages received — last 14 days", empty_analytics:"Not enough data yet for statistics.",
   analytics_response_detail:"{answered} / {total} messages answered (30d)", analytics_conversion_detail:"{converted} / {total} leads converted", analytics_no_data_30d:"No messages received in the last 30 days",
   stat_prospects:"Leads", stat_hot_prospects:"Hot leads", stat_revenue:"Order revenue", stat_followups_due:"Follow-ups due",
@@ -873,7 +884,7 @@ function tab(name) {
   if (name === 'billing') loadBilling();
   if (name === 'referral') loadReferral();
   if (name === 'assistant') loadAiSettings();
-  if (name === 'settings') { loadWhatsappSettings(); loadShopSettings(); loadPaymentSettings(); }
+  if (name === 'settings') { loadWhatsappSettings(); loadShopSettings(); loadPaymentSettings(); loadOrderNotify(); }
 }
 
 function renderAll() {
@@ -1251,6 +1262,11 @@ async function loadConversations(){
 }
 
 const ORDER_STATUSES=['En attente','Confirmée','En préparation','Livrée','Annulée'];
+function notifyBadge(o){
+  if(!o.notify) return '';
+  const ok=o.notify.startsWith('sent');
+  return '<br><span class="muted" style="font-size:12px;'+(ok?'':'color:#dc2626')+'" title="'+esc(o.notify)+'">'+(ok?'📲 '+t('notify_sent'):'⚠️ '+t('notify_failed'))+'</span>';
+}
 function renderOrders(){
   const list=data.orders||[];
   $('orderCount').textContent='('+list.length+')';
@@ -1264,15 +1280,16 @@ function renderOrders(){
           return '<tr style="background:#fff1f2"><td><strong>'+esc(o.number)+'</strong><br><span class="badge">🛒 '+t('order_from_shop')+'</span></td><td>🔒 <span class="muted">'+t('order_hidden')+'</span></td><td>'+(o.productName?esc(o.productName)+' × '+(o.quantity||1):'—')+'</td><td>'+money(o.amount)+'</td><td><span class="error">🚨 '+t('ostatus_bloquee')+'</span><br><button class="btn primary" onclick="goUpgrade(\''+nx+'\')">'+tf('upgrade_btn',{plan:nx})+'</button></td></tr>';
         }
         const sel='<select onchange="setOrderStatus(\''+o.id+'\',this.value)">'+ORDER_STATUSES.map(s=>'<option value="'+s+'"'+(s===o.status?' selected':'')+'>'+esc(statusLabel(s))+'</option>').join('')+'</select>';
-        return '<tr><td><strong>'+esc(o.number)+'</strong>'+(o.source==='vitrine'?'<br><span class="badge">🛒 '+t('order_from_shop')+'</span>':'')+'</td><td>'+esc(o.client||'—')+tel+'</td><td>'+items+'</td><td>'+money(o.amount)+'</td><td>'+sel+'</td></tr>';
+        return '<tr><td><strong>'+esc(o.number)+'</strong>'+(o.source==='vitrine'?'<br><span class="badge">🛒 '+t('order_from_shop')+'</span>':'')+'</td><td>'+esc(o.client||'—')+tel+'</td><td>'+items+'</td><td>'+money(o.amount)+'</td><td>'+sel+notifyBadge(o)+'</td></tr>';
       }).join('')+'</tbody></table>'
     : '<div class="empty">'+t('empty_orders')+'</div>';
 }
 async function setOrderStatus(id,status){
   const o=(data.orders||[]).find(x=>x.id===id); if(!o) return;
   try{
-    await api('/api/orders/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:Number(o.amount),status})});
+    const r=await api('/api/orders/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:Number(o.amount),status})});
     await load(); tab('orders');
+    if(r.notify&&!r.notify.startsWith('sent')) alert(t('notify_failed_alert')+'\n'+r.notify.replace(/^failed: /,''));
   }catch(e){ alert(e.message); await load(); tab('orders'); }
 }
 async function saveOrder(e){
@@ -1740,6 +1757,16 @@ async function saveReferralPayout(e){
   }catch(x){ $('refPayoutStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
 }
 
+async function loadOrderNotify(){
+  try{ const s=await api('/api/settings/order-notify'); $('nEnabled').checked=!!s.enabled; $('nTpl').value=s.template||''; $('nLang').value=s.lang||'fr'; }catch(x){}
+}
+async function saveOrderNotify(e){
+  e.preventDefault();
+  try{
+    await api('/api/settings/order-notify',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:$('nEnabled').checked,template:$('nTpl').value.trim(),lang:$('nLang').value.trim()||'fr'})});
+    $('nStatus').innerHTML='<span class="badge">'+t('notify_saved')+'</span>';
+  }catch(x){ $('nStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
+}
 // Vitrine web publique (/boutique/<slug>)
 function shopUrl(slug){ return location.origin+'/boutique/'+slug; }
 async function loadShopSettings(){
