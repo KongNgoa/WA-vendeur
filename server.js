@@ -268,7 +268,7 @@ async function releaseBlockedOrders(companyId) {
 const ORDER_PUBLIC_COLS = `o.id,o.order_number AS number,
   CASE WHEN o.status='Bloquée' THEN NULL ELSE COALESCE(p.name,o.customer_name) END AS client,
   CASE WHEN o.status='Bloquée' THEN NULL ELSE COALESCE(p.phone,o.customer_phone) END AS phone,
-  o.amount,o.status,o.source,o.notify_result AS notify,o.product_name AS "productName",o.quantity,
+  o.amount,o.status,o.source,o.notify_result AS notify,(SELECT name FROM shops sh WHERE sh.id=o.shop_id) AS "shopName",o.product_name AS "productName",o.quantity,
   CASE WHEN o.status='Bloquée' THEN NULL ELSE o.delivery_address END AS address,
   CASE WHEN o.status='Bloquée' THEN NULL ELSE o.note END AS note,o.created_at AS "createdAt"`;
 
@@ -282,7 +282,7 @@ async function dashboard(companyId, userId) {
   // avec l'historique (voir audit).
   const [company,products,prospects,orders,followups,subscription,appointments] = await Promise.all([
     query('SELECT id,name,sector,ai_name AS "aiName",ai_tone AS "aiTone",ai_language AS "aiLanguage",ai_rules AS "aiRules",ai_auto_reply_enabled AS "aiAutoReplyEnabled" FROM companies WHERE id=$1',[companyId]),
-    query('SELECT id,name,category,price,stock,image_url AS "imageUrl",created_at AS "createdAt" FROM products WHERE company_id=$1 ORDER BY created_at DESC',[companyId]),
+    query('SELECT id,name,category,price,stock,image_url AS "imageUrl",shop_id AS "shopId",created_at AS "createdAt" FROM products WHERE company_id=$1 ORDER BY created_at DESC',[companyId]),
     query('SELECT id,name,phone,need,value,score,status,stage,order_intent AS "orderIntent",last_contact AS "lastContact",next_action AS "nextAction",next_action_priority AS "nextActionPriority",next_action_reason AS "nextActionReason",next_action_at AS "nextActionAt",created_at AS "createdAt" FROM prospects WHERE company_id=$1 ORDER BY score DESC,created_at DESC LIMIT 500',[companyId]),
     query('SELECT '+ORDER_PUBLIC_COLS+' FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC LIMIT 500',[companyId]),
     query('SELECT id,due_at AS "dueAt",status,text,prospect_id AS "prospectId",source,cancelled_reason AS "cancelledReason" FROM followups WHERE company_id=$1 ORDER BY due_at NULLS LAST LIMIT 500',[companyId]),
@@ -435,10 +435,10 @@ function slugify(name) {
   return s.length >= 3 ? s : 'boutique';
 }
 const SHOP_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
-async function uniqueShopSlug(base, companyId) {
+async function uniqueShopSlug(base, excludeShopId = null) {
   let candidate = base;
   for (let i = 0; i < 50; i++) {
-    const r = await query('SELECT id FROM companies WHERE shop_slug=$1 AND id<>$2', [candidate, companyId]);
+    const r = await query('SELECT id FROM shops WHERE slug=$1 AND ($2::uuid IS NULL OR id<>$2)', [candidate, excludeShopId]);
     if (!r.rows[0]) return candidate;
     const suffix = '-' + (i + 2);
     candidate = base.slice(0, 40 - suffix.length) + suffix;
@@ -1023,9 +1023,9 @@ function extractSelectedProductId(msg) {
 // façon, Business impose un administrateur unique (transférable), Pro en
 // autorise jusqu'à 3 pour les équipes plus grandes.
 const PLAN_LIMITS = {
-  Starter:  { monthlyPrice: 10000, maxProspectsPerMonth: 100, maxUsers: 1,    maxAdmins: 1, aiAutoReply: true, aiMessagesLimit: 100, autoFollowups: false, prioritySupport: false, campaignsPerMonth: 0 },
-  Business: { monthlyPrice: 25000, maxProspectsPerMonth: 300, maxUsers: 3,    maxAdmins: 1, aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: false, campaignsPerMonth: 500 },
-  Pro:      { monthlyPrice: 50000, maxProspectsPerMonth: null, maxUsers: null, maxAdmins: 3, aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: true,  campaignsPerMonth: 3000 },
+  Starter:  { monthlyPrice: 10000, maxProspectsPerMonth: 100, maxUsers: 1,    maxAdmins: 1, aiAutoReply: true, aiMessagesLimit: 100, autoFollowups: false, prioritySupport: false, campaignsPerMonth: 0, maxShops: 1 },
+  Business: { monthlyPrice: 25000, maxProspectsPerMonth: 300, maxUsers: 3,    maxAdmins: 1, aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: false, campaignsPerMonth: 500, maxShops: 3 },
+  Pro:      { monthlyPrice: 50000, maxProspectsPerMonth: null, maxUsers: null, maxAdmins: 3, aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: true,  campaignsPerMonth: 3000, maxShops: 10 },
 };
 const planLimits = plan => PLAN_LIMITS[plan] || PLAN_LIMITS.Starter;
 
@@ -1394,8 +1394,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.23',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.23'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.24',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.24'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -1433,9 +1433,9 @@ async function handler(req,res) {
     if(rateLimited('shoporder:'+clientIp(req),8,10*60*1000)) return tooManyRequests(res);
     const b=await body(req,20000);
     if(b.website) return json(res,201,{ok:true,number:'VND-0',total:''}); // piège anti-robot : succès factice
-    const co=await query('SELECT id,name FROM companies WHERE shop_slug=$1 AND shop_enabled=true AND suspended=false AND approved_at IS NOT NULL AND shop_whatsapp IS NOT NULL',[shopOrderMatch[1]]);
+    const co=await query('SELECT c.id,c.name,s.id AS "shopId" FROM shops s JOIN companies c ON c.id=s.company_id WHERE s.slug=$1 AND s.enabled=true AND c.suspended=false AND c.approved_at IS NOT NULL AND s.whatsapp IS NOT NULL',[shopOrderMatch[1]]);
     if(!co.rows[0]) return json(res,404,{error:'Boutique introuvable'});
-    const companyId=co.rows[0].id;
+    const companyId=co.rows[0].id, shopId=co.rows[0].shopId;
     if(rateLimited('shoporder-co:'+companyId,60,60*60*1000)) return json(res,429,{error:'Trop de commandes pour le moment. Contactez la boutique sur WhatsApp.'});
     const name=String(b.name||'').trim().slice(0,80), address=String(b.address||'').trim().slice(0,200), note=String(b.note||'').trim().slice(0,200);
     const phone=normalizeWaNumber(b.phone);
@@ -1448,10 +1448,10 @@ async function handler(req,res) {
     if(pend.rows[0].n>=3) return json(res,429,{error:'Vous avez déjà des commandes en attente : le vendeur va vous contacter.'});
     const number='VND-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+crypto.randomBytes(3).toString('hex').toUpperCase();
     const out=await transaction(async client=>{
-      const p=await client.query('UPDATE products SET stock=stock-$1 WHERE id=$2 AND company_id=$3 AND stock>=$1 RETURNING name,price',[qty,b.productId,companyId]);
+      const p=await client.query('UPDATE products SET stock=stock-$1 WHERE id=$2 AND company_id=$3 AND stock>=$1 AND (shop_id IS NULL OR shop_id=$4) RETURNING name,price',[qty,b.productId,companyId,shopId]);
       if(!p.rows[0]) return null;
       const total=Number(p.rows[0].price)*qty;
-      await client.query("INSERT INTO orders(company_id,prospect_id,order_number,amount,status,product_id,product_name,quantity,delivery_address,note,customer_name,customer_phone,source,stock_reserved) VALUES($1,NULL,$2,$3,'En attente',$4,$5,$6,$7,$8,$9,$10,'vitrine',true)",[companyId,number,total,b.productId,p.rows[0].name,qty,address,note||null,name,phone]);
+      await client.query("INSERT INTO orders(company_id,prospect_id,order_number,amount,status,product_id,product_name,quantity,delivery_address,note,customer_name,customer_phone,source,stock_reserved,shop_id) VALUES($1,NULL,$2,$3,'En attente',$4,$5,$6,$7,$8,$9,$10,'vitrine',true,$11)",[companyId,number,total,b.productId,p.rows[0].name,qty,address,note||null,name,phone,shopId]);
       return {total,productName:p.rows[0].name};
     });
     if(!out) return json(res,409,{error:'Ce produit n\'est plus disponible en cette quantité.'});
@@ -1496,8 +1496,8 @@ async function handler(req,res) {
   if(productPageMatch) {
     const htmlHeaders={'Content-Type':'text/html; charset=utf-8','X-Content-Type-Options':'nosniff','X-Frame-Options':'SAMEORIGIN','Referrer-Policy':'strict-origin-when-cross-origin'};
     if(rateLimited('shop:'+clientIp(req),120,60*1000)) { res.writeHead(429,{...htmlHeaders,'Cache-Control':'no-store'}); return res.end('Trop de requêtes. Réessayez dans une minute.'); }
-    const c=await query('SELECT id,name,sector,shop_slug AS "shopSlug",shop_tagline AS tagline,shop_whatsapp AS "shopWhatsapp",shop_fb_pixel AS "fbPixel",shop_tiktok_pixel AS "tiktokPixel" FROM companies WHERE shop_slug=$1 AND shop_enabled=true AND suspended=false AND approved_at IS NOT NULL AND shop_whatsapp IS NOT NULL',[productPageMatch[1].toLowerCase()]);
-    const pr=c.rows[0]?await query('SELECT id,name,category,price,stock,image_url AS "imageUrl" FROM products WHERE id=$1 AND company_id=$2',[productPageMatch[2].toLowerCase(),c.rows[0].id]):{rows:[]};
+    const c=await query('SELECT c.id,s.id AS "shopId",s.name,c.sector,s.slug AS "shopSlug",s.tagline,s.whatsapp AS "shopWhatsapp",s.fb_pixel AS "fbPixel",s.tiktok_pixel AS "tiktokPixel" FROM shops s JOIN companies c ON c.id=s.company_id WHERE s.slug=$1 AND s.enabled=true AND c.suspended=false AND c.approved_at IS NOT NULL AND s.whatsapp IS NOT NULL',[productPageMatch[1].toLowerCase()]);
+    const pr=c.rows[0]?await query('SELECT id,name,category,price,stock,image_url AS "imageUrl" FROM products WHERE id=$1 AND company_id=$2 AND (shop_id IS NULL OR shop_id=$3)',[productPageMatch[2].toLowerCase(),c.rows[0].id,c.rows[0].shopId]):{rows:[]};
     if(!pr.rows[0]) { res.writeHead(404,{...htmlHeaders,'Cache-Control':'no-store'}); return res.end(renderShopNotFound()); }
     res.writeHead(200,{...htmlHeaders,'Cache-Control':'public, max-age=60'});
     return res.end(renderShopPage(c.rows[0],[pr.rows[0]],requestOrigin(req),pr.rows[0]));
@@ -1508,9 +1508,9 @@ async function handler(req,res) {
     const htmlHeaders={'Content-Type':'text/html; charset=utf-8','X-Content-Type-Options':'nosniff','X-Frame-Options':'SAMEORIGIN','Referrer-Policy':'strict-origin-when-cross-origin'};
     if(rateLimited('shop:'+clientIp(req),120,60*1000)) { res.writeHead(429,{...htmlHeaders,'Cache-Control':'no-store'}); return res.end('Trop de requêtes. Réessayez dans une minute.'); }
     if(!/^[a-z0-9-]{3,40}$/.test(shopMatch[1])) { res.writeHead(404,{...htmlHeaders,'Cache-Control':'no-store'}); return res.end(renderShopNotFound()); }
-    const c=await query('SELECT id,name,sector,shop_slug AS "shopSlug",shop_tagline AS tagline,shop_whatsapp AS "shopWhatsapp",shop_fb_pixel AS "fbPixel",shop_tiktok_pixel AS "tiktokPixel" FROM companies WHERE shop_slug=$1 AND shop_enabled=true AND suspended=false AND approved_at IS NOT NULL AND shop_whatsapp IS NOT NULL',[shopMatch[1]]);
+    const c=await query('SELECT c.id,s.id AS "shopId",s.name,c.sector,s.slug AS "shopSlug",s.tagline,s.whatsapp AS "shopWhatsapp",s.fb_pixel AS "fbPixel",s.tiktok_pixel AS "tiktokPixel" FROM shops s JOIN companies c ON c.id=s.company_id WHERE s.slug=$1 AND s.enabled=true AND c.suspended=false AND c.approved_at IS NOT NULL AND s.whatsapp IS NOT NULL',[shopMatch[1]]);
     if(!c.rows[0]) { res.writeHead(404,{...htmlHeaders,'Cache-Control':'no-store'}); return res.end(renderShopNotFound()); }
-    const prods=await query('SELECT id,name,category,price,stock,image_url AS "imageUrl" FROM products WHERE company_id=$1 ORDER BY category NULLS LAST,name LIMIT 300',[c.rows[0].id]);
+    const prods=await query('SELECT id,name,category,price,stock,image_url AS "imageUrl" FROM products WHERE company_id=$1 AND (shop_id IS NULL OR shop_id=$2) ORDER BY category NULLS LAST,name LIMIT 300',[c.rows[0].id,c.rows[0].shopId]);
     const proto=String(req.headers['x-forwarded-proto']||'https').split(',')[0].trim()==='http'?'http':'https';
     const origin=proto+'://'+req.headers.host;
     res.writeHead(200,{...htmlHeaders,'Cache-Control':'public, max-age=60'});
@@ -2224,53 +2224,98 @@ async function handler(req,res) {
     const r=await query('SELECT order_notify_enabled AS enabled,order_notify_template AS template,order_notify_lang AS lang FROM companies WHERE id=$1',[companyId]);
     return json(res,200,{enabled:r.rows[0].enabled,template:r.rows[0].template||'',lang:r.rows[0].lang||'fr'});
   }
-  if(req.method==='GET'&&u.pathname==='/api/settings/shop') {
-    let r=await query('SELECT name,shop_slug AS slug,shop_enabled AS enabled,shop_whatsapp AS whatsapp,shop_tagline AS tagline,shop_fb_pixel AS "fbPixel",shop_tiktok_pixel AS "tiktokPixel" FROM companies WHERE id=$1',[companyId]);
-    let row=r.rows[0];
-    if(!row) return json(res,404,{error:'Entreprise introuvable'});
-    if(!row.slug) {
-      row.slug=await uniqueShopSlug(slugify(row.name),companyId);
-      await query('UPDATE companies SET shop_slug=$1 WHERE id=$2 AND shop_slug IS NULL',[row.slug,companyId]);
-    }
-    return json(res,200,{enabled:row.enabled,slug:row.slug,whatsapp:row.whatsapp||'',tagline:row.tagline||'',fbPixel:row.fbPixel||'',tiktokPixel:row.tiktokPixel||''});
-  }
-  if(req.method==='PATCH'&&u.pathname==='/api/settings/shop') {
-    const b=await body(req);
-    const cur=(await query('SELECT name,shop_slug,shop_enabled,shop_whatsapp,shop_tagline,shop_fb_pixel,shop_tiktok_pixel FROM companies WHERE id=$1',[companyId])).rows[0];
-    if(!cur) return json(res,404,{error:'Entreprise introuvable'});
-    let slug=cur.shop_slug;
+  // --- Boutiques (vitrines) : une principale + des boutiques supplémentaires selon le forfait.
+  const shopOut=r=>({id:r.id,name:r.name,slug:r.slug,enabled:r.enabled,whatsapp:r.whatsapp||'',tagline:r.tagline||'',fbPixel:r.fb_pixel||'',tiktokPixel:r.tiktok_pixel||'',isMain:r.is_main});
+  const ensureMainShop=async ()=>{
+    let m=(await query('SELECT * FROM shops WHERE company_id=$1 AND is_main',[companyId])).rows[0];
+    if(m) return m;
+    const co=(await query('SELECT name FROM companies WHERE id=$1',[companyId])).rows[0];
+    if(!co) return null;
+    const slug=await uniqueShopSlug(slugify(co.name));
+    await query('INSERT INTO shops(company_id,name,slug,is_main) VALUES($1,$2,$3,true) ON CONFLICT DO NOTHING',[companyId,co.name,slug]);
+    return (await query('SELECT * FROM shops WHERE company_id=$1 AND is_main',[companyId])).rows[0];
+  };
+  const patchShop=async (cur,b)=>{
+    let slug=cur.slug;
     if(b.slug!==undefined) {
       const wanted=String(b.slug).trim().toLowerCase();
-      if(!SHOP_SLUG_RE.test(wanted)) return json(res,400,{error:'Lien invalide : 3 à 40 caractères, lettres minuscules, chiffres et tirets uniquement.'});
-      const taken=await query('SELECT id FROM companies WHERE shop_slug=$1 AND id<>$2',[wanted,companyId]);
-      if(taken.rows[0]) return json(res,409,{error:'Ce lien est déjà utilisé par une autre boutique. Choisissez-en un autre.'});
+      if(!SHOP_SLUG_RE.test(wanted)) return {code:400,error:'Lien invalide : 3 à 40 caractères, lettres minuscules, chiffres et tirets uniquement.'};
+      const taken=await query('SELECT id FROM shops WHERE slug=$1 AND id<>$2',[wanted,cur.id]);
+      if(taken.rows[0]) return {code:409,error:'Ce lien est déjà utilisé par une autre boutique. Choisissez-en un autre.'};
       slug=wanted;
     }
-    if(!slug) slug=await uniqueShopSlug(slugify(cur.name),companyId);
-    let whatsapp=cur.shop_whatsapp;
+    let name=cur.name;
+    if(b.name!==undefined) { name=String(b.name).trim().slice(0,80); if(name.length<2) return {code:400,error:'Donnez un nom à la boutique (2 caractères minimum).'}; }
+    let whatsapp=cur.whatsapp;
     if(b.whatsapp!==undefined) {
       if(String(b.whatsapp).trim()==='') whatsapp=null;
       else {
         whatsapp=normalizeWaNumber(b.whatsapp);
-        if(!whatsapp) return json(res,400,{error:'Numéro WhatsApp invalide. Exemple : +237 6XX XX XX XX'});
+        if(!whatsapp) return {code:400,error:'Numéro WhatsApp invalide. Exemple : +237 6XX XX XX XX'};
       }
     }
-    const tagline=b.tagline!==undefined?(String(b.tagline).trim().slice(0,200)||null):cur.shop_tagline;
+    const tagline=b.tagline!==undefined?(String(b.tagline).trim().slice(0,200)||null):cur.tagline;
     // Pixels publicitaires (facultatifs) : identifiants validés strictement, car
     // ils sont insérés dans le code de la page publique.
-    let fbPixel=cur.shop_fb_pixel, tiktokPixel=cur.shop_tiktok_pixel;
+    let fbPixel=cur.fb_pixel, tiktokPixel=cur.tiktok_pixel;
     if(b.fbPixel!==undefined) {
       const v=String(b.fbPixel).trim();
-      if(v==='') fbPixel=null; else if(/^\d{8,20}$/.test(v)) fbPixel=v; else return json(res,400,{error:'Pixel Facebook invalide : l\'identifiant est un nombre de 8 à 20 chiffres.'});
+      if(v==='') fbPixel=null; else if(/^\d{8,20}$/.test(v)) fbPixel=v; else return {code:400,error:'Pixel Facebook invalide : l\'identifiant est un nombre de 8 à 20 chiffres.'};
     }
     if(b.tiktokPixel!==undefined) {
       const v=String(b.tiktokPixel).trim().toUpperCase();
-      if(v==='') tiktokPixel=null; else if(/^[A-Z0-9]{10,30}$/.test(v)) tiktokPixel=v; else return json(res,400,{error:'Pixel TikTok invalide : 10 à 30 lettres majuscules et chiffres.'});
+      if(v==='') tiktokPixel=null; else if(/^[A-Z0-9]{10,30}$/.test(v)) tiktokPixel=v; else return {code:400,error:'Pixel TikTok invalide : 10 à 30 lettres majuscules et chiffres.'};
     }
-    const enabled=b.enabled!==undefined?Boolean(b.enabled):cur.shop_enabled;
-    if(enabled&&!whatsapp) return json(res,400,{error:'Renseignez votre numéro WhatsApp avant d\'activer la vitrine.'});
-    await query('UPDATE companies SET shop_slug=$1,shop_enabled=$2,shop_whatsapp=$3,shop_tagline=$4,shop_fb_pixel=$5,shop_tiktok_pixel=$6 WHERE id=$7',[slug,enabled,whatsapp,tagline,fbPixel,tiktokPixel,companyId]);
-    return json(res,200,{ok:true,enabled,slug,whatsapp:whatsapp||'',tagline:tagline||'',fbPixel:fbPixel||'',tiktokPixel:tiktokPixel||''});
+    const enabled=b.enabled!==undefined?Boolean(b.enabled):cur.enabled;
+    if(enabled&&!whatsapp) return {code:400,error:'Renseignez votre numéro WhatsApp avant d\'activer la vitrine.'};
+    const r=await query('UPDATE shops SET name=$1,slug=$2,enabled=$3,whatsapp=$4,tagline=$5,fb_pixel=$6,tiktok_pixel=$7 WHERE id=$8 RETURNING *',[name,slug,enabled,whatsapp,tagline,fbPixel,tiktokPixel,cur.id]);
+    return {code:200,shop:r.rows[0]};
+  };
+  // Anciennes routes (boutique principale) conservées.
+  if(req.method==='GET'&&u.pathname==='/api/settings/shop') {
+    const m=await ensureMainShop();
+    if(!m) return json(res,404,{error:'Entreprise introuvable'});
+    return json(res,200,shopOut(m));
+  }
+  if(req.method==='PATCH'&&u.pathname==='/api/settings/shop') {
+    const m=await ensureMainShop();
+    if(!m) return json(res,404,{error:'Entreprise introuvable'});
+    const out=await patchShop(m,await body(req));
+    return out.code===200?json(res,200,{ok:true,...shopOut(out.shop)}):json(res,out.code,{error:out.error});
+  }
+  if(req.method==='GET'&&u.pathname==='/api/shops') {
+    await ensureMainShop();
+    const r=await query('SELECT * FROM shops WHERE company_id=$1 ORDER BY is_main DESC,created_at',[companyId]);
+    const sub=await query('SELECT plan FROM subscriptions WHERE company_id=$1',[companyId]);
+    const plan=sub.rows[0]?.plan||'Starter';
+    return json(res,200,{shops:r.rows.map(shopOut),limit:planLimits(plan).maxShops,plan});
+  }
+  if(req.method==='POST'&&u.pathname==='/api/shops') {
+    if(!['owner','admin'].includes(await getUserRole(session.userId))) return json(res,403,{error:'Réservé au propriétaire ou à un administrateur.'});
+    const b=await body(req);
+    const name=String(b.name||'').trim().slice(0,80);
+    if(name.length<2) return json(res,400,{error:'Donnez un nom à la boutique (2 caractères minimum).'});
+    await ensureMainShop();
+    const sub=await query('SELECT plan FROM subscriptions WHERE company_id=$1',[companyId]);
+    const limit=planLimits(sub.rows[0]?.plan).maxShops;
+    const n=(await query('SELECT COUNT(*)::int AS n FROM shops WHERE company_id=$1',[companyId])).rows[0].n;
+    if(n>=limit) return json(res,403,{error:limit<=1?'Une seule boutique est incluse dans votre forfait. Passez au forfait supérieur pour en créer d\'autres.':'Limite de '+limit+' boutiques atteinte pour votre forfait.',upgrade:true});
+    const slug=await uniqueShopSlug(slugify(name));
+    const r=await query('INSERT INTO shops(company_id,name,slug) VALUES($1,$2,$3) RETURNING *',[companyId,name,slug]);
+    return json(res,201,{shop:shopOut(r.rows[0])});
+  }
+  const shopIdMatch=u.pathname.match(/^\/api\/shops\/([0-9a-f-]{36})$/i);
+  if(shopIdMatch && (req.method==='PATCH'||req.method==='DELETE')) {
+    const cur=(await query('SELECT * FROM shops WHERE id=$1 AND company_id=$2',[shopIdMatch[1],companyId])).rows[0];
+    if(!cur) return json(res,404,{error:'Boutique introuvable'});
+    if(req.method==='DELETE') {
+      if(!['owner','admin'].includes(await getUserRole(session.userId))) return json(res,403,{error:'Réservé au propriétaire ou à un administrateur.'});
+      if(cur.is_main) return json(res,400,{error:'La boutique principale ne peut pas être supprimée.'});
+      await query('DELETE FROM shops WHERE id=$1',[cur.id]);
+      return json(res,200,{ok:true});
+    }
+    const out=await patchShop(cur,await body(req));
+    return out.code===200?json(res,200,{ok:true,...shopOut(out.shop)}):json(res,out.code,{error:out.error});
   }
 
   // Parrainage : code + lien du parrain, filleuls et commissions. Le code est
@@ -2409,7 +2454,7 @@ async function handler(req,res) {
     return json(res,201,{url:requestOrigin(req)+'/img/'+r.rows[0].id});
   }
   if(req.method==='GET'&&u.pathname==='/api/products') {
-    const r=await query('SELECT id,name,category,price,stock,image_url AS "imageUrl",created_at AS "createdAt" FROM products WHERE company_id=$1 ORDER BY created_at DESC',[companyId]);
+    const r=await query('SELECT id,name,category,price,stock,image_url AS "imageUrl",shop_id AS "shopId",created_at AS "createdAt" FROM products WHERE company_id=$1 ORDER BY created_at DESC',[companyId]);
     return json(res,200,{products:r.rows});
   }
   if(req.method==='POST'&&u.pathname==='/api/products') {
@@ -2417,7 +2462,13 @@ async function handler(req,res) {
     if(!b.name||b.price===undefined||Number.isNaN(Number(b.price))) return json(res,400,{error:'Nom et prix valides requis'});
     const imageUrl=validImageUrl(b.imageUrl);
     if(b.imageUrl&&!imageUrl) return json(res,400,{error:'URL d\'image invalide (doit commencer par http:// ou https://)'});
-    const r=await query('INSERT INTO products(company_id,name,category,price,stock,image_url) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,name,category,price,stock,image_url AS "imageUrl",created_at AS "createdAt"',[companyId,String(b.name).trim(),b.category||null,Number(b.price),Math.max(0,Number(b.stock||0)),imageUrl]);
+    let newShopId=null;
+    if(b.shopId) {
+      const sh=await query('SELECT id FROM shops WHERE id=$1 AND company_id=$2',[String(b.shopId),companyId]).catch(()=>({rows:[]}));
+      if(!sh.rows[0]) return json(res,400,{error:'Boutique introuvable'});
+      newShopId=sh.rows[0].id;
+    }
+    const r=await query('INSERT INTO products(company_id,name,category,price,stock,image_url,shop_id) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,name,category,price,stock,image_url AS "imageUrl",shop_id AS "shopId",created_at AS "createdAt"',[companyId,String(b.name).trim(),b.category||null,Number(b.price),Math.max(0,Number(b.stock||0)),imageUrl,newShopId]);
     return json(res,201,{product:r.rows[0]});
   }
   const productMatch=u.pathname.match(/^\/api\/products\/([0-9a-f-]+)$/i);
@@ -2426,7 +2477,16 @@ async function handler(req,res) {
     if(!b.name||b.price===undefined||Number.isNaN(Number(b.price))) return json(res,400,{error:'Nom et prix valides requis'});
     const imageUrl=validImageUrl(b.imageUrl);
     if(b.imageUrl&&!imageUrl) return json(res,400,{error:'URL d\'image invalide (doit commencer par http:// ou https://)'});
-    const r=await query('UPDATE products SET name=$1,category=$2,price=$3,stock=$4,image_url=$5 WHERE id=$6 AND company_id=$7 RETURNING id,name,category,price,stock,image_url AS "imageUrl",created_at AS "createdAt"',[String(b.name).trim(),b.category||null,Number(b.price),Math.max(0,Number(b.stock||0)),imageUrl,productMatch[1],companyId]);
+    let shopSql='', shopParams=[];
+    if(b.shopId!==undefined) {
+      if(b.shopId===null||b.shopId==='') { shopSql=',shop_id=NULL'; }
+      else {
+        const sh=await query('SELECT id FROM shops WHERE id=$1 AND company_id=$2',[String(b.shopId),companyId]).catch(()=>({rows:[]}));
+        if(!sh.rows[0]) return json(res,400,{error:'Boutique introuvable'});
+        shopSql=',shop_id=$8'; shopParams=[sh.rows[0].id];
+      }
+    }
+    const r=await query('UPDATE products SET name=$1,category=$2,price=$3,stock=$4,image_url=$5'+shopSql+' WHERE id=$6 AND company_id=$7 RETURNING id,name,category,price,stock,image_url AS "imageUrl",shop_id AS "shopId",created_at AS "createdAt"',[String(b.name).trim(),b.category||null,Number(b.price),Math.max(0,Number(b.stock||0)),imageUrl,productMatch[1],companyId,...shopParams]);
     if(!r.rows[0]) return json(res,404,{error:'Produit introuvable'});
     return json(res,200,{product:r.rows[0]});
   }
@@ -2629,11 +2689,11 @@ async function handler(req,res) {
     const b=await body(req);
     const format=PROMO_FORMATS.includes(b.format)?b.format:'status';
     const lang=b.lang==='en'?'en':'fr';
-    const pRes=await query('SELECT id,name,category,price,stock FROM products WHERE id=$1 AND company_id=$2',[String(b.productId||''),companyId]).catch(()=>({rows:[]}));
+    const pRes=await query('SELECT id,name,category,price,stock,shop_id AS "shopId" FROM products WHERE id=$1 AND company_id=$2',[String(b.productId||''),companyId]).catch(()=>({rows:[]}));
     const product=pRes.rows[0];
     if(!product) return json(res,404,{error:'Produit introuvable'});
     const [cRes,sub]=await Promise.all([
-      query('SELECT name,sector,ai_tone AS "aiTone",shop_slug AS "shopSlug",shop_enabled AS "shopEnabled",shop_whatsapp AS "shopWhatsapp" FROM companies WHERE id=$1',[companyId]),
+      query('SELECT c.name,c.sector,c.ai_tone AS "aiTone",sh.slug AS "shopSlug",sh.enabled AS "shopEnabled",sh.whatsapp AS "shopWhatsapp" FROM companies c LEFT JOIN LATERAL (SELECT slug,enabled,whatsapp FROM shops WHERE company_id=c.id AND ($2::uuid IS NULL OR id=$2::uuid OR is_main) ORDER BY (id=$2::uuid) DESC NULLS LAST,is_main DESC LIMIT 1) sh ON true WHERE c.id=$1',[companyId,product.shopId||null]),
       query('SELECT plan FROM subscriptions WHERE company_id=$1',[companyId])
     ]);
     const company=cRes.rows[0];
@@ -3099,7 +3159,7 @@ async function ensureMigrations() {
     "ALTER TABLE prospects ADD COLUMN IF NOT EXISTS stage TEXT NOT NULL DEFAULT 'Nouveau'",
     "UPDATE prospects SET stage=status WHERE status IN ('Nouveau','À contacter','En discussion','Gagné','Perdu')",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT",
-    // Commandes passées depuis la vitrine web (1.10.23) : détail du produit, de la
+    // Commandes passées depuis la vitrine web (1.10.24) : détail du produit, de la
     // livraison et du client (le prospect peut manquer si le quota CRM est atteint).
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id) ON DELETE SET NULL",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_name TEXT",
@@ -3158,6 +3218,30 @@ async function ensureMigrations() {
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_fb_pixel TEXT",
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_tiktok_pixel TEXT",
     "CREATE UNIQUE INDEX IF NOT EXISTS companies_shop_slug_idx ON companies(shop_slug) WHERE shop_slug IS NOT NULL",
+    // Multi-boutiques : chaque entreprise peut avoir plusieurs vitrines (forfait). Les
+    // colonnes companies.shop_* ne sont plus lues (la boutique principale est recopiée ici).
+    `CREATE TABLE IF NOT EXISTS shops (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+       name TEXT NOT NULL,
+       slug TEXT NOT NULL,
+       enabled BOOLEAN NOT NULL DEFAULT false,
+       whatsapp TEXT,
+       tagline TEXT,
+       fb_pixel TEXT,
+       tiktok_pixel TEXT,
+       is_main BOOLEAN NOT NULL DEFAULT false,
+       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+     )`,
+    "CREATE UNIQUE INDEX IF NOT EXISTS shops_slug_idx ON shops(slug)",
+    "CREATE INDEX IF NOT EXISTS shops_company_idx ON shops(company_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS shops_one_main_idx ON shops(company_id) WHERE is_main",
+    `INSERT INTO shops(company_id,name,slug,enabled,whatsapp,tagline,fb_pixel,tiktok_pixel,is_main)
+       SELECT c.id,c.name,c.shop_slug,c.shop_enabled,c.shop_whatsapp,c.shop_tagline,c.shop_fb_pixel,c.shop_tiktok_pixel,true
+       FROM companies c WHERE c.shop_slug IS NOT NULL AND NOT EXISTS (SELECT 1 FROM shops s WHERE s.company_id=c.id)
+       ON CONFLICT DO NOTHING`,
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS shop_id UUID REFERENCES shops(id) ON DELETE SET NULL",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shop_id UUID REFERENCES shops(id) ON DELETE SET NULL",
     // Programme de parrainage.
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS referral_code TEXT",
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS referred_by UUID REFERENCES companies(id) ON DELETE SET NULL",
@@ -3191,6 +3275,6 @@ ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>runCampaignTick(), 20*1000);
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.23 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.24 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

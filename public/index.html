@@ -109,6 +109,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <form class="formgrid" onsubmit="saveProduct(event)">
 <input id="pName" placeholder="Nom du produit" required data-i18n-placeholder="placeholder_product_name"><input id="pCategory" placeholder="Catégorie" data-i18n-placeholder="placeholder_category">
 <input id="pPrice" type="number" min="0" placeholder="Prix (FCFA)" required data-i18n-placeholder="placeholder_price"><input id="pStock" type="number" min="0" placeholder="Stock" value="0" data-i18n-placeholder="placeholder_stock">
+<div class="full hidden" id="pShopWrap"><label class="muted" data-i18n="product_shop_label">Boutique</label><select id="pShop"></select></div>
 <div class="full"><label class="muted" data-i18n="product_photo_label">Photo du produit (optionnel)</label>
 <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><input id="pImageFile" type="file" accept="image/*" onchange="uploadProductPhoto(this)" style="flex:1;min-width:180px"><img id="pImagePreview" alt="" class="hidden" style="width:56px;height:56px;object-fit:cover;border-radius:10px"></div>
 <div id="pImageStatus" class="muted" style="margin-top:4px"></div></div>
@@ -365,6 +366,8 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <div class="panel"><h3 data-i18n="shop_title">Vitrine web (boutique en ligne)</h3>
 <p class="muted" data-i18n="shop_desc">Une page publique générée depuis votre catalogue, à partager sur Facebook, TikTok ou Instagram. Chaque produit a un bouton « Commander sur WhatsApp » : la vente se conclut dans la conversation avec votre assistant.</p>
 <form class="formgrid" onsubmit="saveShopSettings(event)">
+<div class="full" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select id="sShopSel" onchange="selectShop(this.value)" style="width:auto;min-width:220px"></select><button type="button" class="btn" onclick="newShop()" data-i18n="shop_new_btn">+ Nouvelle boutique</button><button type="button" class="btn danger hidden" id="sDelBtn" onclick="deleteShop()" data-i18n="shop_delete_btn">Supprimer cette boutique</button><span class="muted" id="sShopLimit"></span></div>
+<input id="sName" class="full" maxlength="80" placeholder="Nom de la boutique" data-i18n-placeholder="shop_name_ph">
 <label class="full"><input type="checkbox" id="sEnabled" style="width:auto"> <span data-i18n="shop_enable_label">Activer la vitrine (visible publiquement)</span></label>
 <input id="sWhatsapp" placeholder="Numéro WhatsApp affiché (ex. +237 6XX XX XX XX)" data-i18n-placeholder="placeholder_shop_whatsapp">
 <input id="sSlug" placeholder="mon-entreprise" data-i18n-placeholder="placeholder_shop_slug">
@@ -408,6 +411,7 @@ fr: {
   sales_title:"Ventes & performance", sales_7d:"7 jours", sales_30d:"30 jours", sales_90d:"90 jours", sales_delivered:"CA livré", sales_pipeline:"En cours", sales_orders:"Commandes", sales_basket:"Panier moyen", sales_vs_prev:"vs période préc.", sales_source:"{shop} vitrine · {other} autres", sales_funnel:"Entonnoir : discussion → commande", sales_orders_14d:"Commandes — 14 derniers jours", sales_top:"Produits les plus vendus", sales_team:"Performance de l'équipe", sales_f_contacts:"Contacts", sales_f_engaged:"En discussion / intention d'achat", sales_f_ordered:"Ont commandé", sales_f_delivered:"Livrés", sales_th_product:"Produit", sales_th_units:"Unités", sales_th_revenue:"CA", sales_th_member:"Membre", sales_th_handled:"Commandes traitées", sales_th_deliv:"Livrées", sales_no_top:"Pas encore de ventes de produits sur la période (commandes vitrine uniquement).",
   notify_title:"Suivi de commande automatique (WhatsApp)", notify_desc:"Quand vous passez une commande en Confirmée, En préparation, Livrée ou Annulée, le client reçoit automatiquement un message WhatsApp. WhatsApp n'autorise un message libre que dans les 24 h suivant le dernier message du client : au-delà, un modèle approuvé par Meta est nécessaire (facultatif ci-dessous).", notify_enable:"Envoyer les mises à jour de commande aux clients", notify_tpl_label:"Nom du modèle Meta (optionnel)", notify_lang_label:"Langue du modèle", notify_tpl_help:"Modèle (catégorie Utility) avec 3 variables dans le corps : {{1}} prénom du client, {{2}} numéro de commande, {{3}} statut. Exemple : « Bonjour {{1}}, votre commande {{2}} est maintenant : {{3}}. »", notify_saved:"Réglage enregistré", notify_sent:"Client prévenu", notify_failed:"Client non prévenu", notify_failed_alert:"Le statut est changé, mais le client n'a pas pu être prévenu par WhatsApp :",
   nav_campaigns:"Campagnes", camp_title:"Campagnes de diffusion WhatsApp", camp_desc:"Envoyez une offre ou une actualité à un groupe de contacts de votre CRM. Envoi étalé automatiquement ; les contacts qui répondent STOP sont exclus pour toujours.", camp_new:"Nouvelle campagne", camp_name_ph:"Nom de la campagne (interne)", camp_msg_ph:"Votre message. Utilisez {prénom} pour personnaliser.", camp_footer_note:"La mention « Répondez STOP pour ne plus recevoir nos messages » est ajoutée automatiquement.", camp_aud_stage:"Étape du contact", camp_aud_heat:"Température", camp_aud_customers:"Clients", camp_cust_all:"Tous les contacts", camp_cust_only:"Déjà clients (ont commandé)", camp_cust_never:"Jamais commandé", camp_aud_inactive:"Sans contact depuis (jours, 0 = tous)", camp_aud_count:"👥 {n} contact(s) ciblé(s) ({out} désabonné(s) exclu(s))", camp_tpl_label:"Modèle Meta Marketing (optionnel)", camp_tpl_help:"WhatsApp n'autorise un message libre que dans les 24 h après le dernier message du client. Pour les autres contacts, créez dans Meta un modèle de catégorie Marketing dont le corps est : « Bonjour {{1}}, {{2}} » ({{1}} prénom, {{2}} votre message). Sans modèle, ces contacts sont ignorés.", camp_optin:"Je confirme que ces contacts ont accepté de recevoir mes messages sur WhatsApp.", camp_optin_required:"Cochez la confirmation d'accord des contacts avant de lancer.", camp_launch:"Lancer la campagne", camp_empty:"Aucun contact dans cette audience.", camp_confirm:"Envoyer cette campagne à {n} contact(s) ?", camp_started:"Campagne lancée : l'envoi se déroule progressivement.", camp_history:"Historique", camp_quota:"Messages de campagne ce mois-ci : {used} / {limit} (forfait {plan})", camp_locked:"Les campagnes de diffusion sont disponibles à partir du forfait Business.", camp_th_name:"Campagne", camp_th_progress:"Progression", camp_cancel:"Annuler", camp_delete:"Supprimer", camp_details:"Détails", camp_st_draft:"Brouillon", camp_st_running:"En cours", camp_st_done:"Terminée", camp_st_cancelled:"Annulée", camp_none:"Aucune campagne pour le moment.", camp_cancel_confirm:"Annuler cette campagne ? Les messages non envoyés ne partiront pas.", camp_delete_confirm:"Supprimer cette campagne ?", camp_th_contact:"Contact", camp_th_reason:"Raison", camp_no_problem:"Aucun envoi ignoré ou en échec.",
+  shop_new_btn:"+ Nouvelle boutique", shop_delete_btn:"Supprimer cette boutique", shop_name_ph:"Nom de la boutique", shop_off:"désactivée", shop_limit:"{n} / {max} boutique(s) — forfait {plan}", shop_new_prompt:"Nom de la nouvelle boutique :", shop_created:"Boutique créée : renseignez son numéro WhatsApp puis activez-la.", shop_delete_confirm:"Supprimer la boutique « {name} » ? Ses produits restent dans le catalogue et deviennent visibles dans toutes les boutiques.", product_shop_label:"Boutique", product_shop_all:"Toutes les boutiques",
   analytics_ai_usage:"Messages IA (ce mois)", analytics_messages_14d:"Messages reçus — 14 derniers jours", empty_analytics:"Pas encore assez de données pour les statistiques.",
   analytics_response_detail:"{answered} / {total} messages répondus (30j)", analytics_conversion_detail:"{converted} / {total} prospects convertis", analytics_no_data_30d:"Aucun message reçu sur les 30 derniers jours",
   stat_prospects:"Prospects", stat_hot_prospects:"Prospects chauds", stat_revenue:"CA commandes", stat_followups_due:"Relances à traiter",
@@ -568,6 +572,7 @@ en: {
   sales_title:"Sales & performance", sales_7d:"7 days", sales_30d:"30 days", sales_90d:"90 days", sales_delivered:"Delivered revenue", sales_pipeline:"In progress", sales_orders:"Orders", sales_basket:"Average basket", sales_vs_prev:"vs prev. period", sales_source:"{shop} storefront · {other} other", sales_funnel:"Funnel: conversation → order", sales_orders_14d:"Orders — last 14 days", sales_top:"Best-selling products", sales_team:"Team performance", sales_f_contacts:"Contacts", sales_f_engaged:"In discussion / buying intent", sales_f_ordered:"Ordered", sales_f_delivered:"Delivered", sales_th_product:"Product", sales_th_units:"Units", sales_th_revenue:"Revenue", sales_th_member:"Member", sales_th_handled:"Orders handled", sales_th_deliv:"Delivered", sales_no_top:"No product sales yet in this period (storefront orders only).",
   notify_title:"Automatic order tracking (WhatsApp)", notify_desc:"When you set an order to Confirmed, In preparation, Delivered or Cancelled, the customer automatically gets a WhatsApp message. WhatsApp only allows a free-form message within 24 h of the customer's last message: beyond that, a Meta-approved template is required (optional below).", notify_enable:"Send order updates to customers", notify_tpl_label:"Meta template name (optional)", notify_lang_label:"Template language", notify_tpl_help:"Template (Utility category) with 3 variables in the body: {{1}} customer first name, {{2}} order number, {{3}} status. Example: \"Hello {{1}}, your order {{2}} is now: {{3}}.\"", notify_saved:"Setting saved", notify_sent:"Customer notified", notify_failed:"Customer not notified", notify_failed_alert:"The status was changed, but the customer could not be notified on WhatsApp:",
   nav_campaigns:"Campaigns", camp_title:"WhatsApp broadcast campaigns", camp_desc:"Send an offer or news to a group of contacts from your CRM. Sending is paced automatically; contacts who reply STOP are excluded for good.", camp_new:"New campaign", camp_name_ph:"Campaign name (internal)", camp_msg_ph:"Your message. Use {prénom} to personalise.", camp_footer_note:"The line “Reply STOP to stop receiving our messages” is added automatically.", camp_aud_stage:"Contact stage", camp_aud_heat:"Lead temperature", camp_aud_customers:"Customers", camp_cust_all:"All contacts", camp_cust_only:"Existing customers (have ordered)", camp_cust_never:"Never ordered", camp_aud_inactive:"No contact for (days, 0 = all)", camp_aud_count:"👥 {n} contact(s) targeted ({out} unsubscribed excluded)", camp_tpl_label:"Meta Marketing template (optional)", camp_tpl_help:"WhatsApp only allows a free-form message within 24 h of the customer's last message. For other contacts, create a Marketing-category template in Meta whose body is: \"Hello {{1}}, {{2}}\" ({{1}} first name, {{2}} your message). Without a template, those contacts are skipped.", camp_optin:"I confirm these contacts agreed to receive my messages on WhatsApp.", camp_optin_required:"Tick the contacts' consent confirmation before launching.", camp_launch:"Launch campaign", camp_empty:"No contacts in this audience.", camp_confirm:"Send this campaign to {n} contact(s)?", camp_started:"Campaign launched: messages are being sent gradually.", camp_history:"History", camp_quota:"Campaign messages this month: {used} / {limit} ({plan} plan)", camp_locked:"Broadcast campaigns are available from the Business plan.", camp_th_name:"Campaign", camp_th_progress:"Progress", camp_cancel:"Cancel", camp_delete:"Delete", camp_details:"Details", camp_st_draft:"Draft", camp_st_running:"Running", camp_st_done:"Finished", camp_st_cancelled:"Cancelled", camp_none:"No campaigns yet.", camp_cancel_confirm:"Cancel this campaign? Unsent messages will not go out.", camp_delete_confirm:"Delete this campaign?", camp_th_contact:"Contact", camp_th_reason:"Reason", camp_no_problem:"No skipped or failed messages.",
+  shop_new_btn:"+ New shop", shop_delete_btn:"Delete this shop", shop_name_ph:"Shop name", shop_off:"disabled", shop_limit:"{n} / {max} shop(s) — {plan} plan", shop_new_prompt:"Name of the new shop:", shop_created:"Shop created: add its WhatsApp number, then enable it.", shop_delete_confirm:"Delete the shop “{name}”? Its products stay in the catalog and become visible in all shops.", product_shop_label:"Shop", product_shop_all:"All shops",
   analytics_ai_usage:"AI messages (this month)", analytics_messages_14d:"Messages received — last 14 days", empty_analytics:"Not enough data yet for statistics.",
   analytics_response_detail:"{answered} / {total} messages answered (30d)", analytics_conversion_detail:"{converted} / {total} leads converted", analytics_no_data_30d:"No messages received in the last 30 days",
   stat_prospects:"Leads", stat_hot_prospects:"Hot leads", stat_revenue:"Order revenue", stat_followups_due:"Follow-ups due",
@@ -888,6 +893,7 @@ async function load() {
     data = await api('/api/bootstrap');
     const [cv,fu] = await Promise.all([api('/api/conversations'),api('/api/followups')]);
     data.conversations=cv.conversations||[]; data.followups=fu.followups||[];
+    await loadShops();
     renderAll();
   } catch(e) { console.error(e); }
 }
@@ -985,16 +991,27 @@ function renderDashboard() {
 }
 
 async function copyProductLink(id){
-  try{ if(!promoShop||!promoShop.slug) promoShop=await api('/api/settings/shop'); }catch(e){ promoShop=null; }
-  if(!promoShop||!promoShop.enabled){ alert(t('product_link_need_shop')); return; }
-  const url=location.origin+'/boutique/'+promoShop.slug+'/p/'+id;
+  if(!shopsInfo.shops.length) await loadShops();
+  const prod=(data.products||[]).find(x=>x.id===id);
+  const shop=(prod&&prod.shopId&&shopById(prod.shopId))||shopsInfo.shops.find(x=>x.isMain)||null;
+  if(!shop||!shop.enabled){ alert(t('product_link_need_shop')); return; }
+  const url=location.origin+'/boutique/'+shop.slug+'/p/'+id;
   try{ await navigator.clipboard.writeText(url); alert(t('product_link_copied')+'\n'+url); }catch(e){ prompt(t('product_link_copied'),url); }
 }
 function stockCell(p){ const a=(data.stockAlerts||[]).find(x=>x.id===p.id); return a?'<span style="color:'+(a.level>=3?'#d62839':a.level===2?'#f08a24':'#b7791f')+';font-weight:700">'+stockLevelIcon(a.level)+' '+p.stock+'</span>':String(p.stock); }
+function productShopSelect(p){
+  if(shopsInfo.shops.length<2) return '';
+  return '<br><select style="width:auto;font-size:12px" onchange="setProductShop(\''+p.id+'\',this.value)"><option value="">'+esc(t('product_shop_all'))+'</option>'+shopsInfo.shops.map(x=>'<option value="'+x.id+'"'+(x.id===p.shopId?' selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select>';
+}
+async function setProductShop(id,shopId){
+  const p=data.products.find(x=>x.id===id); if(!p) return;
+  try{ await api('/api/products/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:p.name,price:Number(p.price),stock:Number(p.stock),category:p.category||'',imageUrl:p.imageUrl||'',shopId:shopId||null})}); await load(); tab('products'); }
+  catch(e){ alert(e.message); await load(); tab('products'); }
+}
 function renderProducts() {
   $('productCount').textContent = '('+data.products.length+')';
   $('productTable').innerHTML = data.products.length ? '<table><thead><tr><th></th><th>'+t('th_product')+'</th><th>'+t('th_category')+'</th><th>'+t('th_price')+'</th><th>'+t('th_stock')+'</th><th>'+t('th_actions')+'</th></tr></thead><tbody>' +
-    data.products.map(p => '<tr><td>'+(p.imageUrl?'<img src="'+esc(p.imageUrl)+'" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px" onerror="this.style.display=\'none\'">':'')+'</td><td><strong>'+esc(p.name)+'</strong></td><td>'+esc(p.category||'—')+'</td><td>'+money(p.price)+'</td><td>'+stockCell(p)+'</td><td><div class="actions">' +
+    data.products.map(p => '<tr><td>'+(p.imageUrl?'<img src="'+esc(p.imageUrl)+'" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px" onerror="this.style.display=\'none\'">':'')+'</td><td><strong>'+esc(p.name)+'</strong>'+productShopSelect(p)+'</td><td>'+esc(p.category||'—')+'</td><td>'+money(p.price)+'</td><td>'+stockCell(p)+'</td><td><div class="actions">' +
     '<button class="btn" title="'+t('btn_product_link')+'" onclick="copyProductLink(\''+p.id+'\')">🔗</button>'+'<label class="btn" style="cursor:pointer" title="'+t('btn_change_photo')+'">📷<input type="file" accept="image/*" hidden onchange="changeProductPhoto(\''+p.id+'\',this)"></label>'+'<button class="btn" data-edit-product="'+p.id+'">'+t('btn_edit')+'</button><button class="btn danger" data-delete-product="'+p.id+'">'+t('btn_delete')+'</button></div></td></tr>').join('') +
     '</tbody></table>' : '<div class="empty">'+t('empty_products')+'</div>';
 }
@@ -1122,7 +1139,7 @@ async function saveProduct(e) {
   try {
     await api('/api/products',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       name:$('pName').value.trim(), category:$('pCategory').value.trim(),
-      price:Number($('pPrice').value), stock:Number($('pStock').value || 0), imageUrl:$('pImageUrl').value.trim()
+      price:Number($('pPrice').value), stock:Number($('pStock').value || 0), imageUrl:$('pImageUrl').value.trim(), shopId:$('pShop').value||null
     })});
     e.target.reset(); $('pStock').value=0; $('pImagePreview').classList.add('hidden'); $('pImageStatus').textContent=''; await load(); tab('products');
   } catch(err) { alert(err.message); }
@@ -1136,7 +1153,7 @@ async function editProduct(id) {
   const category=prompt(t('prompt_category'),p.category||''); if(category===null)return;
   const imageUrl=prompt(t('prompt_image_url'),p.imageUrl||''); if(imageUrl===null)return;
   try {
-    await api('/api/products/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,price:Number(price),stock:Number(stock),category,imageUrl})});
+    await api('/api/products/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,price:Number(price),stock:Number(stock),category,imageUrl,shopId:p.shopId||null})});
     await load(); tab('products');
   } catch(e){alert(e.message);}
 }
@@ -1304,7 +1321,7 @@ function renderOrders(){
           return '<tr style="background:#fff1f2"><td><strong>'+esc(o.number)+'</strong><br><span class="badge">🛒 '+t('order_from_shop')+'</span></td><td>🔒 <span class="muted">'+t('order_hidden')+'</span></td><td>'+(o.productName?esc(o.productName)+' × '+(o.quantity||1):'—')+'</td><td>'+money(o.amount)+'</td><td><span class="error">🚨 '+t('ostatus_bloquee')+'</span><br><button class="btn primary" onclick="goUpgrade(\''+nx+'\')">'+tf('upgrade_btn',{plan:nx})+'</button></td></tr>';
         }
         const sel='<select onchange="setOrderStatus(\''+o.id+'\',this.value)">'+ORDER_STATUSES.map(s=>'<option value="'+s+'"'+(s===o.status?' selected':'')+'>'+esc(statusLabel(s))+'</option>').join('')+'</select>';
-        return '<tr><td><strong>'+esc(o.number)+'</strong>'+(o.source==='vitrine'?'<br><span class="badge">🛒 '+t('order_from_shop')+'</span>':'')+'</td><td>'+esc(o.client||'—')+tel+'</td><td>'+items+'</td><td>'+money(o.amount)+'</td><td>'+sel+notifyBadge(o)+'</td></tr>';
+        return '<tr><td><strong>'+esc(o.number)+'</strong>'+(o.source==='vitrine'?'<br><span class="badge">🛒 '+t('order_from_shop')+(o.shopName&&shopsInfo.shops.length>1?' · '+esc(o.shopName):'')+'</span>':'')+'</td><td>'+esc(o.client||'—')+tel+'</td><td>'+items+'</td><td>'+money(o.amount)+'</td><td>'+sel+notifyBadge(o)+'</td></tr>';
       }).join('')+'</tbody></table>'
     : '<div class="empty">'+t('empty_orders')+'</div>';
 }
@@ -1793,27 +1810,63 @@ async function saveOrderNotify(e){
 }
 // Vitrine web publique (/boutique/<slug>)
 function shopUrl(slug){ return location.origin+'/boutique/'+slug; }
+let shopsInfo={shops:[],limit:1,plan:''}, curShopId=null;
+function shopById(id){ return shopsInfo.shops.find(x=>x.id===id)||null; }
+async function loadShops(){
+  try{
+    shopsInfo=await api('/api/shops');
+    const main=shopsInfo.shops.find(x=>x.isMain)||shopsInfo.shops[0];
+    if(main) promoShop=main;
+    const w=$('pShopWrap');
+    if(w){ w.classList.toggle('hidden',shopsInfo.shops.length<2); $('pShop').innerHTML='<option value="">'+esc(t('product_shop_all'))+'</option>'+shopsInfo.shops.map(x=>'<option value="'+x.id+'">'+esc(x.name)+'</option>').join(''); }
+  }catch(e){}
+}
+function fillShopForm(s){
+  curShopId=s.id;
+  $('sName').value=s.name||''; $('sEnabled').checked=!!s.enabled; $('sWhatsapp').value=s.whatsapp||'';
+  $('sSlug').value=s.slug||''; $('sTagline').value=s.tagline||'';
+  $('sFb').value=s.fbPixel||''; $('sTt').value=s.tiktokPixel||'';
+  $('sLink').value=s.slug?shopUrl(s.slug):'';
+  $('sDelBtn').classList.toggle('hidden',!!s.isMain);
+}
+function renderShopSelector(){
+  $('sShopSel').innerHTML=shopsInfo.shops.map(x=>'<option value="'+x.id+'"'+(x.id===curShopId?' selected':'')+'>'+esc(x.name)+(x.isMain?' ★':'')+(x.enabled?'':' ('+esc(t('shop_off'))+')')+'</option>').join('');
+  $('sShopLimit').textContent=tf('shop_limit',{n:shopsInfo.shops.length,max:shopsInfo.limit,plan:shopsInfo.plan});
+}
+function selectShop(id){ const s=shopById(id); if(s){ fillShopForm(s); renderShopSelector(); $('sStatus').innerHTML=''; } }
+async function newShop(){
+  const name=prompt(t('shop_new_prompt')); if(!name) return;
+  try{
+    const r=await api('/api/shops',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+    await loadShops(); fillShopForm(r.shop); renderShopSelector();
+    $('sStatus').innerHTML='<span class="badge">'+t('shop_created')+'</span>';
+  }catch(x){
+    $('sStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'+(x.upgrade?' <button type="button" class="btn primary" onclick="goUpgrade(\''+(shopsInfo.plan==='Starter'?'Business':'Pro')+'\')">'+tf('upgrade_btn',{plan:shopsInfo.plan==='Starter'?'Business':'Pro'})+'</button>':'');
+  }
+}
+async function deleteShop(){
+  const s=shopById(curShopId); if(!s||s.isMain) return;
+  if(!confirm(tf('shop_delete_confirm',{name:s.name}))) return;
+  try{ await api('/api/shops/'+s.id,{method:'DELETE'}); await loadShops(); await load(); loadShopSettings(); }
+  catch(x){ $('sStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
+}
 async function loadShopSettings(){
   try{
-    const s=await api('/api/settings/shop');
-    $('sEnabled').checked=!!s.enabled;
-    $('sWhatsapp').value=s.whatsapp||'';
-    $('sSlug').value=s.slug||'';
-    $('sTagline').value=s.tagline||'';
-    $('sFb').value=s.fbPixel||''; $('sTt').value=s.tiktokPixel||''; promoShop=s;
-    $('sLink').value=s.slug?shopUrl(s.slug):'';
+    await loadShops();
+    const s=shopById(curShopId)||shopsInfo.shops.find(x=>x.isMain)||shopsInfo.shops[0];
+    if(!s) return;
+    fillShopForm(s); renderShopSelector();
   }catch(x){ $('sStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
 }
 async function saveShopSettings(e){
   e.preventDefault();
   try{
-    const s=await api('/api/settings/shop',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-      enabled:$('sEnabled').checked, whatsapp:$('sWhatsapp').value.trim(),
+    const s=await api('/api/shops/'+curShopId,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      name:$('sName').value.trim(), enabled:$('sEnabled').checked, whatsapp:$('sWhatsapp').value.trim(),
       slug:$('sSlug').value.trim().toLowerCase(), tagline:$('sTagline').value.trim(),
       fbPixel:$('sFb').value.trim(), tiktokPixel:$('sTt').value.trim()
     })});
-    promoShop=s;
-    $('sWhatsapp').value=s.whatsapp||''; $('sSlug').value=s.slug; $('sLink').value=shopUrl(s.slug);
+    await loadShops(); fillShopForm(s); renderShopSelector();
     $('sStatus').innerHTML='<span class="badge">'+t(s.enabled?'shop_saved_on':'shop_saved_off')+'</span>';
   }catch(x){ $('sStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
 }

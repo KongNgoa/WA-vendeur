@@ -363,3 +363,22 @@ CREATE TABLE IF NOT EXISTS campaign_recipients (
 );
 CREATE INDEX IF NOT EXISTS campaign_recipients_campaign_idx ON campaign_recipients(campaign_id, status);
 CREATE INDEX IF NOT EXISTS campaign_recipients_company_sent_idx ON campaign_recipients(company_id, sent_at) WHERE status='sent';
+
+CREATE TABLE IF NOT EXISTS shops (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT false,
+  whatsapp TEXT,
+  tagline TEXT,
+  fb_pixel TEXT,
+  tiktok_pixel TEXT,
+  is_main BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS shops_slug_idx ON shops(slug);
+CREATE INDEX IF NOT EXISTS shops_company_idx ON shops(company_id);
+CREATE UNIQUE INDEX IF NOT EXISTS shops_one_main_idx ON shops(company_id) WHERE is_main;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS shop_id UUID REFERENCES shops(id) ON DELETE SET NULL;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS shop_id UUID REFERENCES shops(id) ON DELETE SET NULL;

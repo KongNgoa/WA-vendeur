@@ -139,6 +139,10 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - Le tableau du parrain montre ses filleuls (abonné actif ou en attente de paiement) et ce que chacun lui a rapporté.
 
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.
+## 1.10.24 — Multi-boutiques
+
+Un compte peut avoir plusieurs vitrines (table `shops`) : **Starter 1, Business 3, Pro 10**. Chacune a son nom, son lien `/boutique/<slug>`, son numéro WhatsApp, son slogan et ses pixels Facebook/TikTok. Un produit est rattaché à une boutique précise ou à « toutes les boutiques » (par défaut) ; la page produit, la commande et le stock respectent ce rattachement. Les commandes affichent la boutique d'origine. Réglages WhatsApp → sélecteur de boutique + « Nouvelle boutique ». La boutique existante devient automatiquement la boutique principale (migration au démarrage ; les colonnes `companies.shop_*` ne sont plus lues). API : `GET/POST /api/shops`, `PATCH/DELETE /api/shops/:id` (les anciennes routes `/api/settings/shop` pointent sur la principale).
+
 ## 1.10.23 — Campagnes de diffusion WhatsApp
 
 Nouvel onglet **Campagnes** (propriétaire/admin) : message envoyé à un segment du CRM (étape, température, clients / jamais commandé, inactivité), personnalisable avec `{prénom}`. Garde-fous : forfait **Business** (500 messages/mois) ou **Pro** (3 000), Starter verrouillé avec bouton de montée en gamme ; confirmation obligatoire que les contacts ont accepté d'être sollicités ; **STOP** (et variantes) = désabonnement définitif de la campagne, **REPRENDRE** pour se réabonner, dédoublonnage par numéro ; mention « Répondez STOP » ajoutée à chaque message. Envoi étalé (lots de 10 toutes les 20 s) ; message libre dans la fenêtre WhatsApp de 24 h, sinon **modèle Meta Marketing** (`Bonjour {{1}}, {{2}}`) s'il est renseigné, sinon contact ignoré (raison visible dans Détails). Tables `campaigns`, `campaign_recipients`, colonnes `prospects.opted_out*`.
