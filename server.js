@@ -1221,8 +1221,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.20',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.20'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.21',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.21'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -1851,6 +1851,55 @@ async function handler(req,res) {
     });
   }
 
+  // Analytics commerciales : chiffre d'affaires, entonnoir, meilleurs produits et
+  // activité de l'équipe sur 7, 30 ou 90 jours (comparés à la période précédente).
+  if(req.method==='GET'&&u.pathname==='/api/analytics/sales') {
+    const days=[7,30,90].includes(Number(u.searchParams.get('days')))?Number(u.searchParams.get('days')):30;
+    const role=await getUserRole(session.userId);
+    const [cur,prev,funnel,top,byDay,bySource,team]=await Promise.all([
+      query(`SELECT COUNT(*) FILTER (WHERE status NOT IN ('Annulée','Bloquée'))::int AS orders,
+          COALESCE(SUM(amount) FILTER (WHERE status='Livrée'),0) AS delivered,
+          COALESCE(SUM(amount) FILTER (WHERE status IN ('En attente','Confirmée','En préparation')),0) AS pipeline,
+          COUNT(*) FILTER (WHERE status='Annulée')::int AS cancelled,
+          COUNT(*) FILTER (WHERE status='Livrée')::int AS deliveredCount
+        FROM orders WHERE company_id=$1 AND created_at >= now() - ($2 || ' days')::interval`,[companyId,days]),
+      query(`SELECT COUNT(*) FILTER (WHERE status NOT IN ('Annulée','Bloquée'))::int AS orders,COALESCE(SUM(amount) FILTER (WHERE status='Livrée'),0) AS delivered
+        FROM orders WHERE company_id=$1 AND created_at >= now() - ($2 || ' days')::interval AND created_at < now() - ($3 || ' days')::interval`,[companyId,days*2,days]),
+      query(`SELECT COUNT(*)::int AS contacts,
+          COUNT(*) FILTER (WHERE stage IN ('En discussion','Gagné') OR order_intent)::int AS engaged,
+          COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM orders o WHERE o.prospect_id=p.id AND o.status NOT IN ('Annulée','Bloquée')))::int AS ordered,
+          COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM orders o WHERE o.prospect_id=p.id AND o.status='Livrée'))::int AS delivered
+        FROM prospects p WHERE company_id=$1 AND created_at >= now() - ($2 || ' days')::interval`,[companyId,days]),
+      query(`SELECT product_name AS name,SUM(quantity)::int AS units,SUM(amount) AS revenue,product_id AS id
+        FROM orders WHERE company_id=$1 AND product_name IS NOT NULL AND status NOT IN ('Annulée','Bloquée') AND created_at >= now() - ($2 || ' days')::interval
+        GROUP BY product_id,product_name ORDER BY units DESC,revenue DESC LIMIT 8`,[companyId,days]),
+      query(`SELECT to_char(created_at AT TIME ZONE 'Africa/Douala','YYYY-MM-DD') AS day,COUNT(*)::int AS n,COALESCE(SUM(amount),0) AS amount
+        FROM orders WHERE company_id=$1 AND status NOT IN ('Annulée','Bloquée') AND created_at >= now() - interval '14 days' GROUP BY 1 ORDER BY 1`,[companyId]),
+      query(`SELECT source,COUNT(*)::int AS n FROM orders WHERE company_id=$1 AND status NOT IN ('Annulée','Bloquée') AND created_at >= now() - ($2 || ' days')::interval GROUP BY source`,[companyId,days]),
+      ['owner','admin'].includes(role)
+        ? query(`SELECT u.id,u.name,u.role,COUNT(*)::int AS handled,COUNT(*) FILTER (WHERE o.status='Livrée')::int AS delivered,COALESCE(SUM(o.amount) FILTER (WHERE o.status='Livrée'),0) AS revenue
+            FROM orders o JOIN users u ON u.id=o.handled_by WHERE o.company_id=$1 AND o.status NOT IN ('Annulée','Bloquée') AND o.created_at >= now() - ($2 || ' days')::interval
+            GROUP BY u.id,u.name,u.role ORDER BY revenue DESC,handled DESC`,[companyId,days])
+        : Promise.resolve({rows:[]})
+    ]);
+    const c=cur.rows[0], pv=prev.rows[0], f=funnel.rows[0];
+    const delta=(a,b)=>Number(b)>0?Math.round((Number(a)-Number(b))/Number(b)*100):null;
+    const dayMap=new Map(byDay.rows.map(r=>[r.day,r]));
+    const salesByDay=[];
+    for(let i=13;i>=0;i--) { const d=cameroonNow(); d.setUTCDate(d.getUTCDate()-i); const k=d.toISOString().slice(0,10); const r=dayMap.get(k); salesByDay.push({day:k,orders:r?r.n:0,amount:r?Number(r.amount):0}); }
+    return json(res,200,{
+      days,
+      revenue:{delivered:Number(c.delivered),pipeline:Number(c.pipeline),orders:c.orders,cancelled:c.cancelled,
+        avgBasket:c.orders?Math.round((Number(c.delivered)+Number(c.pipeline))/c.orders):0,
+        deliveredDelta:delta(c.delivered,pv.delivered),ordersDelta:delta(c.orders,pv.orders)},
+      funnel:{contacts:f.contacts,engaged:f.engaged,ordered:f.ordered,delivered:f.delivered},
+      topProducts:top.rows.map(r=>({id:r.id,name:r.name,units:r.units,revenue:Number(r.revenue)})),
+      salesByDay,
+      bySource:Object.fromEntries(bySource.rows.map(r=>[r.source,r.n])),
+      team:team.rows.map(r=>({id:r.id,name:r.name,role:r.role,handled:r.handled,delivered:r.delivered,revenue:Number(r.revenue)}))
+    });
+  }
+
   if(req.method==='GET'&&u.pathname==='/api/me') {
     const r=await query('SELECT id,name,email,role FROM users WHERE id=$1',[session.userId]);
     return json(res,200,{me:r.rows[0]||null});
@@ -2426,7 +2475,7 @@ async function handler(req,res) {
     const amount=Number(b.amount||0);
     if(Number.isNaN(amount)||amount<0) return json(res,400,{error:'Montant invalide'});
     const number='VND-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+crypto.randomBytes(3).toString('hex').toUpperCase();
-    const r=await query('INSERT INTO orders(company_id,prospect_id,order_number,amount,status) VALUES($1,$2,$3,$4,$5) RETURNING id,order_number AS number,prospect_id AS "prospectId",amount,status,created_at AS "createdAt"',[companyId,b.prospectId,number,amount,b.status||'En attente']);
+    const r=await query('INSERT INTO orders(company_id,prospect_id,order_number,amount,status,handled_by) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,order_number AS number,prospect_id AS "prospectId",amount,status,created_at AS "createdAt"',[companyId,b.prospectId,number,amount,b.status||'En attente',session.userId]);
     await query('UPDATE prospects SET order_intent=true,stage=CASE WHEN stage IS NULL OR stage IN (\'Nouveau\',\'À contacter\') THEN \'En discussion\' ELSE stage END WHERE id=$1 AND company_id=$2',[b.prospectId,companyId]);
     await cancelAutoFollowups(companyId,b.prospectId,'Commande créée — relance automatique inutile');
     return json(res,201,{order:r.rows[0]});
@@ -2490,7 +2539,7 @@ async function handler(req,res) {
     if(cur.rows[0]?.status==='Bloquée') return json(res,403,{error:'Commande bloquée : passez au forfait supérieur pour la débloquer.'});
     if(b.status==='Bloquée') return json(res,400,{error:'Statut invalide'});
     const r=await transaction(async client=>{
-      const u2=await client.query('UPDATE orders SET amount=$1,status=$2 WHERE id=$3 AND company_id=$4 RETURNING id,order_number AS number,prospect_id AS "prospectId",amount,status,created_at AS "createdAt",product_id,quantity,stock_reserved',[Math.max(0,Number(b.amount||0)),b.status||'En attente',orderMatch[1],companyId]);
+      const u2=await client.query('UPDATE orders SET amount=$1,status=$2,handled_by=CASE WHEN status IS DISTINCT FROM $2 THEN $5::uuid ELSE handled_by END WHERE id=$3 AND company_id=$4 RETURNING id,order_number AS number,prospect_id AS "prospectId",amount,status,created_at AS "createdAt",product_id,quantity,stock_reserved',[Math.max(0,Number(b.amount||0)),b.status||'En attente',orderMatch[1],companyId,session.userId]);
       const o=u2.rows[0];
       // Commande annulée : le stock réservé à la vitrine est rendu au catalogue (une seule fois).
       if(o && o.stock_reserved && o.status==='Annulée' && o.product_id && o.quantity) {
@@ -2782,7 +2831,7 @@ async function ensureMigrations() {
     "ALTER TABLE prospects ADD COLUMN IF NOT EXISTS stage TEXT NOT NULL DEFAULT 'Nouveau'",
     "UPDATE prospects SET stage=status WHERE status IN ('Nouveau','À contacter','En discussion','Gagné','Perdu')",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT",
-    // Commandes passées depuis la vitrine web (1.10.20) : détail du produit, de la
+    // Commandes passées depuis la vitrine web (1.10.21) : détail du produit, de la
     // livraison et du client (le prospect peut manquer si le quota CRM est atteint).
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id) ON DELETE SET NULL",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_name TEXT",
@@ -2793,6 +2842,8 @@ async function ensureMigrations() {
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_phone TEXT",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manuel'",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS stock_reserved BOOLEAN NOT NULL DEFAULT false",
+    // Membre de l'équipe ayant traité la commande (dernier changement de statut / création manuelle).
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS handled_by UUID REFERENCES users(id) ON DELETE SET NULL",
     "CREATE TABLE IF NOT EXISTS product_images (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE, data BYTEA NOT NULL, mime TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
     "CREATE INDEX IF NOT EXISTS product_images_company_idx ON product_images(company_id)",
     // Vitrine web publique /boutique/<slug> (désactivée par défaut).
@@ -2835,6 +2886,6 @@ const server=http.createServer((req,res)=>handler(req,res).catch(e=>{ if(e&&e.st
 ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>console.error('[demarrage] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.20 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.21 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

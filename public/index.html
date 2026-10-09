@@ -180,6 +180,19 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <div class="stat"><div class="muted" data-i18n="analytics_conversion_rate">Conversion prospect→commande</div><div class="num" id="anConversion">—</div><div class="muted" id="anConversionDetail" style="font-size:12px"></div></div>
 <div class="stat"><div class="muted" data-i18n="analytics_ai_usage">Messages IA (ce mois)</div><div class="num" id="anAiUsage">—</div></div>
 </div>
+<div class="panel"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h3 style="margin:0" data-i18n="sales_title">Ventes & performance</h3>
+<select id="anDays" onchange="loadSalesAnalytics()" style="width:auto"><option value="7" data-i18n="sales_7d">7 jours</option><option value="30" selected data-i18n="sales_30d">30 jours</option><option value="90" data-i18n="sales_90d">90 jours</option></select></div>
+<div class="stats" style="margin-top:12px">
+<div class="stat"><div class="muted" data-i18n="sales_delivered">CA livré</div><div class="num" id="slDelivered">—</div><div class="muted" id="slDeliveredDelta" style="font-size:12px"></div></div>
+<div class="stat"><div class="muted" data-i18n="sales_pipeline">En cours</div><div class="num" id="slPipeline">—</div></div>
+<div class="stat"><div class="muted" data-i18n="sales_orders">Commandes</div><div class="num" id="slOrders">—</div><div class="muted" id="slOrdersDelta" style="font-size:12px"></div></div>
+<div class="stat"><div class="muted" data-i18n="sales_basket">Panier moyen</div><div class="num" id="slBasket">—</div><div class="muted" id="slSource" style="font-size:12px"></div></div>
+</div>
+<h4 data-i18n="sales_funnel">Entonnoir : discussion → commande</h4><div id="slFunnel"></div>
+<h4 data-i18n="sales_orders_14d">Commandes — 14 derniers jours</h4><div id="slSpark"></div>
+<h4 data-i18n="sales_top">Produits les plus vendus</h4><div id="slTop"></div>
+<div id="slTeamBox" class="hidden"><h4 data-i18n="sales_team">Performance de l'équipe</h4><div id="slTeam"></div></div>
+</div>
 <div class="panel"><h3 data-i18n="analytics_messages_14d">Messages reçus — 14 derniers jours</h3><div id="anSparkline"></div></div>
 </section>
 <section id="assistantTab" class="hidden">
@@ -362,6 +375,7 @@ fr: {
   nav_dashboard:"Tableau de bord", nav_products:"Produits", nav_crm:"CRM", nav_conversations:"Conversations",
   nav_orders:"Commandes", nav_followups:"Relances", nav_analytics:"Analytics", nav_assistant:"Assistant IA", nav_team:"Équipe", nav_settings:"Réglages WhatsApp",
   analytics_response_rate:"Taux de réponse", analytics_avg_response_time:"Temps de réponse moyen", analytics_conversion_rate:"Conversion prospect→commande",
+  sales_title:"Ventes & performance", sales_7d:"7 jours", sales_30d:"30 jours", sales_90d:"90 jours", sales_delivered:"CA livré", sales_pipeline:"En cours", sales_orders:"Commandes", sales_basket:"Panier moyen", sales_vs_prev:"vs période préc.", sales_source:"{shop} vitrine · {other} autres", sales_funnel:"Entonnoir : discussion → commande", sales_orders_14d:"Commandes — 14 derniers jours", sales_top:"Produits les plus vendus", sales_team:"Performance de l'équipe", sales_f_contacts:"Contacts", sales_f_engaged:"En discussion / intention d'achat", sales_f_ordered:"Ont commandé", sales_f_delivered:"Livrés", sales_th_product:"Produit", sales_th_units:"Unités", sales_th_revenue:"CA", sales_th_member:"Membre", sales_th_handled:"Commandes traitées", sales_th_deliv:"Livrées", sales_no_top:"Pas encore de ventes de produits sur la période (commandes vitrine uniquement).",
   analytics_ai_usage:"Messages IA (ce mois)", analytics_messages_14d:"Messages reçus — 14 derniers jours", empty_analytics:"Pas encore assez de données pour les statistiques.",
   analytics_response_detail:"{answered} / {total} messages répondus (30j)", analytics_conversion_detail:"{converted} / {total} prospects convertis", analytics_no_data_30d:"Aucun message reçu sur les 30 derniers jours",
   stat_prospects:"Prospects", stat_hot_prospects:"Prospects chauds", stat_revenue:"CA commandes", stat_followups_due:"Relances à traiter",
@@ -519,6 +533,7 @@ en: {
   nav_dashboard:"Dashboard", nav_products:"Products", nav_crm:"CRM", nav_conversations:"Conversations",
   nav_orders:"Orders", nav_followups:"Follow-ups", nav_analytics:"Analytics", nav_assistant:"AI Assistant", nav_team:"Team", nav_settings:"WhatsApp Settings",
   analytics_response_rate:"Response rate", analytics_avg_response_time:"Average response time", analytics_conversion_rate:"Lead→order conversion",
+  sales_title:"Sales & performance", sales_7d:"7 days", sales_30d:"30 days", sales_90d:"90 days", sales_delivered:"Delivered revenue", sales_pipeline:"In progress", sales_orders:"Orders", sales_basket:"Average basket", sales_vs_prev:"vs prev. period", sales_source:"{shop} storefront · {other} other", sales_funnel:"Funnel: conversation → order", sales_orders_14d:"Orders — last 14 days", sales_top:"Best-selling products", sales_team:"Team performance", sales_f_contacts:"Contacts", sales_f_engaged:"In discussion / buying intent", sales_f_ordered:"Ordered", sales_f_delivered:"Delivered", sales_th_product:"Product", sales_th_units:"Units", sales_th_revenue:"Revenue", sales_th_member:"Member", sales_th_handled:"Orders handled", sales_th_deliv:"Delivered", sales_no_top:"No product sales yet in this period (storefront orders only).",
   analytics_ai_usage:"AI messages (this month)", analytics_messages_14d:"Messages received — last 14 days", empty_analytics:"Not enough data yet for statistics.",
   analytics_response_detail:"{answered} / {total} messages answered (30d)", analytics_conversion_detail:"{converted} / {total} leads converted", analytics_no_data_30d:"No messages received in the last 30 days",
   stat_prospects:"Leads", stat_hot_prospects:"Hot leads", stat_revenue:"Order revenue", stat_followups_due:"Follow-ups due",
@@ -1826,7 +1841,39 @@ function formatDuration(seconds){
   if(seconds<3600) return Math.round(seconds/60)+(lang==='en'?'min':'min');
   return (seconds/3600).toFixed(1)+(lang==='en'?'h':'h');
 }
+async function loadSalesAnalytics(){
+  const days=$('anDays')?$('anDays').value:30;
+  const fmt=n=>Number(n||0).toLocaleString(lang==='en'?'en-GB':'fr-FR')+' FCFA';
+  const dl=(el,v)=>{ el.textContent=v==null?'':(v>0?'▲ +':(v<0?'▼ ':'= '))+v+'% '+t('sales_vs_prev'); el.style.color=v>0?'#16a34a':(v<0?'#dc2626':''); };
+  try{
+    const s=await api('/api/analytics/sales?days='+days);
+    $('slDelivered').textContent=fmt(s.revenue.delivered); dl($('slDeliveredDelta'),s.revenue.deliveredDelta);
+    $('slPipeline').textContent=fmt(s.revenue.pipeline);
+    $('slOrders').textContent=s.revenue.orders; dl($('slOrdersDelta'),s.revenue.ordersDelta);
+    $('slBasket').textContent=fmt(s.revenue.avgBasket);
+    const v=s.bySource.vitrine||0, m=s.revenue.orders-v;
+    $('slSource').textContent=tf('sales_source',{shop:v,other:m});
+    const f=s.funnel, top=Math.max(1,f.contacts);
+    const steps=[['sales_f_contacts',f.contacts],['sales_f_engaged',f.engaged],['sales_f_ordered',f.ordered],['sales_f_delivered',f.delivered]];
+    $('slFunnel').innerHTML=steps.map(([k,n],i)=>{
+      const pct=Math.round(n/top*100);
+      return '<div style="margin:6px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span>'+esc(t(k))+'</span><b>'+n+(i?' · '+pct+'%':'')+'</b></div><div style="background:#eef1f6;border-radius:6px;height:12px"><div style="width:'+Math.max(pct,n?3:0)+'%;height:12px;border-radius:6px;background:var(--gradient)"></div></div></div>';
+    }).join('');
+    const mx=Math.max(1,...s.salesByDay.map(d=>d.orders));
+    $('slSpark').innerHTML='<div class="sparkline">'+s.salesByDay.map(d=>{
+      const lbl=new Date(d.day+'T00:00:00').toLocaleDateString(lang==='en'?'en-GB':'fr-FR',{day:'2-digit',month:'2-digit'});
+      return '<div class="bar" style="height:'+Math.round(d.orders/mx*100)+'%" title="'+esc(lbl)+' — '+d.orders+' / '+esc(fmt(d.amount))+'"><span class="val">'+(d.orders||'')+'</span><span class="lbl">'+esc(lbl)+'</span></div>';
+    }).join('')+'</div>';
+    $('slTop').innerHTML=s.topProducts.length?'<table><tr><th>'+t('sales_th_product')+'</th><th>'+t('sales_th_units')+'</th><th>'+t('sales_th_revenue')+'</th></tr>'+s.topProducts.map(p=>'<tr><td>'+esc(p.name)+'</td><td>'+p.units+'</td><td>'+esc(fmt(p.revenue))+'</td></tr>').join('')+'</table>':'<div class="empty">'+t('sales_no_top')+'</div>';
+    const box=$('slTeamBox');
+    if(s.team.length){ box.classList.remove('hidden');
+      $('slTeam').innerHTML='<table><tr><th>'+t('sales_th_member')+'</th><th>'+t('sales_th_handled')+'</th><th>'+t('sales_th_deliv')+'</th><th>'+t('sales_th_revenue')+'</th></tr>'+s.team.map(m=>'<tr><td>'+esc(m.name)+'</td><td>'+m.handled+'</td><td>'+m.delivered+'</td><td>'+esc(fmt(m.revenue))+'</td></tr>').join('')+'</table>';
+    } else box.classList.add('hidden');
+  }catch(e){ console.error(e); }
+}
+
 async function loadAnalytics(){
+  loadSalesAnalytics();
   const spark=$('anSparkline');
   $('anResponseRate').textContent='…'; $('anAvgResponse').textContent='…'; $('anConversion').textContent='…'; $('anAiUsage').textContent='…';
   spark.innerHTML='';

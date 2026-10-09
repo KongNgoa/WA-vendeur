@@ -139,3 +139,7 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - Le tableau du parrain montre ses filleuls (abonné actif ou en attente de paiement) et ce que chacun lui a rapporté.
 
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.
+## 1.10.21 — Analytics de ventes
+
+Onglet **Analytics** : CA livré / en cours, nombre de commandes et panier moyen (avec variation vs période précédente, 7/30/90 jours), entonnoir contacts → discussion/intention → commande → livré, commandes des 14 derniers jours, produits les plus vendus (commandes vitrine) et performance par membre de l'équipe (visible propriétaire/admin ; colonne `orders.handled_by`). API : `GET /api/analytics/sales?days=`.
+
