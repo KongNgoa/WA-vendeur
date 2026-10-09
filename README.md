@@ -87,6 +87,10 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - **Pensée pour le référencement et le partage** : aperçu riche (titre, description, photo) dans Facebook/WhatsApp, données structurées schema.org (produits, prix en XAF, disponibilité), lien canonique.
 - **Sûre** : tout le contenu est échappé, la page disparaît (404) si l'entreprise la désactive, est suspendue ou n'est pas encore validée, et les requêtes répétées sont limitées par IP.
 
+## Photos de produits (1.10.12)
+- **Téléversement direct à l'ajout d'un produit** : un champ "Photo du produit" permet de choisir une image depuis le téléphone ou l'ordinateur ; elle est réduite dans le navigateur (JPEG, 900 px max) puis stockée en base (table `product_images`, servie sur `/img/<id>`). Le lien collé à la main reste possible.
+- La photo est utilisée partout : catalogue, vitrine web, envoi d'images par l'IA sur WhatsApp et affiches du Studio promo (même domaine, donc toujours intégrable). Contrôles côté serveur : 700 Ko max, JPEG/PNG/WebP vérifiés sur le contenu, 1000 photos max par entreprise.
+
 ## Studio promo (1.10.11)
 - **Nouvel onglet "Studio promo"** : choisissez un produit du catalogue et obtenez en un clic un texte prêt à publier (statut WhatsApp, publication Facebook/Instagram ou message à un client), modifiable avant copie ou partage WhatsApp.
 - **Texte rédigé par l'IA, sans invention** : le serveur n'envoie à Claude que le nom, la catégorie, le prix et l'alerte de stock ; l'IA n'écrit jamais de lien, de numéro ni de remise. Les liens de commande WhatsApp et de vitrine sont ajoutés par le serveur. Même quota mensuel que les autres usages IA ; au-delà (ou sans clé API), un modèle de texte FR/EN est utilisé.

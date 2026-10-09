@@ -302,3 +302,7 @@ CREATE TABLE IF NOT EXISTS referral_commissions (
   paid_at TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS referral_commissions_referrer_idx ON referral_commissions(referrer_company_id,status);
+
+-- Photos de produits téléversées (1.10.12)
+CREATE TABLE IF NOT EXISTS product_images (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE, data BYTEA NOT NULL, mime TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS product_images_company_idx ON product_images(company_id);

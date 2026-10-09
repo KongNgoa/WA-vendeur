@@ -1119,12 +1119,20 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.11',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.11'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.12',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.12'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
   if(req.method==='GET'&&u.pathname==='/signup.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/signup.html'))); }
+  // Photos de produits téléversées (stockées en base : le disque Railway est éphémère).
+  const imgMatch=req.method==='GET'?u.pathname.match(/^\/img\/([0-9a-f-]{36})$/i):null;
+  if(imgMatch) {
+    const r=await query('SELECT data,mime FROM product_images WHERE id=$1',[imgMatch[1].toLowerCase()]);
+    if(!r.rows[0]) return json(res,404,{error:'Introuvable'});
+    res.writeHead(200,{'Content-Type':r.rows[0].mime,'Cache-Control':'public, max-age=31536000, immutable','X-Content-Type-Options':'nosniff','Content-Length':r.rows[0].data.length});
+    return res.end(r.rows[0].data);
+  }
   if(req.method==='GET'&&u.pathname.startsWith('/assets/')) {
     const assetTypes={'.png':'image/png','.ico':'image/x-icon','.svg':'image/svg+xml','.jpg':'image/jpeg','.jpeg':'image/jpeg'};
     const ext=path.extname(u.pathname).toLowerCase();
@@ -1835,6 +1843,17 @@ async function handler(req,res) {
     }
   }
 
+  if(req.method==='POST'&&u.pathname==='/api/products/image') {
+    const b=await body(req);
+    const buf=Buffer.from(String(b.data||'').replace(/^data:[^,]*,/,''),'base64');
+    if(!buf.length||buf.length>700*1024) return json(res,400,{error:'Image invalide ou trop lourde (700 Ko maximum)'});
+    const mime=buf.subarray(0,3).equals(Buffer.from([0xff,0xd8,0xff]))?'image/jpeg':buf.subarray(0,8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]))?'image/png':(buf.subarray(0,4).toString()==='RIFF'&&buf.subarray(8,12).toString()==='WEBP')?'image/webp':null;
+    if(!mime) return json(res,400,{error:'Format non pris en charge (JPEG, PNG ou WebP)'});
+    const cnt=await query('SELECT COUNT(*)::int AS n FROM product_images WHERE company_id=$1',[companyId]);
+    if(cnt.rows[0].n>=1000) return json(res,400,{error:'Limite de photos atteinte'});
+    const r=await query('INSERT INTO product_images(company_id,data,mime) VALUES($1,$2,$3) RETURNING id',[companyId,buf,mime]);
+    return json(res,201,{url:requestOrigin(req)+'/img/'+r.rows[0].id});
+  }
   if(req.method==='GET'&&u.pathname==='/api/products') {
     const r=await query('SELECT id,name,category,price,stock,image_url AS "imageUrl",created_at AS "createdAt" FROM products WHERE company_id=$1 ORDER BY created_at DESC',[companyId]);
     return json(res,200,{products:r.rows});
@@ -2500,6 +2519,8 @@ async function ensureMigrations() {
     "ALTER TABLE prospects ADD COLUMN IF NOT EXISTS stage TEXT NOT NULL DEFAULT 'Nouveau'",
     "UPDATE prospects SET stage=status WHERE status IN ('Nouveau','À contacter','En discussion','Gagné','Perdu')",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT",
+    "CREATE TABLE IF NOT EXISTS product_images (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE, data BYTEA NOT NULL, mime TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
+    "CREATE INDEX IF NOT EXISTS product_images_company_idx ON product_images(company_id)",
     // Vitrine web publique /boutique/<slug> (désactivée par défaut).
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_slug TEXT",
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_enabled BOOLEAN NOT NULL DEFAULT false",
@@ -2538,6 +2559,6 @@ const server=http.createServer((req,res)=>handler(req,res).catch(e=>{console.err
 ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>console.error('[demarrage] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.11 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.12 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});
