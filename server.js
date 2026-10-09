@@ -896,6 +896,93 @@ async function sendWhatsAppMessage(company, toPhone, text) {
   }
 }
 
+// --- Telegram (bot par entreprise) ------------------------------------------
+// Chaque entreprise crée son bot avec @BotFather et colle le jeton dans les
+// Réglages ; VENDIA enregistre le webhook (URL secrète + en-tête secret_token).
+const TELEGRAM_TOKEN_RE = /^\d{6,12}:[A-Za-z0-9_-]{30,50}$/;
+async function telegramApi(token, method, payload) {
+  try {
+    const resp = await fetch('https://api.telegram.org/bot' + token + '/' + method, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {})
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) return { error: data.description || ('Erreur Telegram (HTTP ' + resp.status + ')') };
+    return { result: data.result };
+  } catch (e) { return { error: 'Connexion à Telegram impossible : ' + e.message }; }
+}
+async function sendTelegramMessage(token, chatId, text) {
+  const r = await telegramApi(token, 'sendMessage', { chat_id: chatId, text: String(text).slice(0, 4000) });
+  if (r.error) return { error: r.error };
+  return { providerMessageId: r.result?.message_id ? 'tg:' + r.result.message_id : null };
+}
+async function findOrCreateTelegramConversation(companyId, chatId) {
+  const select = () => query("SELECT id,prospect_id AS \"prospectId\",external_contact AS phone,channel FROM conversations WHERE company_id=$1 AND channel='telegram' AND external_contact=$2 ORDER BY created_at DESC LIMIT 1", [companyId, chatId]);
+  const ex = await select();
+  if (ex.rows[0]) return ex.rows[0];
+  try {
+    const c = await query("INSERT INTO conversations(company_id,prospect_id,channel,external_contact) VALUES($1,NULL,'telegram',$2) RETURNING id,prospect_id AS \"prospectId\",external_contact AS phone,channel", [companyId, chatId]);
+    return c.rows[0];
+  } catch (e) {
+    if (e.code === '23505') { const r2 = await select(); if (r2.rows[0]) return r2.rows[0]; }
+    throw e;
+  }
+}
+async function findOrCreateTelegramProspect(companyId, chatId, name, needText) {
+  const ex = await query('SELECT id FROM prospects WHERE company_id=$1 AND telegram_chat_id=$2', [companyId, chatId]);
+  if (ex.rows[0]) return ex.rows[0].id;
+  const quota = await prospectQuotaStatus(companyId);
+  if (!quota.allowed) return null;
+  try {
+    const c = await query('INSERT INTO prospects(company_id,name,phone,need,value,score,status,stage,order_intent,last_contact,telegram_chat_id) VALUES($1,$2,NULL,$3,0,0,$4,$5,false,now(),$6) RETURNING id', [companyId, name, String(needText || '').slice(0, 500), heatFromScore(0), 'Nouveau', chatId]);
+    return c.rows[0].id;
+  } catch (e) {
+    if (e.code === '23505') { const r2 = await query('SELECT id FROM prospects WHERE company_id=$1 AND telegram_chat_id=$2', [companyId, chatId]); if (r2.rows[0]) return r2.rows[0].id; }
+    throw e;
+  }
+}
+async function handleTelegramUpdate(co, update) {
+  const m = update && update.message;
+  if (!m || !m.chat || m.chat.type !== 'private' || m.from?.is_bot) return;
+  const chatId = String(m.chat.id);
+  const text = String(m.text || m.caption || '').trim();
+  if (!text) return;
+  const name = [m.from?.first_name, m.from?.last_name].filter(Boolean).join(' ').trim() || m.from?.username || null;
+  if (update.update_id !== undefined) {
+    const dedup = await query('INSERT INTO webhook_events(provider,external_event_id,payload) VALUES($1,$2,$3) ON CONFLICT (provider,external_event_id) DO NOTHING RETURNING id', ['telegram', co.id + ':' + update.update_id, JSON.stringify({ chat: chatId })]).catch(() => ({ rows: [{ id: 'nodedupe' }] }));
+    if (!dedup.rows[0]) return;
+  }
+  const token = decryptSecret(co.telegramBotToken);
+  if (!token) return;
+  const conv = await findOrCreateTelegramConversation(co.id, chatId);
+  let prospectId = conv.prospectId || await findOrCreateTelegramProspect(co.id, chatId, name, text);
+  if (/^\/start\b/i.test(text)) {
+    const hello = 'Bonjour' + (name ? ' ' + name : '') + ' 👋 Bienvenue chez ' + co.name + ' ! Comment pouvons-nous vous aider ?';
+    await ingestMessage(co.id, conv.id, conv, { body: text, direction: 'in', name, prospectId, providerMessageId: null });
+    await ingestMessage(co.id, conv.id, { ...conv, prospectId }, { body: hello, direction: 'out' });
+    return;
+  }
+  const ing = await ingestMessage(co.id, conv.id, conv, { body: text, direction: 'in', name, prospectId, providerMessageId: null });
+  const limits = planLimits(co.plan);
+  if (co.aiAutoReplyEnabled === false || !limits.aiAutoReply) return;
+  let reply;
+  if (ing.nextAction?.action === 'handoff') {
+    reply = 'Merci pour votre message 🙏 Je transmets tout de suite à un membre de notre équipe qui revient vers vous rapidement.';
+  } else {
+    const products = (await query('SELECT name,category,price,stock FROM products WHERE company_id=$1 ORDER BY created_at', [co.id])).rows;
+    if (CATALOG_INTENT.test(text) && products.length) {
+      reply = '🛍️ Nos produits :\n' + products.slice(0, 30).map(p => '• ' + p.name + ' — ' + Number(p.price).toLocaleString('fr-FR') + ' FCFA' + (Number(p.stock) <= 0 ? ' (épuisé)' : '')).join('\n');
+    } else {
+      const usage = await getAiUsage(co.id, co.plan);
+      if (usage.remaining !== null && usage.remaining <= 0) return;
+      const prospectRow = ing.prospectId ? (await query('SELECT status,need FROM prospects WHERE id=$1', [ing.prospectId])).rows[0] : null;
+      const history = (await query('SELECT direction,body FROM messages WHERE conversation_id=$1 ORDER BY created_at DESC LIMIT 12', [conv.id])).rows.reverse();
+      reply = await generateAiReply(co, prospectRow, products, history);
+      if (reply) await incrementAiUsage(co.id);
+    }
+  }
+  if (reply) await ingestMessage(co.id, conv.id, { ...conv, prospectId: ing.prospectId || prospectId }, { body: reply, direction: 'out' });
+}
+
 // Message « modèle » (template) approuvé par Meta : seul type de message
 // autorisé hors de la fenêtre de 24 h après le dernier message du client.
 async function sendWhatsAppTemplate(company, toPhone, name, lang, params) {
@@ -1113,6 +1200,12 @@ async function generateAiReply(company, prospect, products, history) {
 // WhatsApp, (b) la conversation est un fil WhatsApp avec un numéro connu.
 // Sinon, renvoie null (aucun envoi, comportement inchangé).
 async function maybeSendWhatsApp(companyId, conv, text) {
+  if (conv && conv.channel === 'telegram' && conv.phone) {
+    const t = await query('SELECT telegram_bot_token AS tok FROM companies WHERE id=$1', [companyId]);
+    const token = t.rows[0]?.tok ? decryptSecret(t.rows[0].tok) : null;
+    if (!token) return null;
+    return sendTelegramMessage(token, conv.phone, text);
+  }
   if (!conv || conv.channel !== 'whatsapp' || !conv.phone) return null;
   const c = await query('SELECT whatsapp_phone_number_id AS "whatsappPhoneNumberId",whatsapp_access_token AS "whatsappAccessToken" FROM companies WHERE id=$1', [companyId]);
   const company = c.rows[0];
@@ -1394,8 +1487,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.24',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.24'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.25',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.25'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -1521,6 +1614,17 @@ async function handler(req,res) {
   // donc volontairement AVANT ensureDemo()/l'authentification par session :
   // Meta n'a ni compte ni jeton de session VENDIA, seulement le jeton de
   // vérification propre à chaque entreprise, comparé ci-dessous.
+  // Webhook Telegram : URL secrète propre à chaque entreprise + en-tête secret_token.
+  const tgHook=req.method==='POST'?u.pathname.match(/^\/webhooks\/telegram\/([0-9a-f]{32})$/):null;
+  if(tgHook) {
+    try {
+      const raw=await rawBody(req);
+      const co=(await query('SELECT c.id,c.name,c.sector,c.ai_name AS "aiName",c.ai_tone AS "aiTone",c.ai_language AS "aiLanguage",c.ai_rules AS "aiRules",c.ai_auto_reply_enabled AS "aiAutoReplyEnabled",c.suspended,c.approved_at AS "approvedAt",c.telegram_bot_token AS "telegramBotToken",s.plan AS "plan" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id WHERE c.telegram_webhook_secret=$1',[tgHook[1]])).rows[0];
+      if(!co || req.headers['x-telegram-bot-api-secret-token']!==tgHook[1]) { res.writeHead(403,{'Content-Type':'text/plain'}); return res.end('Forbidden'); }
+      if(!co.suspended && co.approvedAt) await handleTelegramUpdate(co, raw?JSON.parse(raw):{});
+    } catch(e) { console.error('[telegram] erreur de traitement:',e.message); }
+    return json(res,200,{ok:true});
+  }
   if(req.method==='GET'&&u.pathname==='/webhooks/whatsapp') {
     const mode=u.searchParams.get('hub.mode');
     const verifyToken=u.searchParams.get('hub.verify_token');
@@ -2396,6 +2500,34 @@ async function handler(req,res) {
     return json(res,200,{ok:true});
   }
 
+  // Connexion du bot Telegram (propriétaire/admin pour modifier).
+  if(u.pathname==='/api/settings/telegram' && ['GET','PUT','DELETE'].includes(req.method)) {
+    const current=async ()=>(await query('SELECT telegram_bot_token AS tok,telegram_bot_username AS username,telegram_webhook_secret AS secret FROM companies WHERE id=$1',[companyId])).rows[0]||{};
+    if(req.method!=='GET' && !['owner','admin'].includes(await getUserRole(session.userId))) return json(res,403,{error:'Réservé au propriétaire ou à un administrateur.'});
+    if(req.method==='PUT') {
+      const b=await body(req);
+      const token=String(b.botToken||'').trim();
+      if(!TELEGRAM_TOKEN_RE.test(token)) return json(res,400,{error:'Jeton invalide : copiez le jeton complet donné par @BotFather (ex. 123456789:AAH…).'});
+      const me=await telegramApi(token,'getMe');
+      if(me.error) return json(res,400,{error:'Telegram a refusé ce jeton : '+me.error});
+      const cur=await current();
+      const secret=cur.secret||crypto.randomBytes(16).toString('hex');
+      const url=requestOrigin(req)+'/webhooks/telegram/'+secret;
+      const wh=await telegramApi(token,'setWebhook',{url,secret_token:secret,allowed_updates:['message']});
+      if(wh.error) return json(res,400,{error:'Impossible d\'enregistrer le webhook Telegram : '+wh.error});
+      await query('UPDATE companies SET telegram_bot_token=$1,telegram_bot_username=$2,telegram_webhook_secret=$3 WHERE id=$4',[encryptSecret(token),me.result?.username||null,secret,companyId]);
+      return json(res,200,{configured:true,username:me.result?.username||null});
+    }
+    if(req.method==='DELETE') {
+      const cur=await current();
+      const token=cur.tok?decryptSecret(cur.tok):null;
+      if(token) await telegramApi(token,'deleteWebhook',{});
+      await query('UPDATE companies SET telegram_bot_token=NULL,telegram_bot_username=NULL,telegram_webhook_secret=NULL WHERE id=$1',[companyId]);
+      return json(res,200,{configured:false});
+    }
+    const cur=await current();
+    return json(res,200,{configured:Boolean(cur.tok&&cur.secret),username:cur.username||null});
+  }
   if(req.method==='GET'&&u.pathname==='/api/settings/whatsapp') {
     let c=await query('SELECT whatsapp_phone_number_id AS "phoneNumberId",whatsapp_access_token AS "accessToken",whatsapp_verify_token AS "verifyToken" FROM companies WHERE id=$1',[companyId]);
     let row=c.rows[0]||{};
@@ -3159,7 +3291,7 @@ async function ensureMigrations() {
     "ALTER TABLE prospects ADD COLUMN IF NOT EXISTS stage TEXT NOT NULL DEFAULT 'Nouveau'",
     "UPDATE prospects SET stage=status WHERE status IN ('Nouveau','À contacter','En discussion','Gagné','Perdu')",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT",
-    // Commandes passées depuis la vitrine web (1.10.24) : détail du produit, de la
+    // Commandes passées depuis la vitrine web (1.10.25) : détail du produit, de la
     // livraison et du client (le prospect peut manquer si le quota CRM est atteint).
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id) ON DELETE SET NULL",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_name TEXT",
@@ -3170,6 +3302,12 @@ async function ensureMigrations() {
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_phone TEXT",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manuel'",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS stock_reserved BOOLEAN NOT NULL DEFAULT false",
+    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS telegram_bot_token TEXT",
+    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS telegram_bot_username TEXT",
+    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS telegram_webhook_secret TEXT",
+    "CREATE UNIQUE INDEX IF NOT EXISTS companies_telegram_secret_idx ON companies(telegram_webhook_secret) WHERE telegram_webhook_secret IS NOT NULL",
+    "ALTER TABLE prospects ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT",
+    "CREATE UNIQUE INDEX IF NOT EXISTS prospects_company_telegram_idx ON prospects(company_id,telegram_chat_id) WHERE telegram_chat_id IS NOT NULL",
     "ALTER TABLE prospects ADD COLUMN IF NOT EXISTS opted_out BOOLEAN NOT NULL DEFAULT false",
     "ALTER TABLE prospects ADD COLUMN IF NOT EXISTS opted_out_at TIMESTAMPTZ",
     `CREATE TABLE IF NOT EXISTS campaigns (
@@ -3275,6 +3413,6 @@ ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>runCampaignTick(), 20*1000);
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.24 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.25 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

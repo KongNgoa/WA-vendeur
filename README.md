@@ -139,6 +139,10 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - Le tableau du parrain montre ses filleuls (abonné actif ou en attente de paiement) et ce que chacun lui a rapporté.
 
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.
+## 1.10.25 — Canal Telegram
+
+Chaque entreprise peut connecter **son bot Telegram** (Réglages WhatsApp → panneau Telegram : créer le bot avec @BotFather, coller le jeton). VENDIA vérifie le jeton (`getMe`), enregistre le webhook (`/webhooks/telegram/<secret>` + en-tête `secret_token`, déduplication par `update_id`) et chiffre le jeton comme les secrets WhatsApp. Les messages créent conversation + contact CRM (`prospects.telegram_chat_id`, sans téléphone), l'assistant IA répond (accueil `/start`, catalogue en texte, transfert humain, quota IA) et les réponses manuelles depuis VENDIA repartent sur Telegram. Les conversations sont repérées « ✈️ Telegram ». Les campagnes, relances automatiques et notifications de commande restent WhatsApp uniquement (contacts Telegram sans numéro). Nécessite une URL publique en HTTPS (Railway).
+
 ## 1.10.24 — Multi-boutiques
 
 Un compte peut avoir plusieurs vitrines (table `shops`) : **Starter 1, Business 3, Pro 10**. Chacune a son nom, son lien `/boutique/<slug>`, son numéro WhatsApp, son slogan et ses pixels Facebook/TikTok. Un produit est rattaché à une boutique précise ou à « toutes les boutiques » (par défaut) ; la page produit, la commande et le stock respectent ce rattachement. Les commandes affichent la boutique d'origine. Réglages WhatsApp → sélecteur de boutique + « Nouvelle boutique ». La boutique existante devient automatiquement la boutique principale (migration au démarrage ; les colonnes `companies.shop_*` ne sont plus lues). API : `GET/POST /api/shops`, `PATCH/DELETE /api/shops/:id` (les anciennes routes `/api/settings/shop` pointent sur la principale).

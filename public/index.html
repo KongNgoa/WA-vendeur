@@ -354,6 +354,12 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 </div>
 <p class="muted" id="metaConfigNote"></p>
 </div>
+<div class="panel"><h3 data-i18n="tg_title">Telegram (bot de votre boutique)</h3>
+<p class="muted" data-i18n="tg_desc">Recevez et traitez aussi les messages de vos clients Telegram : l'assistant IA répond, les conversations et contacts arrivent dans VENDIA. Créez un bot avec @BotFather sur Telegram (commande /newbot), puis collez ici le jeton fourni.</p>
+<form class="formgrid" onsubmit="saveTelegram(event)">
+<input id="tgToken" class="full" type="password" autocomplete="off" placeholder="Jeton du bot (ex. 123456789:AAH…)" data-i18n-placeholder="tg_token_ph">
+<div class="full"><button class="btn primary" data-i18n="tg_connect">Connecter le bot</button> <button type="button" class="btn danger hidden" id="tgOff" onclick="disconnectTelegram()" data-i18n="tg_disconnect">Déconnecter</button></div>
+</form><div id="tgStatus" style="margin-top:10px"></div></div>
 <div class="panel"><h3 data-i18n="notify_title">Suivi de commande automatique (WhatsApp)</h3>
 <p class="muted" data-i18n="notify_desc">Quand vous passez une commande en Confirmée, En préparation, Livrée ou Annulée, le client reçoit automatiquement un message WhatsApp. WhatsApp n'autorise un message libre que dans les 24 h suivant le dernier message du client : au-delà, un modèle approuvé par Meta est nécessaire (facultatif ci-dessous).</p>
 <form class="formgrid" onsubmit="saveOrderNotify(event)">
@@ -412,6 +418,7 @@ fr: {
   notify_title:"Suivi de commande automatique (WhatsApp)", notify_desc:"Quand vous passez une commande en Confirmée, En préparation, Livrée ou Annulée, le client reçoit automatiquement un message WhatsApp. WhatsApp n'autorise un message libre que dans les 24 h suivant le dernier message du client : au-delà, un modèle approuvé par Meta est nécessaire (facultatif ci-dessous).", notify_enable:"Envoyer les mises à jour de commande aux clients", notify_tpl_label:"Nom du modèle Meta (optionnel)", notify_lang_label:"Langue du modèle", notify_tpl_help:"Modèle (catégorie Utility) avec 3 variables dans le corps : {{1}} prénom du client, {{2}} numéro de commande, {{3}} statut. Exemple : « Bonjour {{1}}, votre commande {{2}} est maintenant : {{3}}. »", notify_saved:"Réglage enregistré", notify_sent:"Client prévenu", notify_failed:"Client non prévenu", notify_failed_alert:"Le statut est changé, mais le client n'a pas pu être prévenu par WhatsApp :",
   nav_campaigns:"Campagnes", camp_title:"Campagnes de diffusion WhatsApp", camp_desc:"Envoyez une offre ou une actualité à un groupe de contacts de votre CRM. Envoi étalé automatiquement ; les contacts qui répondent STOP sont exclus pour toujours.", camp_new:"Nouvelle campagne", camp_name_ph:"Nom de la campagne (interne)", camp_msg_ph:"Votre message. Utilisez {prénom} pour personnaliser.", camp_footer_note:"La mention « Répondez STOP pour ne plus recevoir nos messages » est ajoutée automatiquement.", camp_aud_stage:"Étape du contact", camp_aud_heat:"Température", camp_aud_customers:"Clients", camp_cust_all:"Tous les contacts", camp_cust_only:"Déjà clients (ont commandé)", camp_cust_never:"Jamais commandé", camp_aud_inactive:"Sans contact depuis (jours, 0 = tous)", camp_aud_count:"👥 {n} contact(s) ciblé(s) ({out} désabonné(s) exclu(s))", camp_tpl_label:"Modèle Meta Marketing (optionnel)", camp_tpl_help:"WhatsApp n'autorise un message libre que dans les 24 h après le dernier message du client. Pour les autres contacts, créez dans Meta un modèle de catégorie Marketing dont le corps est : « Bonjour {{1}}, {{2}} » ({{1}} prénom, {{2}} votre message). Sans modèle, ces contacts sont ignorés.", camp_optin:"Je confirme que ces contacts ont accepté de recevoir mes messages sur WhatsApp.", camp_optin_required:"Cochez la confirmation d'accord des contacts avant de lancer.", camp_launch:"Lancer la campagne", camp_empty:"Aucun contact dans cette audience.", camp_confirm:"Envoyer cette campagne à {n} contact(s) ?", camp_started:"Campagne lancée : l'envoi se déroule progressivement.", camp_history:"Historique", camp_quota:"Messages de campagne ce mois-ci : {used} / {limit} (forfait {plan})", camp_locked:"Les campagnes de diffusion sont disponibles à partir du forfait Business.", camp_th_name:"Campagne", camp_th_progress:"Progression", camp_cancel:"Annuler", camp_delete:"Supprimer", camp_details:"Détails", camp_st_draft:"Brouillon", camp_st_running:"En cours", camp_st_done:"Terminée", camp_st_cancelled:"Annulée", camp_none:"Aucune campagne pour le moment.", camp_cancel_confirm:"Annuler cette campagne ? Les messages non envoyés ne partiront pas.", camp_delete_confirm:"Supprimer cette campagne ?", camp_th_contact:"Contact", camp_th_reason:"Raison", camp_no_problem:"Aucun envoi ignoré ou en échec.",
   shop_new_btn:"+ Nouvelle boutique", shop_delete_btn:"Supprimer cette boutique", shop_name_ph:"Nom de la boutique", shop_off:"désactivée", shop_limit:"{n} / {max} boutique(s) — forfait {plan}", shop_new_prompt:"Nom de la nouvelle boutique :", shop_created:"Boutique créée : renseignez son numéro WhatsApp puis activez-la.", shop_delete_confirm:"Supprimer la boutique « {name} » ? Ses produits restent dans le catalogue et deviennent visibles dans toutes les boutiques.", product_shop_label:"Boutique", product_shop_all:"Toutes les boutiques",
+  tg_title:"Telegram (bot de votre boutique)", tg_desc:"Recevez et traitez aussi les messages de vos clients Telegram : l'assistant IA répond, les conversations et contacts arrivent dans VENDIA. Créez un bot avec @BotFather sur Telegram (commande /newbot), puis collez ici le jeton fourni.", tg_token_ph:"Jeton du bot (ex. 123456789:AAH…)", tg_connect:"Connecter le bot", tg_disconnect:"Déconnecter", tg_connected:"Bot connecté : @{name}", tg_not_connected:"Aucun bot connecté.", tg_disconnect_confirm:"Déconnecter le bot Telegram ? Il ne recevra plus de messages.",
   analytics_ai_usage:"Messages IA (ce mois)", analytics_messages_14d:"Messages reçus — 14 derniers jours", empty_analytics:"Pas encore assez de données pour les statistiques.",
   analytics_response_detail:"{answered} / {total} messages répondus (30j)", analytics_conversion_detail:"{converted} / {total} prospects convertis", analytics_no_data_30d:"Aucun message reçu sur les 30 derniers jours",
   stat_prospects:"Prospects", stat_hot_prospects:"Prospects chauds", stat_revenue:"CA commandes", stat_followups_due:"Relances à traiter",
@@ -573,6 +580,7 @@ en: {
   notify_title:"Automatic order tracking (WhatsApp)", notify_desc:"When you set an order to Confirmed, In preparation, Delivered or Cancelled, the customer automatically gets a WhatsApp message. WhatsApp only allows a free-form message within 24 h of the customer's last message: beyond that, a Meta-approved template is required (optional below).", notify_enable:"Send order updates to customers", notify_tpl_label:"Meta template name (optional)", notify_lang_label:"Template language", notify_tpl_help:"Template (Utility category) with 3 variables in the body: {{1}} customer first name, {{2}} order number, {{3}} status. Example: \"Hello {{1}}, your order {{2}} is now: {{3}}.\"", notify_saved:"Setting saved", notify_sent:"Customer notified", notify_failed:"Customer not notified", notify_failed_alert:"The status was changed, but the customer could not be notified on WhatsApp:",
   nav_campaigns:"Campaigns", camp_title:"WhatsApp broadcast campaigns", camp_desc:"Send an offer or news to a group of contacts from your CRM. Sending is paced automatically; contacts who reply STOP are excluded for good.", camp_new:"New campaign", camp_name_ph:"Campaign name (internal)", camp_msg_ph:"Your message. Use {prénom} to personalise.", camp_footer_note:"The line “Reply STOP to stop receiving our messages” is added automatically.", camp_aud_stage:"Contact stage", camp_aud_heat:"Lead temperature", camp_aud_customers:"Customers", camp_cust_all:"All contacts", camp_cust_only:"Existing customers (have ordered)", camp_cust_never:"Never ordered", camp_aud_inactive:"No contact for (days, 0 = all)", camp_aud_count:"👥 {n} contact(s) targeted ({out} unsubscribed excluded)", camp_tpl_label:"Meta Marketing template (optional)", camp_tpl_help:"WhatsApp only allows a free-form message within 24 h of the customer's last message. For other contacts, create a Marketing-category template in Meta whose body is: \"Hello {{1}}, {{2}}\" ({{1}} first name, {{2}} your message). Without a template, those contacts are skipped.", camp_optin:"I confirm these contacts agreed to receive my messages on WhatsApp.", camp_optin_required:"Tick the contacts' consent confirmation before launching.", camp_launch:"Launch campaign", camp_empty:"No contacts in this audience.", camp_confirm:"Send this campaign to {n} contact(s)?", camp_started:"Campaign launched: messages are being sent gradually.", camp_history:"History", camp_quota:"Campaign messages this month: {used} / {limit} ({plan} plan)", camp_locked:"Broadcast campaigns are available from the Business plan.", camp_th_name:"Campaign", camp_th_progress:"Progress", camp_cancel:"Cancel", camp_delete:"Delete", camp_details:"Details", camp_st_draft:"Draft", camp_st_running:"Running", camp_st_done:"Finished", camp_st_cancelled:"Cancelled", camp_none:"No campaigns yet.", camp_cancel_confirm:"Cancel this campaign? Unsent messages will not go out.", camp_delete_confirm:"Delete this campaign?", camp_th_contact:"Contact", camp_th_reason:"Reason", camp_no_problem:"No skipped or failed messages.",
   shop_new_btn:"+ New shop", shop_delete_btn:"Delete this shop", shop_name_ph:"Shop name", shop_off:"disabled", shop_limit:"{n} / {max} shop(s) — {plan} plan", shop_new_prompt:"Name of the new shop:", shop_created:"Shop created: add its WhatsApp number, then enable it.", shop_delete_confirm:"Delete the shop “{name}”? Its products stay in the catalog and become visible in all shops.", product_shop_label:"Shop", product_shop_all:"All shops",
+  tg_title:"Telegram (your shop's bot)", tg_desc:"Also receive and handle your Telegram customers' messages: the AI assistant replies, and conversations and contacts land in VENDIA. Create a bot with @BotFather on Telegram (command /newbot), then paste the token here.", tg_token_ph:"Bot token (e.g. 123456789:AAH…)", tg_connect:"Connect bot", tg_disconnect:"Disconnect", tg_connected:"Bot connected: @{name}", tg_not_connected:"No bot connected.", tg_disconnect_confirm:"Disconnect the Telegram bot? It will stop receiving messages.",
   analytics_ai_usage:"AI messages (this month)", analytics_messages_14d:"Messages received — last 14 days", empty_analytics:"Not enough data yet for statistics.",
   analytics_response_detail:"{answered} / {total} messages answered (30d)", analytics_conversion_detail:"{converted} / {total} leads converted", analytics_no_data_30d:"No messages received in the last 30 days",
   stat_prospects:"Leads", stat_hot_prospects:"Hot leads", stat_revenue:"Order revenue", stat_followups_due:"Follow-ups due",
@@ -914,7 +922,7 @@ function tab(name) {
   if (name === 'billing') loadBilling();
   if (name === 'referral') loadReferral();
   if (name === 'assistant') loadAiSettings();
-  if (name === 'settings') { loadWhatsappSettings(); loadShopSettings(); loadPaymentSettings(); loadOrderNotify(); }
+  if (name === 'settings') { loadWhatsappSettings(); loadShopSettings(); loadPaymentSettings(); loadOrderNotify(); loadTelegram(); }
 }
 
 function renderAll() {
@@ -1244,7 +1252,7 @@ function renderConversations(){
     return '<div class="convRow" onclick="openConversationModal(\''+c.id+'\')">'+
       '<div class="convAvatar">'+esc(convInitials(name))+'</div>'+
       '<div class="convInfo"><div class="convTop"><strong>'+esc(name)+'</strong>'+(last?'<span class="convTime">'+esc(timeFmt(last.createdAt))+'</span>':'')+'</div>'+
-      '<div class="convBottom"><span class="convPhone">'+esc(c.phone||'—')+'</span><span class="convPreview">'+preview+'</span></div></div>'+
+      '<div class="convBottom"><span class="convPhone">'+esc(c.channel==='telegram'?'✈️ Telegram':(c.phone||'—'))+'</span><span class="convPreview">'+preview+'</span></div></div>'+
       '</div>';
   }).join('');
 }
@@ -1264,7 +1272,7 @@ function openConversationModal(id){
   if(!c) return;
   currentConvId=id;
   $('modalConvName').textContent=c.prospect||t('label_client');
-  $('modalConvPhone').textContent=(c.phone||'—')+' · '+(c.channel||'whatsapp');
+  $('modalConvPhone').textContent=c.channel==='telegram'?'✈️ Telegram':((c.phone||'—')+' · '+(c.channel||'whatsapp'));
   renderConversationThread(c);
   $('conversationModal').style.display='flex';
   setTimeout(()=>{const i=$('modalConvInput'); if(i) i.focus();},0);
@@ -1798,6 +1806,24 @@ async function saveReferralPayout(e){
   }catch(x){ $('refPayoutStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
 }
 
+async function loadTelegram(){
+  try{
+    const s=await api('/api/settings/telegram');
+    $('tgOff').classList.toggle('hidden',!s.configured);
+    $('tgStatus').innerHTML=s.configured?'<span class="badge">✅ '+tf('tg_connected',{name:esc(s.username||'')})+'</span>':'<span class="muted">'+t('tg_not_connected')+'</span>';
+  }catch(x){}
+}
+async function saveTelegram(e){
+  e.preventDefault();
+  try{
+    await api('/api/settings/telegram',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({botToken:$('tgToken').value.trim()})});
+    $('tgToken').value=''; loadTelegram();
+  }catch(x){ $('tgStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
+}
+async function disconnectTelegram(){
+  if(!confirm(t('tg_disconnect_confirm'))) return;
+  try{ await api('/api/settings/telegram',{method:'DELETE'}); loadTelegram(); }catch(x){ $('tgStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
+}
 async function loadOrderNotify(){
   try{ const s=await api('/api/settings/order-notify'); $('nEnabled').checked=!!s.enabled; $('nTpl').value=s.template||''; $('nLang').value=s.lang||'fr'; }catch(x){}
 }

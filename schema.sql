@@ -382,3 +382,10 @@ CREATE INDEX IF NOT EXISTS shops_company_idx ON shops(company_id);
 CREATE UNIQUE INDEX IF NOT EXISTS shops_one_main_idx ON shops(company_id) WHERE is_main;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS shop_id UUID REFERENCES shops(id) ON DELETE SET NULL;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS shop_id UUID REFERENCES shops(id) ON DELETE SET NULL;
+
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS telegram_bot_token TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS telegram_bot_username TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS telegram_webhook_secret TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS companies_telegram_secret_idx ON companies(telegram_webhook_secret) WHERE telegram_webhook_secret IS NOT NULL;
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS prospects_company_telegram_idx ON prospects(company_id,telegram_chat_id) WHERE telegram_chat_id IS NOT NULL;
