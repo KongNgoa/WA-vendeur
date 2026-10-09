@@ -23,7 +23,7 @@ const MTN_MOMO_NUMBER = process.env.MTN_MOMO_NUMBER || '+237672353499';
 const AFFILIATE_PERCENT = Math.min(90, Math.max(0, Number(process.env.AFFILIATE_PERCENT ?? 20) || 0));
 const AFFILIATE_MAX_PAYMENTS = Math.max(1, Math.floor(Number(process.env.AFFILIATE_MAX_PAYMENTS ?? 12) || 12));
 const json = (res,status,data) => { res.writeHead(status, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY','Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type, Authorization','Access-Control-Allow-Methods':'GET,POST,PUT,PATCH,DELETE,OPTIONS'}); res.end(JSON.stringify(data)); };
-const body = async (req, max = 1000000) => { let s=''; for await (const c of req) s += c; if (s.length > max) throw new Error('Payload trop volumineux'); return s ? JSON.parse(s) : {}; };
+const body = async (req, max = 1000000) => { let s='', over=false; for await (const c of req) { if (over) continue; s += c; if (s.length > max) { over=true; s=''; } } if (over) throw Object.assign(new Error('Payload trop volumineux'),{status:413}); try { return s ? JSON.parse(s) : {}; } catch { throw Object.assign(new Error('JSON invalide'),{status:400}); } };
 const rawBody = async req => { let s=''; for await (const c of req) s += c; if (s.length > 1000000) throw new Error('Payload trop volumineux'); return s; };
 const hashPassword = (password,salt=crypto.randomBytes(16).toString('hex')) => ({salt,hash:crypto.scryptSync(password,salt,64).toString('hex')});
 const verifyPassword = (password,salt,expected) => crypto.timingSafeEqual(Buffer.from(hashPassword(password,salt).hash,'hex'),Buffer.from(expected,'hex'));
@@ -221,7 +221,7 @@ async function ensureSuperAdmin() {
   }
 }
 
-async function dashboard(companyId) {
+async function dashboard(companyId, userId) {
   // Note : les conversations ne sont volontairement PAS chargées ici — le
   // dashboard client les récupère séparément via GET /api/conversations
   // (qui plafonne déjà les messages par fil) juste après ce chargement
@@ -253,6 +253,7 @@ async function dashboard(companyId) {
     followups:followups.rows,
     appointments:appointments.rows,
     subscription:subscription.rows[0],
+    role:userId?await getUserRole(userId):null,
     usage:{
       aiMessages:aiUsage,
       prospectsThisMonth:prospectsThisMonth.rows[0].n,
@@ -1127,8 +1128,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.15',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.15'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.16',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.16'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -1590,6 +1591,11 @@ async function handler(req,res) {
     if(prRejectMatch&&req.method==='POST') {
       const r=await query('UPDATE payment_requests SET status=\'rejected\',decided_at=now() WHERE id=$1 AND status=\'pending\' RETURNING id',[prRejectMatch[1]]);
       if(!r.rows[0]) return json(res,404,{error:'Demande introuvable ou déjà traitée'});
+      const rej=await query("SELECT u.email,u.name FROM payment_requests pr JOIN users u ON u.company_id=pr.company_id AND u.role='owner' WHERE pr.id=$1",[prRejectMatch[1]]);
+      for(const o of rej.rows) {
+        await sendEmail(o.email,'VENDIA — Paiement non validé',
+          '<p>Bonjour '+escHtml(o.name)+',</p><p>Nous n\'avons pas pu valider votre dernier paiement (référence introuvable ou montant différent). Vérifiez la référence reçue par SMS et renvoyez-la depuis l\'onglet Abonnement de votre espace VENDIA, ou répondez à cet e-mail.</p>');
+      }
       return json(res,200,{ok:true});
     }
 
@@ -1627,8 +1633,8 @@ async function handler(req,res) {
   if(!susp.rows[0]?.approvedAt) return json(res,403,{error:"Votre compte est en attente de validation du paiement. Vous serez averti par email dès l'activation."});
   if(susp.rows[0]?.suspended) return json(res,403,{error:'Ce compte VENDIA est suspendu. Contactez le support.'});
 
-  if(req.method==='GET'&&u.pathname==='/api/bootstrap') return json(res,200,await dashboard(companyId));
-  if(req.method==='GET'&&u.pathname==='/api/dashboard') return json(res,200,await dashboard(companyId));
+  if(req.method==='GET'&&u.pathname==='/api/bootstrap') return json(res,200,await dashboard(companyId,session.userId));
+  if(req.method==='GET'&&u.pathname==='/api/dashboard') return json(res,200,await dashboard(companyId,session.userId));
 
   // Tableau de bord analytics (taux de réponse, temps de réponse moyen,
   // conversion prospect→commande, volume de messages sur 14 jours) — absent
@@ -1791,12 +1797,13 @@ async function handler(req,res) {
     if(await getUserRole(session.userId)!=='owner') return json(res,403,{error:"Réservé à l'administrateur de l'équipe"});
     if(rateLimited('renew:'+companyId,10,60*60*1000)) return tooManyRequests(res);
     const b=await body(req);
-    if(!PLAN_LIMITS[b.plan]) return json(res,400,{error:'Forfait invalide'});
-    if(!['orange_money','mtn_momo'].includes(b.paymentMethod)) return json(res,400,{error:'Choisissez Orange Money ou MTN Mobile Money'});
-    if(!/^\+?[0-9 ()-]{6,30}$/.test(String(b.payerPhone||'').trim())) return json(res,400,{error:'Numéro payeur invalide'});
-    if(normPaymentRef(b.reference).length<6) return json(res,400,{error:'La référence de transaction semble trop courte (recopiez-la depuis le SMS de confirmation)'});
-    if((await query("SELECT 1 FROM payment_requests WHERE company_id=$1 AND status='pending' LIMIT 1",[companyId])).rows[0]) return json(res,409,{error:'Un paiement est déjà en attente de validation'});
-    if(await paymentRefTaken(b.reference)) return json(res,409,{error:'Cette référence de transaction a déjà été utilisée'});
+    const en=b.lang==='en', M=(f,e)=>en?e:f;
+    if(!PLAN_LIMITS[b.plan]) return json(res,400,{error:M('Forfait invalide','Invalid plan')});
+    if(!['orange_money','mtn_momo'].includes(b.paymentMethod)) return json(res,400,{error:M('Choisissez Orange Money ou MTN Mobile Money','Choose Orange Money or MTN Mobile Money')});
+    if(!/^\+?[0-9 ()-]{6,30}$/.test(String(b.payerPhone||'').trim())) return json(res,400,{error:M('Numéro payeur invalide','Invalid payer number')});
+    if(normPaymentRef(b.reference).length<6) return json(res,400,{error:M('La référence de transaction semble trop courte (recopiez-la depuis le SMS de confirmation)','The transaction reference looks too short (copy it from the confirmation SMS)')});
+    if((await query("SELECT 1 FROM payment_requests WHERE company_id=$1 AND status='pending' LIMIT 1",[companyId])).rows[0]) return json(res,409,{error:M('Un paiement est déjà en attente de validation','A payment is already awaiting validation')});
+    if(await paymentRefTaken(b.reference)) return json(res,409,{error:M('Cette référence de transaction a déjà été utilisée','This transaction reference has already been used')});
     const amount=planLimits(b.plan).monthlyPrice;
     await query('INSERT INTO payment_requests(company_id,plan,method,amount,payer_phone,reference,reference_norm) VALUES($1,$2,$3,$4,$5,$6,$7)',[companyId,b.plan,b.paymentMethod,amount,String(b.payerPhone).trim(),String(b.reference).trim(),normPaymentRef(b.reference)]);
     const co=(await query('SELECT name FROM companies WHERE id=$1',[companyId])).rows[0];
@@ -1890,12 +1897,16 @@ async function handler(req,res) {
 
   if(req.method==='POST'&&u.pathname==='/api/products/image') {
     const b=await body(req,3200000);
+    const en=b.lang==='en', M=(f,e)=>en?e:f;
     const buf=Buffer.from(String(b.data||'').replace(/^data:[^,]*,/,''),'base64');
-    if(!buf.length||buf.length>2*1024*1024) return json(res,400,{error:'Image invalide ou trop lourde (2 Mo maximum)'});
+    if(!buf.length||buf.length>2*1024*1024) return json(res,400,{error:M('Image invalide ou trop lourde (2 Mo maximum)','Invalid or too large image (2 MB maximum)')});
     const mime=buf.subarray(0,3).equals(Buffer.from([0xff,0xd8,0xff]))?'image/jpeg':buf.subarray(0,8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]))?'image/png':(buf.subarray(0,4).toString()==='RIFF'&&buf.subarray(8,12).toString()==='WEBP')?'image/webp':null;
-    if(!mime) return json(res,400,{error:'Format non pris en charge (JPEG, PNG ou WebP)'});
+    if(!mime) return json(res,400,{error:M('Format non pris en charge (JPEG, PNG ou WebP)','Unsupported format (JPEG, PNG or WebP)')});
+    // Photos téléversées mais plus utilisées par aucun produit (photo remplacée,
+    // produit supprimé, envoi abandonné) : purgées après 1 h de grâce.
+    await query("DELETE FROM product_images pi WHERE pi.company_id=$1 AND pi.created_at < now() - interval '1 hour' AND NOT EXISTS (SELECT 1 FROM products p WHERE p.company_id=pi.company_id AND p.image_url LIKE '%/img/' || pi.id::text)",[companyId]);
     const cnt=await query('SELECT COUNT(*)::int AS n FROM product_images WHERE company_id=$1',[companyId]);
-    if(cnt.rows[0].n>=500) return json(res,400,{error:'Limite de photos atteinte'});
+    if(cnt.rows[0].n>=500) return json(res,400,{error:M('Limite de photos atteinte (500 maximum)','Photo limit reached (500 maximum)')});
     const r=await query('INSERT INTO product_images(company_id,data,mime) VALUES($1,$2,$3) RETURNING id',[companyId,buf,mime]);
     return json(res,201,{url:requestOrigin(req)+'/img/'+r.rows[0].id});
   }
@@ -2604,10 +2615,10 @@ async function ensureMigrations() {
   if (!process.env.META_APP_SECRET) console.warn('[securite] META_APP_SECRET non configuré — la signature des webhooks WhatsApp entrants n\'est pas vérifiée (voir README)');
 }
 
-const server=http.createServer((req,res)=>handler(req,res).catch(e=>{console.error(e);json(res,500,{error:'Erreur serveur'});}));
+const server=http.createServer((req,res)=>handler(req,res).catch(e=>{ if(e&&e.status){ return json(res,e.status,{error:e.status===413?'Requête trop volumineuse':'Requête invalide'}); } console.error(e);json(res,500,{error:'Erreur serveur'}); }));
 ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>console.error('[demarrage] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.15 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.16 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

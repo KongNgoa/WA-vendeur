@@ -87,6 +87,12 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - **Pensée pour le référencement et le partage** : aperçu riche (titre, description, photo) dans Facebook/WhatsApp, données structurées schema.org (produits, prix en XAF, disponibilité), lien canonique.
 - **Sûre** : tout le contenu est échappé, la page disparaît (404) si l'entreprise la désactive, est suspendue ou n'est pas encore validée, et les requêtes répétées sont limitées par IP.
 
+## Audit et correctifs (1.10.16)
+- **Schéma SQL réparé** : `schema.sql` s'exécute désormais sans erreur sur une base vierge (tables sessions/password_resets créées après users) et peut être rejoué sans erreur.
+- **Requêtes** : une requête JSON trop volumineuse (413) ou invalide (400) renvoie un message clair au lieu d'une erreur 500, et le serveur ne garde plus en mémoire un corps déjà jugé trop gros.
+- **Photos** : les photos non utilisées (remplacées, produit supprimé, envoi abandonné) sont purgées automatiquement après 1 h, pour ne pas consommer le plafond de 500.
+- **Abonnement** : e-mail au client quand un paiement est refusé ; messages d'erreur du renouvellement et de l'envoi de photo traduits en anglais ; les bannières d'échéance et de montée en gamme ne s'affichent qu'à l'administrateur.
+
 ## Invitation à monter en gamme (1.10.15)
 - **Bannière dans le tableau de bord** pour les forfaits Starter et Business : à partir de 80 % du quota de prospects ou de réponses IA du mois, un message prévient le client (avec croix pour le masquer le temps de la session) ; à 100 %, la bannière devient rouge et explique la conséquence (nouveaux contacts non enregistrés, ou réponses IA de secours).
 - Le bouton "Passer à Business / Pro" ouvre l'onglet Abonnement avec le forfait supérieur déjà sélectionné. Le montant du forfait supérieur reste le prix plein (pas de prorata).

@@ -1,7 +1,7 @@
 -- WA-Vendeur 0.6 - schéma PostgreSQL de production
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-CREATE TABLE companies (
+CREATE TABLE IF NOT EXISTS companies (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   sector TEXT,
@@ -60,6 +60,19 @@ CREATE TABLE IF NOT EXISTS super_admins (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  email TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('owner','admin','sales','viewer')),
+  password_hash TEXT NOT NULL,
+  password_salt TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS users_company_idx ON users(company_id);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_salt TEXT NOT NULL DEFAULT '';
+
 -- user_id/company_id sont nullables : une session est soit celle d'un
 -- utilisateur d'entreprise (les deux renseignés), soit celle d'un
 -- super-admin (super_admin_id renseigné) — jamais les deux à la fois.
@@ -86,20 +99,8 @@ CREATE TABLE IF NOT EXISTS password_resets (
 );
 CREATE INDEX IF NOT EXISTS password_resets_token_idx ON password_resets(token_hash);
 
-CREATE TABLE users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  email TEXT NOT NULL UNIQUE,
-  name TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('owner','admin','sales','viewer')),
-  password_hash TEXT NOT NULL,
-  password_salt TEXT NOT NULL DEFAULT '',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX users_company_idx ON users(company_id);
-ALTER TABLE users ADD COLUMN IF NOT EXISTS password_salt TEXT NOT NULL DEFAULT '';
 
-CREATE TABLE products (
+CREATE TABLE IF NOT EXISTS products (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
@@ -109,9 +110,9 @@ CREATE TABLE products (
   image_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX products_company_idx ON products(company_id);
+CREATE INDEX IF NOT EXISTS products_company_idx ON products(company_id);
 
-CREATE TABLE prospects (
+CREATE TABLE IF NOT EXISTS prospects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   name TEXT,
@@ -129,7 +130,7 @@ CREATE TABLE prospects (
   next_action_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX prospects_company_idx ON prospects(company_id);
+CREATE INDEX IF NOT EXISTS prospects_company_idx ON prospects(company_id);
 -- Un seul prospect par numéro de téléphone et par entreprise — empêche les
 -- doublons quand plusieurs messages du même contact arrivent en rafale
 -- (voir findOrCreateProspectByPhone dans server.js).
@@ -150,7 +151,7 @@ ALTER TABLE prospects ADD COLUMN IF NOT EXISTS next_action_at TIMESTAMPTZ;
 ALTER TABLE prospects ADD COLUMN IF NOT EXISTS stage TEXT NOT NULL DEFAULT 'Nouveau';
 UPDATE prospects SET stage=status WHERE status IN ('Nouveau','À contacter','En discussion','Gagné','Perdu');
 
-CREATE TABLE conversations (
+CREATE TABLE IF NOT EXISTS conversations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   prospect_id UUID REFERENCES prospects(id) ON DELETE SET NULL,
@@ -158,13 +159,13 @@ CREATE TABLE conversations (
   external_contact TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX conversations_company_idx ON conversations(company_id);
+CREATE INDEX IF NOT EXISTS conversations_company_idx ON conversations(company_id);
 -- Une seule conversation par contact/canal et par entreprise — empêche les
 -- doublons quand plusieurs messages du même contact arrivent en rafale
 -- (voir findOrCreateWhatsAppConversation dans server.js).
 CREATE UNIQUE INDEX IF NOT EXISTS conversations_company_channel_contact_idx ON conversations(company_id,channel,external_contact) WHERE external_contact IS NOT NULL;
 
-CREATE TABLE messages (
+CREATE TABLE IF NOT EXISTS messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   direction TEXT NOT NULL CHECK(direction IN ('in','out','system')),
@@ -174,9 +175,9 @@ CREATE TABLE messages (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS provider_error TEXT;
-CREATE INDEX messages_conversation_idx ON messages(conversation_id, created_at);
+CREATE INDEX IF NOT EXISTS messages_conversation_idx ON messages(conversation_id, created_at);
 
-CREATE TABLE orders (
+CREATE TABLE IF NOT EXISTS orders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   prospect_id UUID REFERENCES prospects(id) ON DELETE SET NULL,
@@ -185,9 +186,9 @@ CREATE TABLE orders (
   status TEXT NOT NULL DEFAULT 'En attente',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX orders_company_idx ON orders(company_id);
+CREATE INDEX IF NOT EXISTS orders_company_idx ON orders(company_id);
 
-CREATE TABLE followups (
+CREATE TABLE IF NOT EXISTS followups (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   prospect_id UUID REFERENCES prospects(id) ON DELETE CASCADE,
@@ -199,15 +200,15 @@ CREATE TABLE followups (
   sent_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX followups_source_idx ON followups(company_id, prospect_id, status, source);
+CREATE INDEX IF NOT EXISTS followups_source_idx ON followups(company_id, prospect_id, status, source);
 -- Lot "relances automatiques contrôlées" — idempotent pour les bases déjà déployées.
 -- Pour appliquer uniquement cet ajout sur la base de production existante,
 -- utiliser scripts/migrate-add-followup-automation.js.
 ALTER TABLE followups ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manual';
 ALTER TABLE followups ADD COLUMN IF NOT EXISTS cancelled_reason TEXT;
-CREATE INDEX followups_due_idx ON followups(status, due_at);
+CREATE INDEX IF NOT EXISTS followups_due_idx ON followups(status, due_at);
 
-CREATE TABLE subscriptions (
+CREATE TABLE IF NOT EXISTS subscriptions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id UUID NOT NULL UNIQUE REFERENCES companies(id) ON DELETE CASCADE,
   plan TEXT NOT NULL CHECK(plan IN ('Starter','Business','Pro')),
@@ -227,7 +228,7 @@ CREATE TABLE subscriptions (
 ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS ai_messages_used INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS ai_usage_reset_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
-CREATE TABLE webhook_events (
+CREATE TABLE IF NOT EXISTS webhook_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   provider TEXT NOT NULL,
   external_event_id TEXT,
@@ -236,7 +237,7 @@ CREATE TABLE webhook_events (
   UNIQUE(provider, external_event_id)
 );
 
-CREATE TABLE payments (
+CREATE TABLE IF NOT EXISTS payments (
   id UUID PRIMARY KEY,
   company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   subscription_id UUID REFERENCES subscriptions(id) ON DELETE SET NULL,

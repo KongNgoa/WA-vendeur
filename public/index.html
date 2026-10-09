@@ -1016,7 +1016,7 @@ async function sendProductPhoto(f){
   const cx=cv.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,cv.width,cv.height); cx.drawImage(bmp,0,0,cv.width,cv.height);
   let q=.88, d=cv.toDataURL('image/jpeg',q);
   while(d.length>2500000 && q>.4){ q-=.1; d=cv.toDataURL('image/jpeg',q); }
-  const r=await api('/api/products/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:d})});
+  const r=await api('/api/products/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:d,lang})});
   return {url:r.url,preview:d};
 }
 async function uploadProductPhoto(inp){
@@ -1563,7 +1563,7 @@ function renderUpgradeBanner(){
   else if(pNear) msg=tf('upgrade_prospects_near',{u:us.prospectsThisMonth,n:us.prospectsLimit});
   else if(aNear) msg=tf('upgrade_ai_near',{u:ai.used,n:ai.limit});
   let hidden=false; try{ hidden=!full && sessionStorage.getItem('upgradeBannerHidden')==='1'; }catch(e){}
-  if(!next||!msg||hidden){ el.classList.add('hidden'); return; }
+  if(!next||!msg||hidden||data.role!=='owner'){ el.classList.add('hidden'); return; }
   el.innerHTML='<div class="panel" style="border:2px solid '+(full?'#d62839':'#1f6feb')+';margin:0;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>'+(full?'🚫 ':'📈 ')+msg+' '+tf('upgrade_with',{plan:next})+'</span><span class="actions"><button class="btn primary" onclick="goUpgrade(\''+next+'\')">'+tf('upgrade_btn',{plan:next})+'</button>'+(full?'':'<button class="btn" onclick="hideUpgradeBanner()">✕</button>')+'</span></div>';
   el.classList.remove('hidden');
 }
@@ -1575,7 +1575,7 @@ function billDate(d){ return new Date(d).toLocaleDateString(lang==='en'?'en-GB':
 function renderBillingBanner(){
   const el=$('billingBanner'), nb=data.subscription?.nextBillingAt;
   if(!el) return;
-  if(!nb){ el.classList.add('hidden'); return; }
+  if(!nb||data.role!=='owner'){ el.classList.add('hidden'); return; }
   const days=Math.ceil((new Date(nb)-Date.now())/86400000);
   if(days>5){ el.classList.add('hidden'); return; }
   const late=days<=0;
@@ -1613,7 +1613,7 @@ async function copyBillNumber(){ try{ await navigator.clipboard.writeText(billNu
 async function submitRenewal(e){
   e.preventDefault(); $('billStatus').innerHTML='';
   try{
-    await api('/api/billing/renew',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan:$('billPlan').value,paymentMethod:$('billMethod').value,payerPhone:$('billPayer').value.trim(),reference:$('billRef').value.trim()})});
+    await api('/api/billing/renew',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan:$('billPlan').value,paymentMethod:$('billMethod').value,payerPhone:$('billPayer').value.trim(),reference:$('billRef').value.trim(),lang})});
     $('billRef').value=''; await loadBilling(); $('billStatus').innerHTML='<span class="badge">'+t('billing_sent')+'</span>';
   }catch(x){ $('billStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
 }
