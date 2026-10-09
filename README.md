@@ -87,6 +87,10 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - **Pensée pour le référencement et le partage** : aperçu riche (titre, description, photo) dans Facebook/WhatsApp, données structurées schema.org (produits, prix en XAF, disponibilité), lien canonique.
 - **Sûre** : tout le contenu est échappé, la page disparaît (404) si l'entreprise la désactive, est suspendue ou n'est pas encore validée, et les requêtes répétées sont limitées par IP.
 
+## Page par produit et pixels publicitaires (1.10.20)
+- **Une page dédiée par produit** : `/boutique/<lien>/p/<id>` (bouton 🔗 dans le catalogue pour copier le lien). Grande photo, prix, "🔥 Plus que N en stock" sous 5 unités, bouton Commander (même formulaire que la vitrine, paiement à la livraison), aperçu riche pour Facebook / WhatsApp et données structurées schema.org `Product`. Le Studio promo ajoute automatiquement ce lien ("🛒 Commander en ligne") aux textes générés.
+- **Pixels Facebook et TikTok** (Réglages → Vitrine web, facultatifs) : sur la vitrine et les pages produit, envoi de `PageView`, `ViewContent` (page produit), `InitiateCheckout` (ouverture du formulaire) et `Purchase` (Facebook) / `CompletePayment` (TikTok) à la commande, avec montant en XAF. Les identifiants sont validés strictement avant d'être insérés dans la page ; une mention "pixels de mesure publicitaire" apparaît en pied de page quand un pixel est actif. Il revient au commerçant de respecter les règles de consentement applicables à sa clientèle.
+
 ## Renouveler ou monter en gamme (1.10.19)
 - Partout où VENDIA invite à changer de forfait (quota atteint, commandes bloquées, échéance proche), deux boutons : **« ⭐ Passer à Business / Pro »** (mis en avant, plus gros) et **« Renouveler mon forfait actuel »** (secondaire).
 - Dans l'onglet Abonnement, le forfait supérieur est présélectionné et signalé « ⭐ recommandé » avec un encadré explicatif ; le renouvellement à l'identique reste un choix de la liste. Les clients Pro, sans forfait supérieur, ne voient que le renouvellement.

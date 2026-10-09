@@ -325,6 +325,9 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <label class="full"><input type="checkbox" id="sEnabled" style="width:auto"> <span data-i18n="shop_enable_label">Activer la vitrine (visible publiquement)</span></label>
 <input id="sWhatsapp" placeholder="Numéro WhatsApp affiché (ex. +237 6XX XX XX XX)" data-i18n-placeholder="placeholder_shop_whatsapp">
 <input id="sSlug" placeholder="mon-entreprise" data-i18n-placeholder="placeholder_shop_slug">
+<div><label class="muted" data-i18n="shop_fb_label">Pixel Facebook (optionnel)</label><input id="sFb" inputmode="numeric" maxlength="20" placeholder="ex. 1234567890123456"></div>
+<div><label class="muted" data-i18n="shop_tt_label">Pixel TikTok (optionnel)</label><input id="sTt" maxlength="30" placeholder="ex. C1A2B3C4D5E6F7G8H9"></div>
+<p class="muted full" data-i18n="shop_pixel_help" style="margin:0">Collez les identifiants de vos pixels pour mesurer vos publicités : vues de produit, début de commande et commandes sont envoyés à Facebook / TikTok.</p>
 <input id="sTagline" class="full" maxlength="200" placeholder="Slogan ou courte description (optionnel)" data-i18n-placeholder="placeholder_shop_tagline">
 <div class="full"><label class="muted" data-i18n="shop_link_label">Lien de votre vitrine</label><input id="sLink" readonly onclick="this.select()"></div>
 <div class="full"><button class="btn primary" data-i18n="save_btn">Enregistrer</button> <button type="button" class="btn" onclick="copyShopLink()" data-i18n="btn_copy_link">Copier le lien</button> <button type="button" class="btn" onclick="openShop()" data-i18n="btn_open_shop">Voir ma vitrine</button></div>
@@ -385,6 +388,8 @@ fr: {
   stock_out:"épuisé", stock_left:"reste {n}", stock_rate:"≈ {r} vendu(s)/jour", stock_days:"environ {d} jour(s) de stock", stock_less_day:"moins d'un jour de stock", stock_btn:"Mettre à jour le stock", stock_more:"… et {n} autre(s) produit(s) à surveiller.",
   renew_current_btn:"Renouveler mon forfait {plan}", billing_option_next:"⭐ {plan} — {price} (recommandé)", billing_option_current:"{plan} — {price} (renouvellement à l'identique)",
   billing_recommend:"⭐ Recommandé : passez au forfait {plan} pour avoir plus de prospects, d'utilisateurs et de fonctions, sans interruption. Vous pouvez aussi simplement renouveler votre forfait actuel (voir la liste ci-dessous).",
+  shop_fb_label:"Pixel Facebook (optionnel)", shop_tt_label:"Pixel TikTok (optionnel)", shop_pixel_help:"Collez les identifiants de vos pixels pour mesurer vos publicités : vues de produit, début de commande et commandes sont envoyés à Facebook / TikTok.",
+  btn_product_link:"Copier le lien de la page produit", product_link_copied:"Lien de la page produit copié :", product_link_need_shop:"Activez d'abord votre vitrine (Réglages → Vitrine web) pour obtenir le lien de la page produit.",
   nav_promo:"Studio promo", promo_title:"Studio promo", promo_desc:"Créez en quelques secondes un texte et une affiche pour un produit de votre catalogue, prêts à publier en statut WhatsApp ou sur les réseaux sociaux.", promo_empty:"Ajoutez d'abord un produit à votre catalogue.",
   promo_product_label:"Produit", promo_format_label:"Type de texte", promo_format_status:"Statut WhatsApp", promo_format_post:"Publication Facebook / Instagram", promo_format_broadcast:"Message à un client",
   btn_generate_text:"✨ Générer le texte", btn_generating:"Génération…", placeholder_promo_text:"Le texte apparaîtra ici — vous pouvez le modifier.", btn_copy_text:"Copier le texte",
@@ -540,6 +545,8 @@ en: {
   stock_out:"out of stock", stock_left:"{n} left", stock_rate:"≈ {r} sold/day", stock_days:"about {d} day(s) of stock", stock_less_day:"less than a day of stock", stock_btn:"Update stock", stock_more:"… and {n} more product(s) to watch.",
   renew_current_btn:"Renew my {plan} plan", billing_option_next:"⭐ {plan} — {price} (recommended)", billing_option_current:"{plan} — {price} (same-plan renewal)",
   billing_recommend:"⭐ Recommended: upgrade to the {plan} plan for more leads, users and features, with no interruption. You can also simply renew your current plan (see the list below).",
+  shop_fb_label:"Facebook Pixel (optional)", shop_tt_label:"TikTok Pixel (optional)", shop_pixel_help:"Paste your pixel IDs to measure your ads: product views, checkout starts and orders are sent to Facebook / TikTok.",
+  btn_product_link:"Copy product page link", product_link_copied:"Product page link copied:", product_link_need_shop:"Enable your storefront first (Settings → Web storefront) to get the product page link.",
   nav_promo:"Promo studio", promo_title:"Promo studio", promo_desc:"Create a text and a poster for a product in your catalog in seconds, ready to post on WhatsApp Status or social media.", promo_empty:"Add a product to your catalog first.",
   promo_product_label:"Product", promo_format_label:"Text type", promo_format_status:"WhatsApp Status", promo_format_post:"Facebook / Instagram post", promo_format_broadcast:"Message to a customer",
   btn_generate_text:"✨ Generate text", btn_generating:"Generating…", placeholder_promo_text:"The text will appear here — you can edit it.", btn_copy_text:"Copy text",
@@ -927,12 +934,18 @@ function renderDashboard() {
   ).join('') || '<div class="empty">'+t('empty_products_dash')+'</div>';
 }
 
+async function copyProductLink(id){
+  try{ if(!promoShop||!promoShop.slug) promoShop=await api('/api/settings/shop'); }catch(e){ promoShop=null; }
+  if(!promoShop||!promoShop.enabled){ alert(t('product_link_need_shop')); return; }
+  const url=location.origin+'/boutique/'+promoShop.slug+'/p/'+id;
+  try{ await navigator.clipboard.writeText(url); alert(t('product_link_copied')+'\n'+url); }catch(e){ prompt(t('product_link_copied'),url); }
+}
 function stockCell(p){ const a=(data.stockAlerts||[]).find(x=>x.id===p.id); return a?'<span style="color:'+(a.level>=3?'#d62839':a.level===2?'#f08a24':'#b7791f')+';font-weight:700">'+stockLevelIcon(a.level)+' '+p.stock+'</span>':String(p.stock); }
 function renderProducts() {
   $('productCount').textContent = '('+data.products.length+')';
   $('productTable').innerHTML = data.products.length ? '<table><thead><tr><th></th><th>'+t('th_product')+'</th><th>'+t('th_category')+'</th><th>'+t('th_price')+'</th><th>'+t('th_stock')+'</th><th>'+t('th_actions')+'</th></tr></thead><tbody>' +
     data.products.map(p => '<tr><td>'+(p.imageUrl?'<img src="'+esc(p.imageUrl)+'" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px" onerror="this.style.display=\'none\'">':'')+'</td><td><strong>'+esc(p.name)+'</strong></td><td>'+esc(p.category||'—')+'</td><td>'+money(p.price)+'</td><td>'+stockCell(p)+'</td><td><div class="actions">' +
-    '<label class="btn" style="cursor:pointer" title="'+t('btn_change_photo')+'">📷<input type="file" accept="image/*" hidden onchange="changeProductPhoto(\''+p.id+'\',this)"></label>'+'<button class="btn" data-edit-product="'+p.id+'">'+t('btn_edit')+'</button><button class="btn danger" data-delete-product="'+p.id+'">'+t('btn_delete')+'</button></div></td></tr>').join('') +
+    '<button class="btn" title="'+t('btn_product_link')+'" onclick="copyProductLink(\''+p.id+'\')">🔗</button>'+'<label class="btn" style="cursor:pointer" title="'+t('btn_change_photo')+'">📷<input type="file" accept="image/*" hidden onchange="changeProductPhoto(\''+p.id+'\',this)"></label>'+'<button class="btn" data-edit-product="'+p.id+'">'+t('btn_edit')+'</button><button class="btn danger" data-delete-product="'+p.id+'">'+t('btn_delete')+'</button></div></td></tr>').join('') +
     '</tbody></table>' : '<div class="empty">'+t('empty_products')+'</div>';
 }
 
@@ -1721,6 +1734,7 @@ async function loadShopSettings(){
     $('sWhatsapp').value=s.whatsapp||'';
     $('sSlug').value=s.slug||'';
     $('sTagline').value=s.tagline||'';
+    $('sFb').value=s.fbPixel||''; $('sTt').value=s.tiktokPixel||''; promoShop=s;
     $('sLink').value=s.slug?shopUrl(s.slug):'';
   }catch(x){ $('sStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
 }
@@ -1729,8 +1743,10 @@ async function saveShopSettings(e){
   try{
     const s=await api('/api/settings/shop',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       enabled:$('sEnabled').checked, whatsapp:$('sWhatsapp').value.trim(),
-      slug:$('sSlug').value.trim().toLowerCase(), tagline:$('sTagline').value.trim()
+      slug:$('sSlug').value.trim().toLowerCase(), tagline:$('sTagline').value.trim(),
+      fbPixel:$('sFb').value.trim(), tiktokPixel:$('sTt').value.trim()
     })});
+    promoShop=s;
     $('sWhatsapp').value=s.whatsapp||''; $('sSlug').value=s.slug; $('sLink').value=shopUrl(s.slug);
     $('sStatus').innerHTML='<span class="badge">'+t(s.enabled?'shop_saved_on':'shop_saved_off')+'</span>';
   }catch(x){ $('sStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }

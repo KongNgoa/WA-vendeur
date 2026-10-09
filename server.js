@@ -461,19 +461,21 @@ function renderShopNotFound() {
     '<style>body{font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#0b1b33;color:#e8eefc;text-align:center;padding:16px}a{color:#5fd1a0}</style></head>' +
     '<body><div><h1>Boutique introuvable</h1><p>Ce lien n\'existe pas ou la boutique n\'est plus disponible.</p><p><a href="/">VENDIA</a></p></div></body></html>';
 }
-function renderShopPage(c, products, origin) {
+function renderShopPage(c, products, origin, single = null) {
   const wa = c.shopWhatsapp;
   const waLink = text => 'https://wa.me/' + wa + '?text=' + encodeURIComponent(text);
-  const title = c.name + ' — Boutique en ligne';
-  const desc = String(c.tagline || ('Découvrez les produits de ' + c.name + ' et commandez directement sur WhatsApp.')).slice(0, 200);
-  const url = origin + '/boutique/' + c.shopSlug;
+  const title = single ? single.name + ' — ' + c.name : c.name + ' — Boutique en ligne';
+  const desc = single
+    ? (formatFcfa(single.price) + ' · ' + single.name + (single.category ? ' (' + single.category + ')' : '') + '. Commandez en ligne chez ' + c.name + ', paiement à la livraison.').slice(0, 200)
+    : String(c.tagline || ('Découvrez les produits de ' + c.name + ' et commandez directement sur WhatsApp.')).slice(0, 200);
+  const url = origin + '/boutique/' + c.shopSlug + (single ? '/p/' + single.id : '');
   const firstImg = products.map(p => validImageUrl(p.imageUrl)).find(Boolean);
   const cats = [...new Set(products.map(p => p.category).filter(Boolean))];
   const cards = products.map(p => {
     const img = validImageUrl(p.imageUrl);
     const soldOut = Number(p.stock) <= 0;
     const msg = 'Bonjour, je souhaite commander : ' + p.name + ' (' + formatFcfa(p.price) + '). Est-ce disponible ?';
-    return '<article class="card" data-id="' + escHtml(p.id) + '" data-pn="' + escHtml(p.name) + '" data-pp="' + escHtml(formatFcfa(p.price)) + '" data-max="' + Math.min(20, Math.max(0, Number(p.stock) || 0)) + '" data-name="' + escHtml(String(p.name).toLowerCase()) + '" data-cat="' + escHtml(p.category || '') + '">' +
+    return '<article class="card" data-id="' + escHtml(p.id) + '" data-pn="' + escHtml(p.name) + '" data-pp="' + escHtml(formatFcfa(p.price)) + '" data-pv="' + Number(p.price) + '" data-max="' + Math.min(20, Math.max(0, Number(p.stock) || 0)) + '" data-name="' + escHtml(String(p.name).toLowerCase()) + '" data-cat="' + escHtml(p.category || '') + '">' +
       '<div class="ph">' + (img ? '<img src="' + escHtml(img) + '" alt="' + escHtml(p.name) + '" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">' : '<span aria-hidden="true">🛍️</span>') + '</div>' +
       '<div class="bd"><h3>' + escHtml(p.name) + '</h3>' + (p.category ? '<p class="cat">' + escHtml(p.category) + '</p>' : '') +
       '<p class="pr">' + escHtml(formatFcfa(p.price)) + '</p>' +
@@ -488,13 +490,21 @@ function renderShopPage(c, products, origin) {
         offers: { '@type': 'Offer', priceCurrency: 'XAF', price: String(Number(p.price)), availability: Number(p.stock) > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock' } }
     }))
   };
-  const ldJson = JSON.stringify(ld).replace(/</g, '\\u003c');
+  const ldSingle = single ? { '@context': 'https://schema.org', '@type': 'Product', name: single.name, ...(validImageUrl(single.imageUrl) ? { image: validImageUrl(single.imageUrl) } : {}),
+    ...(single.category ? { category: single.category } : {}), brand: { '@type': 'Brand', name: c.name }, url,
+    offers: { '@type': 'Offer', priceCurrency: 'XAF', price: String(Number(single.price)), url, availability: Number(single.stock) > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock' } } : null;
+  const ldJson = JSON.stringify(ldSingle || ld).replace(/</g, '\\u003c');
+  const pixels = (c.fbPixel || c.tiktokPixel) ? true : false;
+  const pixelHead = '<script>window.vtrack=function(ev,d){try{d=d||{};if(window.fbq){fbq("track",ev,{value:d.value,currency:"XAF",content_ids:[d.id],content_name:d.name,content_type:"product"});}if(window.ttq){ttq.track(ev==="Purchase"?"CompletePayment":ev,{value:d.value,currency:"XAF",content_id:d.id,content_name:d.name,content_type:"product"});}}catch(e){}};</script>' +
+    (c.fbPixel ? '<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version="2.0";n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,"script","https://connect.facebook.net/en_US/fbevents.js");fbq("init",' + JSON.stringify(c.fbPixel) + ');fbq("track","PageView");</script>' : '') +
+    (c.tiktokPixel ? '<script>!function(w,d,t){w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie"],ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e},ttq.load=function(e,n){var i="https://analytics.tiktok.com/i18n/pixel/events.js";ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=i,ttq._t=ttq._t||{},ttq._t[e]=+new Date,ttq._o=ttq._o||{},ttq._o[e]=n||{};var o=document.createElement("script");o.type="text/javascript",o.async=!0,o.src=i+"?sdkid="+e+"&lib="+t;var a=document.getElementsByTagName("script")[0];a.parentNode.insertBefore(o,a)};ttq.load(' + JSON.stringify(c.tiktokPixel) + ');ttq.page()}(window,document,"ttq");</script>' : '') +
+    (single ? '<script>window.vtrack("ViewContent",{value:' + Number(single.price) + ',id:' + JSON.stringify(String(single.id)) + ',name:' + JSON.stringify(String(single.name)).replace(/</g, '\\u003c') + '});</script>' : '');
   return '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
     '<title>' + escHtml(title) + '</title><meta name="description" content="' + escHtml(desc) + '">' +
     '<link rel="canonical" href="' + escHtml(url) + '">' +
     '<meta property="og:type" content="website"><meta property="og:title" content="' + escHtml(title) + '"><meta property="og:description" content="' + escHtml(desc) + '"><meta property="og:url" content="' + escHtml(url) + '">' +
     (firstImg ? '<meta property="og:image" content="' + escHtml(firstImg) + '">' : '') +
-    '<meta name="twitter:card" content="summary_large_image">' +
+    '<meta name="twitter:card" content="summary_large_image">' + pixelHead +
     '<style>:root{--bg:#f6f8fc;--fg:#10223f;--card:#fff;--mut:#5b6b86;--bd:#dde4f0;--a:#1f6feb;--g:#1fa971}' +
     '@media(prefers-color-scheme:dark){:root{--bg:#0b1b33;--fg:#e8eefc;--card:#12284a;--mut:#9db0cf;--bd:#22406e}}' +
     '*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--fg)}' +
@@ -514,10 +524,13 @@ function renderShopPage(c, products, origin) {
     '.sheet input,.sheet textarea{width:100%;padding:11px 12px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--fg);font:inherit}' +
     '.sheet .row{display:flex;gap:10px}.sheet .row>div{flex:1}.sheet .go{margin-top:16px}.sheet .x{float:right;background:none;border:0;color:var(--mut);font-size:1.4rem;cursor:pointer}' +
     '.err{color:#d62839;margin:10px 0 0;font-size:.9rem}.ok{text-align:center;padding:10px 0}.hp{position:absolute;left:-9999px;opacity:0;height:0;width:0}' +
+    '.grid.one{grid-template-columns:minmax(260px,440px);justify-content:center}.grid.one .ph{aspect-ratio:1/1}.grid.one h3{font-size:1.25rem}.grid.one .pr{font-size:1.4rem}' +
     '.empty{padding:40px 0;text-align:center;color:var(--mut)}.fab{position:fixed;right:16px;bottom:16px;padding:14px 18px;border-radius:999px;background:#25d366;color:#05301a;font-weight:700;text-decoration:none;box-shadow:0 6px 20px rgba(0,0,0,.25)}' +
     'footer{text-align:center;color:var(--mut);font-size:.85rem;padding:0 16px 24px}footer a{color:var(--a)}</style></head><body>' +
     '<header><h1>' + escHtml(c.name) + '</h1><p>' + escHtml(c.tagline || c.sector || '') + '</p></header><main>' +
-    (products.length ? '<div class="tools"><input id="q" type="search" placeholder="Rechercher un produit…" aria-label="Rechercher un produit">' +
+    (single ? '<p style="margin:0 0 14px"><a href="/boutique/' + escHtml(c.shopSlug) + '" style="color:var(--a);text-decoration:none">← Toute la boutique</a></p><div class="grid one" id="g">' + cards + '</div>' +
+      (Number(single.stock) > 0 && Number(single.stock) <= 5 ? '<p style="text-align:center;font-weight:700;color:#d62839">🔥 Plus que ' + Number(single.stock) + ' en stock</p>' : '')
+      : products.length ? '<div class="tools"><input id="q" type="search" placeholder="Rechercher un produit…" aria-label="Rechercher un produit">' +
       cats.map(k => '<button type="button" class="chip" data-cat="' + escHtml(k) + '">' + escHtml(k) + '</button>').join('') + '</div>' +
       '<div class="grid" id="g">' + cards + '</div><p class="empty" id="none" hidden>Aucun produit ne correspond.</p>'
       : '<p class="empty">Le catalogue sera bientôt disponible.</p>') +
@@ -532,19 +545,19 @@ function renderShopPage(c, products, origin) {
     '<p class="err" id="oe" hidden></p><button class="btn buy go" id="osub" type="submit">Confirmer la commande</button>' +
     '<p class="sum" style="margin-top:10px;font-size:.8rem">Paiement à la livraison. Le vendeur vous appelle pour confirmer.</p></form></div>' +
     '<div class="ok" id="od" hidden><h2>✅ Commande enregistrée</h2><p id="odm"></p><a class="btn" id="odw" href="#" rel="noopener">Suivre sur WhatsApp</a></div></div></div>' +
-    '<footer>Boutique propulsée par <a href="/">VENDIA</a></footer>' +
+    '<footer>' + (pixels ? 'Cette boutique utilise des pixels de mesure publicitaire. ' : '') + 'Boutique propulsée par <a href="/">VENDIA</a></footer>' +
     '<script type="application/ld+json">' + ldJson + '</script>' +
     '<script>(function(){var q=document.getElementById("q");if(!q)return;var cards=[].slice.call(document.querySelectorAll(".card")),chips=[].slice.call(document.querySelectorAll(".chip")),none=document.getElementById("none"),cat="";' +
     'function run(){var t=q.value.trim().toLowerCase(),n=0;cards.forEach(function(c){var ok=(!t||c.dataset.name.indexOf(t)>-1)&&(!cat||c.dataset.cat===cat);c.hidden=!ok;if(ok)n++;});none.hidden=n>0;}' +
     'q.addEventListener("input",run);chips.forEach(function(b){b.addEventListener("click",function(){cat=(cat===b.dataset.cat)?"":b.dataset.cat;chips.forEach(function(x){x.classList.toggle("on",x.dataset.cat===cat);});run();});});})();</script>' +
     '<script>(function(){var ov=document.getElementById("ov");if(!ov)return;var cur=null,form=document.getElementById("oform"),err=document.getElementById("oe"),sub=document.getElementById("osub"),SLUG=' + JSON.stringify(c.shopSlug) + ',WA=' + JSON.stringify(c.shopWhatsapp) + ';' +
     'function $(i){return document.getElementById(i);}function close(){ov.classList.remove("on");}' +
-    '[].forEach.call(document.querySelectorAll("[data-buy]"),function(b){b.addEventListener("click",function(){var a=b.closest(".card");cur={id:a.dataset.id,name:a.dataset.pn,price:a.dataset.pp,max:+a.dataset.max||1};$("ot").textContent=cur.name;$("os").textContent=cur.price+" l\u2019unit\u00e9";$("oq").max=cur.max;$("oq").value=1;err.hidden=true;$("of").hidden=false;$("od").hidden=true;sub.disabled=false;ov.classList.add("on");setTimeout(function(){$("op").focus();},50);});});' +
+    '[].forEach.call(document.querySelectorAll("[data-buy]"),function(b){b.addEventListener("click",function(){var a=b.closest(".card");cur={id:a.dataset.id,name:a.dataset.pn,price:a.dataset.pp,pv:+a.dataset.pv||0,max:+a.dataset.max||1};window.vtrack&&window.vtrack("InitiateCheckout",{value:cur.pv,id:cur.id,name:cur.name});$("ot").textContent=cur.name;$("os").textContent=cur.price+" l\u2019unit\u00e9";$("oq").max=cur.max;$("oq").value=1;err.hidden=true;$("of").hidden=false;$("od").hidden=true;sub.disabled=false;ov.classList.add("on");setTimeout(function(){$("op").focus();},50);});});' +
     '$("ox").addEventListener("click",close);ov.addEventListener("click",function(e){if(e.target===ov)close();});document.addEventListener("keydown",function(e){if(e.key==="Escape")close();});' +
     'form.addEventListener("submit",function(e){e.preventDefault();err.hidden=true;var q=parseInt($("oq").value,10)||1;sub.disabled=true;sub.textContent="Envoi\u2026";' +
     'fetch("/api/boutique/"+SLUG+"/order",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({productId:cur.id,quantity:q,name:$("on").value,phone:$("op").value,address:$("oa").value,note:$("ono").value,website:$("oh").value})})' +
     '.then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j};});}).then(function(x){sub.textContent="Confirmer la commande";if(!x.ok){err.textContent=x.j.error||"Une erreur est survenue.";err.hidden=false;sub.disabled=false;return;}' +
-    '$("of").hidden=true;$("od").hidden=false;$("odm").textContent="Commande n\u00b0 "+x.j.number+" \u2014 total "+x.j.total+". Le vendeur vous contactera au "+$("op").value+".";$("odw").href="https://wa.me/"+WA+"?text="+encodeURIComponent("Bonjour, je viens de passer la commande "+x.j.number+" sur votre boutique.");})' +
+    'window.vtrack&&window.vtrack("Purchase",{value:x.j.value,id:cur.id,name:cur.name});$("of").hidden=true;$("od").hidden=false;$("odm").textContent="Commande n\u00b0 "+x.j.number+" \u2014 total "+x.j.total+". Le vendeur vous contactera au "+$("op").value+".";$("odw").href="https://wa.me/"+WA+"?text="+encodeURIComponent("Bonjour, je viens de passer la commande "+x.j.number+" sur votre boutique.");})' +
     '.catch(function(){sub.textContent="Confirmer la commande";sub.disabled=false;err.textContent="Connexion impossible. R\u00e9essayez.";err.hidden=false;});});})();</script>' +
     '</body></html>';
 }
@@ -1208,8 +1221,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.19',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.19'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.20',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.20'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -1301,7 +1314,20 @@ async function handler(req,res) {
           '<p>Appelez le client pour confirmer, puis suivez la commande dans l\'onglet Commandes de VENDIA.</p>'+stockLine);
       }
     }
-    return json(res,201,{ok:true,number,total:Number(out.total).toLocaleString('fr-FR')+' FCFA'});
+    return json(res,201,{ok:true,number,total:Number(out.total).toLocaleString('fr-FR')+' FCFA',value:Number(out.total)});
+  }
+
+  // Page dédiée à un produit : /boutique/<lien>/p/<id> — pensée pour être partagée
+  // seule (publicités, statuts) : aperçu riche du produit, commande en un clic.
+  const productPageMatch=req.method==='GET'?u.pathname.match(/^\/boutique\/([a-z0-9-]{3,40})\/p\/([0-9a-f-]{36})\/?$/i):null;
+  if(productPageMatch) {
+    const htmlHeaders={'Content-Type':'text/html; charset=utf-8','X-Content-Type-Options':'nosniff','X-Frame-Options':'SAMEORIGIN','Referrer-Policy':'strict-origin-when-cross-origin'};
+    if(rateLimited('shop:'+clientIp(req),120,60*1000)) { res.writeHead(429,{...htmlHeaders,'Cache-Control':'no-store'}); return res.end('Trop de requêtes. Réessayez dans une minute.'); }
+    const c=await query('SELECT id,name,sector,shop_slug AS "shopSlug",shop_tagline AS tagline,shop_whatsapp AS "shopWhatsapp",shop_fb_pixel AS "fbPixel",shop_tiktok_pixel AS "tiktokPixel" FROM companies WHERE shop_slug=$1 AND shop_enabled=true AND suspended=false AND approved_at IS NOT NULL AND shop_whatsapp IS NOT NULL',[productPageMatch[1].toLowerCase()]);
+    const pr=c.rows[0]?await query('SELECT id,name,category,price,stock,image_url AS "imageUrl" FROM products WHERE id=$1 AND company_id=$2',[productPageMatch[2].toLowerCase(),c.rows[0].id]):{rows:[]};
+    if(!pr.rows[0]) { res.writeHead(404,{...htmlHeaders,'Cache-Control':'no-store'}); return res.end(renderShopNotFound()); }
+    res.writeHead(200,{...htmlHeaders,'Cache-Control':'public, max-age=60'});
+    return res.end(renderShopPage(c.rows[0],[pr.rows[0]],requestOrigin(req),pr.rows[0]));
   }
 
   const shopMatch=u.pathname.match(/^\/boutique\/([^/]*)\/?$/);
@@ -1309,7 +1335,7 @@ async function handler(req,res) {
     const htmlHeaders={'Content-Type':'text/html; charset=utf-8','X-Content-Type-Options':'nosniff','X-Frame-Options':'SAMEORIGIN','Referrer-Policy':'strict-origin-when-cross-origin'};
     if(rateLimited('shop:'+clientIp(req),120,60*1000)) { res.writeHead(429,{...htmlHeaders,'Cache-Control':'no-store'}); return res.end('Trop de requêtes. Réessayez dans une minute.'); }
     if(!/^[a-z0-9-]{3,40}$/.test(shopMatch[1])) { res.writeHead(404,{...htmlHeaders,'Cache-Control':'no-store'}); return res.end(renderShopNotFound()); }
-    const c=await query('SELECT id,name,sector,shop_slug AS "shopSlug",shop_tagline AS tagline,shop_whatsapp AS "shopWhatsapp" FROM companies WHERE shop_slug=$1 AND shop_enabled=true AND suspended=false AND approved_at IS NOT NULL AND shop_whatsapp IS NOT NULL',[shopMatch[1]]);
+    const c=await query('SELECT id,name,sector,shop_slug AS "shopSlug",shop_tagline AS tagline,shop_whatsapp AS "shopWhatsapp",shop_fb_pixel AS "fbPixel",shop_tiktok_pixel AS "tiktokPixel" FROM companies WHERE shop_slug=$1 AND shop_enabled=true AND suspended=false AND approved_at IS NOT NULL AND shop_whatsapp IS NOT NULL',[shopMatch[1]]);
     if(!c.rows[0]) { res.writeHead(404,{...htmlHeaders,'Cache-Control':'no-store'}); return res.end(renderShopNotFound()); }
     const prods=await query('SELECT id,name,category,price,stock,image_url AS "imageUrl" FROM products WHERE company_id=$1 ORDER BY category NULLS LAST,name LIMIT 300',[c.rows[0].id]);
     const proto=String(req.headers['x-forwarded-proto']||'https').split(',')[0].trim()==='http'?'http':'https';
@@ -1884,18 +1910,18 @@ async function handler(req,res) {
   // voie tout de suite ; elle choisit ensuite de l'activer. Une vitrine ne peut
   // être activée qu'avec un numéro WhatsApp valide (c'est son bouton principal).
   if(req.method==='GET'&&u.pathname==='/api/settings/shop') {
-    let r=await query('SELECT name,shop_slug AS slug,shop_enabled AS enabled,shop_whatsapp AS whatsapp,shop_tagline AS tagline FROM companies WHERE id=$1',[companyId]);
+    let r=await query('SELECT name,shop_slug AS slug,shop_enabled AS enabled,shop_whatsapp AS whatsapp,shop_tagline AS tagline,shop_fb_pixel AS "fbPixel",shop_tiktok_pixel AS "tiktokPixel" FROM companies WHERE id=$1',[companyId]);
     let row=r.rows[0];
     if(!row) return json(res,404,{error:'Entreprise introuvable'});
     if(!row.slug) {
       row.slug=await uniqueShopSlug(slugify(row.name),companyId);
       await query('UPDATE companies SET shop_slug=$1 WHERE id=$2 AND shop_slug IS NULL',[row.slug,companyId]);
     }
-    return json(res,200,{enabled:row.enabled,slug:row.slug,whatsapp:row.whatsapp||'',tagline:row.tagline||''});
+    return json(res,200,{enabled:row.enabled,slug:row.slug,whatsapp:row.whatsapp||'',tagline:row.tagline||'',fbPixel:row.fbPixel||'',tiktokPixel:row.tiktokPixel||''});
   }
   if(req.method==='PATCH'&&u.pathname==='/api/settings/shop') {
     const b=await body(req);
-    const cur=(await query('SELECT name,shop_slug,shop_enabled,shop_whatsapp,shop_tagline FROM companies WHERE id=$1',[companyId])).rows[0];
+    const cur=(await query('SELECT name,shop_slug,shop_enabled,shop_whatsapp,shop_tagline,shop_fb_pixel,shop_tiktok_pixel FROM companies WHERE id=$1',[companyId])).rows[0];
     if(!cur) return json(res,404,{error:'Entreprise introuvable'});
     let slug=cur.shop_slug;
     if(b.slug!==undefined) {
@@ -1915,10 +1941,21 @@ async function handler(req,res) {
       }
     }
     const tagline=b.tagline!==undefined?(String(b.tagline).trim().slice(0,200)||null):cur.shop_tagline;
+    // Pixels publicitaires (facultatifs) : identifiants validés strictement, car
+    // ils sont insérés dans le code de la page publique.
+    let fbPixel=cur.shop_fb_pixel, tiktokPixel=cur.shop_tiktok_pixel;
+    if(b.fbPixel!==undefined) {
+      const v=String(b.fbPixel).trim();
+      if(v==='') fbPixel=null; else if(/^\d{8,20}$/.test(v)) fbPixel=v; else return json(res,400,{error:'Pixel Facebook invalide : l\'identifiant est un nombre de 8 à 20 chiffres.'});
+    }
+    if(b.tiktokPixel!==undefined) {
+      const v=String(b.tiktokPixel).trim().toUpperCase();
+      if(v==='') tiktokPixel=null; else if(/^[A-Z0-9]{10,30}$/.test(v)) tiktokPixel=v; else return json(res,400,{error:'Pixel TikTok invalide : 10 à 30 lettres majuscules et chiffres.'});
+    }
     const enabled=b.enabled!==undefined?Boolean(b.enabled):cur.shop_enabled;
     if(enabled&&!whatsapp) return json(res,400,{error:'Renseignez votre numéro WhatsApp avant d\'activer la vitrine.'});
-    await query('UPDATE companies SET shop_slug=$1,shop_enabled=$2,shop_whatsapp=$3,shop_tagline=$4 WHERE id=$5',[slug,enabled,whatsapp,tagline,companyId]);
-    return json(res,200,{ok:true,enabled,slug,whatsapp:whatsapp||'',tagline:tagline||''});
+    await query('UPDATE companies SET shop_slug=$1,shop_enabled=$2,shop_whatsapp=$3,shop_tagline=$4,shop_fb_pixel=$5,shop_tiktok_pixel=$6 WHERE id=$7',[slug,enabled,whatsapp,tagline,fbPixel,tiktokPixel,companyId]);
+    return json(res,200,{ok:true,enabled,slug,whatsapp:whatsapp||'',tagline:tagline||'',fbPixel:fbPixel||'',tiktokPixel:tiktokPixel||''});
   }
 
   // Parrainage : code + lien du parrain, filleuls et commissions. Le code est
@@ -2277,7 +2314,7 @@ async function handler(req,res) {
     const b=await body(req);
     const format=PROMO_FORMATS.includes(b.format)?b.format:'status';
     const lang=b.lang==='en'?'en':'fr';
-    const pRes=await query('SELECT name,category,price,stock FROM products WHERE id=$1 AND company_id=$2',[String(b.productId||''),companyId]).catch(()=>({rows:[]}));
+    const pRes=await query('SELECT id,name,category,price,stock FROM products WHERE id=$1 AND company_id=$2',[String(b.productId||''),companyId]).catch(()=>({rows:[]}));
     const product=pRes.rows[0];
     if(!product) return json(res,404,{error:'Produit introuvable'});
     const [cRes,sub]=await Promise.all([
@@ -2299,6 +2336,7 @@ async function handler(req,res) {
       const msg=(lang==='en'?'Hello, I would like to order: ':'Bonjour, je souhaite commander : ')+product.name;
       lines.push('',(lang==='en'?'👉 Order on WhatsApp: ':'👉 Commander sur WhatsApp : ')+'https://wa.me/'+company.shopWhatsapp+'?text='+encodeURIComponent(msg));
     }
+    if(company.shopEnabled&&company.shopSlug) lines.push((lang==='en'?'🛒 Order online: ':'🛒 Commander en ligne : ')+origin+'/boutique/'+company.shopSlug+'/p/'+product.id);
     if(format!=='broadcast'&&company.shopEnabled&&company.shopSlug) lines.push((lang==='en'?'🛍️ Full catalog: ':'🛍️ Toute la boutique : ')+origin+'/boutique/'+company.shopSlug);
     return json(res,200,{text:lines.join('\n'),provider,quotaExceeded,aiUnavailable:!process.env.ANTHROPIC_API_KEY});
   }
@@ -2744,7 +2782,7 @@ async function ensureMigrations() {
     "ALTER TABLE prospects ADD COLUMN IF NOT EXISTS stage TEXT NOT NULL DEFAULT 'Nouveau'",
     "UPDATE prospects SET stage=status WHERE status IN ('Nouveau','À contacter','En discussion','Gagné','Perdu')",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT",
-    // Commandes passées depuis la vitrine web (1.10.19) : détail du produit, de la
+    // Commandes passées depuis la vitrine web (1.10.20) : détail du produit, de la
     // livraison et du client (le prospect peut manquer si le quota CRM est atteint).
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id) ON DELETE SET NULL",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_name TEXT",
@@ -2762,6 +2800,8 @@ async function ensureMigrations() {
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_enabled BOOLEAN NOT NULL DEFAULT false",
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_whatsapp TEXT",
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_tagline TEXT",
+    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_fb_pixel TEXT",
+    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_tiktok_pixel TEXT",
     "CREATE UNIQUE INDEX IF NOT EXISTS companies_shop_slug_idx ON companies(shop_slug) WHERE shop_slug IS NOT NULL",
     // Programme de parrainage.
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS referral_code TEXT",
@@ -2795,6 +2835,6 @@ const server=http.createServer((req,res)=>handler(req,res).catch(e=>{ if(e&&e.st
 ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>console.error('[demarrage] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.19 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.20 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});
