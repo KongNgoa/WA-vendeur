@@ -139,6 +139,14 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - Le tableau du parrain montre ses filleuls (abonné actif ou en attente de paiement) et ce que chacun lui a rapporté.
 
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.
+## 1.10.26 — Paiement automatique Mobile Money (Campay)
+
+Onglet Abonnement : bloc vert « Payer maintenant avec Mobile Money » (visible seulement si Campay est configuré). Le client saisit son numéro MTN/Orange, reçoit la demande de confirmation sur son téléphone, et son forfait est **activé automatiquement** (30 jours ajoutés, commission de parrainage, commandes bloquées libérées, e-mail) — le paiement manuel reste disponible en secours.
+
+Configuration Railway : `CAMPAY_PERMANENT_TOKEN` (jeton d'accès permanent de l'application Campay) **ou** `CAMPAY_USERNAME` + `CAMPAY_PASSWORD` ; `CAMPAY_ENV=prod` pour le mode réel (sinon démo `demo.campay.net`). Dans le tableau de bord Campay, renseigner l'URL de webhook : `https://<votre-domaine>/webhooks/campay`.
+
+Sécurité : le montant vient toujours du forfait côté serveur ; le contenu du webhook n'est jamais cru (VENDIA interroge Campay `GET /transaction/<ref>/`) ; un montant reçu inférieur au prix est rejeté et signalé au super-admin ; validation idempotente (jamais deux fois) ; un balayage chaque minute reprend les paiements dont le webhook n'est pas arrivé (abandon après 24 h). Colonnes `payment_requests.provider/provider_ref`.
+
 ## 1.10.25 — Canal Telegram
 
 Chaque entreprise peut connecter **son bot Telegram** (Réglages WhatsApp → panneau Telegram : créer le bot avec @BotFather, coller le jeton). VENDIA vérifie le jeton (`getMe`), enregistre le webhook (`/webhooks/telegram/<secret>` + en-tête `secret_token`, déduplication par `update_id`) et chiffre le jeton comme les secrets WhatsApp. Les messages créent conversation + contact CRM (`prospects.telegram_chat_id`, sans téléphone), l'assistant IA répond (accueil `/start`, catalogue en texte, transfert humain, quota IA) et les réponses manuelles depuis VENDIA repartent sur Telegram. Les conversations sont repérées « ✈️ Telegram ». Les campagnes, relances automatiques et notifications de commande restent WhatsApp uniquement (contacts Telegram sans numéro). Nécessite une URL publique en HTTPS (Railway).
