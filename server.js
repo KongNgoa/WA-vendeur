@@ -221,7 +221,59 @@ async function ensureSuperAdmin() {
   }
 }
 
+// ---- Alertes de stock et commandes bloquées par le quota -----------------------
+// Niveau d'urgence : 0 = rien, 1 = faible (<=5 ou <=7 j), 2 = bas (<=2 ou <=3 j),
+// 3 = critique (<=1, épuisé ou <=1 j). La vitesse de vente vient des commandes
+// de la vitrine (seules à porter produit + quantité), moyenne sur 14 jours.
+async function computeStockAlerts(companyId) {
+  const [prods, sales] = await Promise.all([
+    query('SELECT id,name,stock FROM products WHERE company_id=$1',[companyId]),
+    query("SELECT product_id AS id,SUM(quantity)::int AS q FROM orders WHERE company_id=$1 AND product_id IS NOT NULL AND status<>'Annulée' AND created_at > now() - interval '14 days' GROUP BY product_id",[companyId])
+  ]);
+  const perDay = new Map(sales.rows.map(r => [r.id, Number(r.q) / 14]));
+  const out = [];
+  for (const p of prods.rows) {
+    const stock = Number(p.stock), pd = perDay.get(p.id) || 0;
+    const daysLeft = pd > 0 ? stock / pd : null;
+    let level = 0;
+    if (stock <= 1) level = 3; else if (stock <= 2) level = 2; else if (stock <= 5) level = 1;
+    if (daysLeft !== null) level = Math.max(level, daysLeft <= 1 ? 3 : daysLeft <= 3 ? 2 : daysLeft <= 7 ? 1 : 0);
+    if (level > 0) out.push({ id: p.id, name: p.name, stock, perDay: Math.round(pd * 10) / 10, daysLeft: daysLeft === null ? null : Math.round(daysLeft * 10) / 10, level });
+  }
+  return out.sort((a, b) => b.level - a.level || a.stock - b.stock).slice(0, 20);
+}
+async function blockedOrdersSummary(companyId) {
+  const r = await query("SELECT COUNT(*)::int AS n,COALESCE(SUM(amount),0) AS total FROM orders WHERE company_id=$1 AND status='Bloquée'",[companyId]);
+  return { count: r.rows[0].n, total: Number(r.rows[0].total) };
+}
+// Libère les commandes bloquées dès que le quota de prospects le permet
+// (changement de forfait validé ou nouveau mois) ; s'arrête au premier refus.
+async function releaseBlockedOrders(companyId) {
+  const blocked = await query("SELECT id,customer_name,customer_phone,product_name,amount FROM orders WHERE company_id=$1 AND status='Bloquée' ORDER BY created_at",[companyId]);
+  let released = 0;
+  for (const o of blocked.rows) {
+    const pid = await findOrCreateProspectByPhone(companyId, o.customer_phone, o.customer_name, o.product_name);
+    if (!pid) break;
+    await query("UPDATE orders SET status='En attente',prospect_id=$1 WHERE id=$2 AND status='Bloquée'",[pid,o.id]);
+    await query("UPDATE prospects SET order_intent=true,value=GREATEST(COALESCE(value,0),$3),stage=CASE WHEN stage IS NULL OR stage IN ('Nouveau','À contacter') THEN 'En discussion' ELSE stage END WHERE id=$1 AND company_id=$2",[pid,companyId,o.amount]);
+    released++;
+  }
+  if (released) {
+    const team = await query("SELECT email,name FROM users WHERE company_id=$1 AND role IN ('owner','admin')",[companyId]);
+    for (const u of team.rows) await sendEmail(u.email,'✅ '+released+' commande(s) débloquée(s) — VENDIA','<p>Bonjour '+escHtml(u.name)+',</p><p><strong>'+released+' commande(s)</strong> de votre vitrine étaient en attente d\'un forfait supérieur : elles sont maintenant débloquées. Retrouvez le détail et appelez vos clients depuis l\'onglet Commandes.</p>');
+  }
+  return released;
+}
+// Colonnes client masquées tant qu'une commande est bloquée par le quota.
+const ORDER_PUBLIC_COLS = `o.id,o.order_number AS number,
+  CASE WHEN o.status='Bloquée' THEN NULL ELSE COALESCE(p.name,o.customer_name) END AS client,
+  CASE WHEN o.status='Bloquée' THEN NULL ELSE COALESCE(p.phone,o.customer_phone) END AS phone,
+  o.amount,o.status,o.source,o.product_name AS "productName",o.quantity,
+  CASE WHEN o.status='Bloquée' THEN NULL ELSE o.delivery_address END AS address,
+  CASE WHEN o.status='Bloquée' THEN NULL ELSE o.note END AS note,o.created_at AS "createdAt"`;
+
 async function dashboard(companyId, userId) {
+  if ((await blockedOrdersSummary(companyId)).count) await releaseBlockedOrders(companyId).catch(e=>console.error('[orders] liberation:',e.message));
   // Note : les conversations ne sont volontairement PAS chargées ici — le
   // dashboard client les récupère séparément via GET /api/conversations
   // (qui plafonne déjà les messages par fil) juste après ce chargement
@@ -232,7 +284,7 @@ async function dashboard(companyId, userId) {
     query('SELECT id,name,sector,ai_name AS "aiName",ai_tone AS "aiTone",ai_language AS "aiLanguage",ai_rules AS "aiRules",ai_auto_reply_enabled AS "aiAutoReplyEnabled" FROM companies WHERE id=$1',[companyId]),
     query('SELECT id,name,category,price,stock,image_url AS "imageUrl",created_at AS "createdAt" FROM products WHERE company_id=$1 ORDER BY created_at DESC',[companyId]),
     query('SELECT id,name,phone,need,value,score,status,stage,order_intent AS "orderIntent",last_contact AS "lastContact",next_action AS "nextAction",next_action_priority AS "nextActionPriority",next_action_reason AS "nextActionReason",next_action_at AS "nextActionAt",created_at AS "createdAt" FROM prospects WHERE company_id=$1 ORDER BY score DESC,created_at DESC LIMIT 500',[companyId]),
-    query('SELECT o.id,o.order_number AS number,COALESCE(p.name,o.customer_name) AS client,COALESCE(p.phone,o.customer_phone) AS phone,o.amount,o.status,o.source,o.product_name AS "productName",o.quantity,o.delivery_address AS address,o.note,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC LIMIT 500',[companyId]),
+    query('SELECT '+ORDER_PUBLIC_COLS+' FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC LIMIT 500',[companyId]),
     query('SELECT id,due_at AS "dueAt",status,text,prospect_id AS "prospectId",source,cancelled_reason AS "cancelledReason" FROM followups WHERE company_id=$1 ORDER BY due_at NULLS LAST LIMIT 500',[companyId]),
     query('SELECT plan,status,monthly_price AS "monthlyPrice",next_billing_at AS "nextBillingAt" FROM subscriptions WHERE company_id=$1',[companyId]),
     query(`SELECT a.id,a.prospect_id AS "prospectId",p.name AS prospect,a.type,a.scheduled_at AS "scheduledAt",a.status FROM appointments a LEFT JOIN prospects p ON p.id=a.prospect_id WHERE a.company_id=$1 ORDER BY a.scheduled_at NULLS LAST,a.created_at DESC LIMIT 500`,[companyId])
@@ -254,6 +306,8 @@ async function dashboard(companyId, userId) {
     appointments:appointments.rows,
     subscription:subscription.rows[0],
     role:userId?await getUserRole(userId):null,
+    stockAlerts:await computeStockAlerts(companyId),
+    blockedOrders:await blockedOrdersSummary(companyId),
     usage:{
       aiMessages:aiUsage,
       prospectsThisMonth:prospectsThisMonth.rows[0].n,
@@ -1154,8 +1208,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.17',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.17'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.18',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.18'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -1204,7 +1258,7 @@ async function handler(req,res) {
     if(!phone) return json(res,400,{error:'Numéro de téléphone invalide.'});
     if(address.length<3) return json(res,400,{error:'Indiquez votre adresse de livraison.'});
     if(!(qty>=1&&qty<=20)||!/^[0-9a-f-]{36}$/i.test(String(b.productId||''))) return json(res,400,{error:'Commande invalide.'});
-    const pend=await query("SELECT COUNT(*)::int AS n FROM orders WHERE company_id=$1 AND customer_phone=$2 AND source='vitrine' AND status='En attente' AND created_at > now() - interval '24 hours'",[companyId,phone]);
+    const pend=await query("SELECT COUNT(*)::int AS n FROM orders WHERE company_id=$1 AND customer_phone=$2 AND source='vitrine' AND status IN ('En attente','Bloquée') AND created_at > now() - interval '24 hours'",[companyId,phone]);
     if(pend.rows[0].n>=3) return json(res,429,{error:'Vous avez déjà des commandes en attente : le vendeur va vous contacter.'});
     const number='VND-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+crypto.randomBytes(3).toString('hex').toUpperCase();
     const out=await transaction(async client=>{
@@ -1215,22 +1269,37 @@ async function handler(req,res) {
       return {total,productName:p.rows[0].name};
     });
     if(!out) return json(res,409,{error:'Ce produit n\'est plus disponible en cette quantité.'});
-    // Contact CRM (sans bloquer la commande si le quota de prospects est atteint).
+    // Contact CRM. Si le quota mensuel de prospects est atteint, la commande est
+    // enregistrée mais BLOQUÉE (coordonnées masquées) jusqu'au passage au forfait
+    // supérieur ; le client, lui, voit une confirmation normale.
+    let blocked=false;
     try {
       const pid=await findOrCreateProspectByPhone(companyId,phone,name,out.productName);
       if(pid) {
         await query("UPDATE orders SET prospect_id=$1 WHERE company_id=$2 AND order_number=$3",[pid,companyId,number]);
         await query("UPDATE prospects SET order_intent=true,value=GREATEST(COALESCE(value,0),$3),stage=CASE WHEN stage IS NULL OR stage IN ('Nouveau','À contacter') THEN 'En discussion' ELSE stage END WHERE id=$1 AND company_id=$2",[pid,companyId,out.total]);
         await cancelAutoFollowups(companyId,pid,'Commande créée — relance automatique inutile');
+      } else {
+        blocked=true;
+        await query("UPDATE orders SET status='Bloquée' WHERE company_id=$1 AND order_number=$2",[companyId,number]);
       }
     } catch(e) { console.error('[boutique] contact CRM non créé:',e.message); }
     const team=await query("SELECT email,name FROM users WHERE company_id=$1 AND role IN ('owner','admin')",[companyId]);
+    const left=(await query('SELECT stock FROM products WHERE id=$1',[b.productId])).rows[0]?.stock;
+    const stockLine=(left!==undefined&&Number(left)<=5)?'<p>'+(Number(left)<=1?'🔴 <strong>URGENT</strong> : ':'⚠️ ')+'il ne reste que <strong>'+Number(left)+'</strong> '+escHtml(out.productName)+' en stock — pensez à vous réapprovisionner.</p>':'';
     for(const o of team.rows) {
-      await sendEmail(o.email,'🛒 Nouvelle commande sur votre vitrine — '+number,
-        '<p>Bonjour '+escHtml(o.name)+',</p><p>Nouvelle commande <strong>'+number+'</strong> (paiement à la livraison) :</p><ul>'+
-        '<li>Produit : '+escHtml(out.productName)+' × '+qty+'</li><li>Total : <strong>'+Number(out.total).toLocaleString('fr-FR')+' FCFA</strong></li>'+
-        '<li>Client : '+escHtml(name)+' — <a href="https://wa.me/'+phone+'">+'+phone+'</a></li><li>Livraison : '+escHtml(address)+'</li>'+(note?'<li>Précision : '+escHtml(note)+'</li>':'')+'</ul>'+
-        '<p>Appelez le client pour confirmer, puis suivez la commande dans l\'onglet Commandes de VENDIA.</p>');
+      if(blocked) {
+        const bs=await blockedOrdersSummary(companyId);
+        await sendEmail(o.email,'🚨 URGENT — '+bs.count+' commande(s) bloquée(s) sur votre vitrine',
+          '<p>Bonjour '+escHtml(o.name)+',</p><p>Un client vient de commander <strong>'+escHtml(out.productName)+' × '+qty+'</strong> ('+Number(out.total).toLocaleString('fr-FR')+' FCFA) sur votre vitrine, mais <strong>votre quota mensuel de prospects est atteint</strong> : la commande est enregistrée mais <strong>bloquée</strong>. Vous ne voyez ni le nom, ni le téléphone, ni l\'adresse du client.</p>'+
+          '<p><strong>'+bs.count+' commande(s) bloquée(s) pour '+bs.total.toLocaleString('fr-FR')+' FCFA.</strong> Chaque heure qui passe, vous risquez de perdre ces ventes.</p><p>👉 <strong>Passez au forfait supérieur maintenant</strong> depuis l\'onglet Abonnement de VENDIA : les commandes seront débloquées dès la validation de votre paiement.</p>'+stockLine);
+      } else {
+        await sendEmail(o.email,'🛒 Nouvelle commande sur votre vitrine — '+number,
+          '<p>Bonjour '+escHtml(o.name)+',</p><p>Nouvelle commande <strong>'+number+'</strong> (paiement à la livraison) :</p><ul>'+
+          '<li>Produit : '+escHtml(out.productName)+' × '+qty+'</li><li>Total : <strong>'+Number(out.total).toLocaleString('fr-FR')+' FCFA</strong></li>'+
+          '<li>Client : '+escHtml(name)+' — <a href="https://wa.me/'+phone+'">+'+phone+'</a></li><li>Livraison : '+escHtml(address)+'</li>'+(note?'<li>Précision : '+escHtml(note)+'</li>':'')+'</ul>'+
+          '<p>Appelez le client pour confirmer, puis suivez la commande dans l\'onglet Commandes de VENDIA.</p>'+stockLine);
+      }
     }
     return json(res,201,{ok:true,number,total:Number(out.total).toLocaleString('fr-FR')+' FCFA'});
   }
@@ -1654,6 +1723,7 @@ async function handler(req,res) {
             '<p>Bonjour '+escHtml(o.name)+',</p><p>Un de vos filleuls vient de voir son paiement validé : vous gagnez <strong>'+Number(commission.amount).toLocaleString('fr-FR')+' FCFA</strong> de commission. Retrouvez le détail dans l\'onglet Parrainage de votre espace VENDIA.</p>');
         }
       }
+      await releaseBlockedOrders(pendingCompanyId).catch(e=>console.error('[orders] liberation:',e.message));
       const nb=(await query('SELECT next_billing_at FROM subscriptions WHERE company_id=$1',[pendingCompanyId])).rows[0]?.next_billing_at;
       const until=nb?new Date(nb).toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'}):'';
       const owners=await query("SELECT email,name FROM users WHERE company_id=$1 AND role='owner'",[pendingCompanyId]);
@@ -2324,7 +2394,7 @@ async function handler(req,res) {
     return json(res,201,{order:r.rows[0]});
   }
   if(req.method==='GET'&&u.pathname==='/api/orders') {
-    const r=await query('SELECT o.id,o.order_number AS number,o.prospect_id AS "prospectId",COALESCE(p.name,o.customer_name) AS client,COALESCE(p.phone,o.customer_phone) AS phone,o.amount,o.status,o.source,o.product_name AS "productName",o.quantity,o.delivery_address AS address,o.note,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC LIMIT 500',[companyId]);
+    const r=await query('SELECT '+ORDER_PUBLIC_COLS+',o.prospect_id AS "prospectId" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC LIMIT 500',[companyId]);
     return json(res,200,{orders:r.rows});
   }
 
@@ -2334,7 +2404,7 @@ async function handler(req,res) {
   // statut (dont le total "encaissé" = commandes Livrée) pour un rapprochement
   // rapide. Pas de dépendance externe — généré à la volée avec exceljs.
   if(req.method==='GET'&&u.pathname==='/api/export/orders.xlsx') {
-    const rows=(await query('SELECT o.order_number AS number,COALESCE(p.name,o.customer_name) AS client,COALESCE(p.phone,o.customer_phone) AS phone,o.product_name AS "productName",o.quantity,o.delivery_address AS address,o.source,o.amount,o.status,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC LIMIT 5000',[companyId])).rows;
+    const rows=(await query('SELECT o.order_number AS number,CASE WHEN o.status=\'Bloquée\' THEN NULL ELSE COALESCE(p.name,o.customer_name) END AS client,CASE WHEN o.status=\'Bloquée\' THEN NULL ELSE COALESCE(p.phone,o.customer_phone) END AS phone,o.product_name AS "productName",o.quantity,CASE WHEN o.status=\'Bloquée\' THEN NULL ELSE o.delivery_address END AS address,o.source,o.amount,o.status,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC LIMIT 5000',[companyId])).rows;
     const wb=new ExcelJS.Workbook();
     wb.creator='VENDIA'; wb.created=new Date();
 
@@ -2378,6 +2448,9 @@ async function handler(req,res) {
   const orderMatch=u.pathname.match(/^\/api\/orders\/([0-9a-f-]+)$/i);
   if(orderMatch && (req.method==='PUT'||req.method==='PATCH')) {
     const b=await body(req);
+    const cur=await query('SELECT status FROM orders WHERE id=$1 AND company_id=$2',[orderMatch[1],companyId]);
+    if(cur.rows[0]?.status==='Bloquée') return json(res,403,{error:'Commande bloquée : passez au forfait supérieur pour la débloquer.'});
+    if(b.status==='Bloquée') return json(res,400,{error:'Statut invalide'});
     const r=await transaction(async client=>{
       const u2=await client.query('UPDATE orders SET amount=$1,status=$2 WHERE id=$3 AND company_id=$4 RETURNING id,order_number AS number,prospect_id AS "prospectId",amount,status,created_at AS "createdAt",product_id,quantity,stock_reserved',[Math.max(0,Number(b.amount||0)),b.status||'En attente',orderMatch[1],companyId]);
       const o=u2.rows[0];
@@ -2432,11 +2505,14 @@ async function buildCompanyReport(companyId) {
   ]);
   const revenueToday = closedOrders.rows.reduce((s,o)=>s+Number(o.amount||0),0);
   const aiUsage = await getAiUsage(companyId, sub.rows[0]?.plan);
-  return { companyName: company.rows[0]?.name || 'Entreprise', closedOrders: closedOrders.rows, revenueToday, pendingDeliveries: pendingDeliveries.rows, dueFollowups: dueFollowups.rows, hesitant: hesitant.rows, newProspectsCount: newProspects.rows[0].n, aiUsage };
+  const stockAlerts = await computeStockAlerts(companyId), blockedOrders = await blockedOrdersSummary(companyId);
+  return { stockAlerts, blockedOrders, companyName: company.rows[0]?.name || 'Entreprise', closedOrders: closedOrders.rows, revenueToday, pendingDeliveries: pendingDeliveries.rows, dueFollowups: dueFollowups.rows, hesitant: hesitant.rows, newProspectsCount: newProspects.rows[0].n, aiUsage };
 }
 
 function reportToHtml(r) {
   return ''+
+    (r.blockedOrders&&r.blockedOrders.count ? '<p style="color:#d62839"><strong>🚨 URGENT — '+r.blockedOrders.count+' commande(s) bloquée(s) ('+money(r.blockedOrders.total)+') :</strong> votre quota de prospects est atteint. Passez au forfait supérieur pour les débloquer.</p>' : '')+
+    (r.stockAlerts&&r.stockAlerts.length ? '<p><strong>📦 Stock à renouveler :</strong></p><ul>'+r.stockAlerts.map(a=>'<li>'+(a.level>=3?'🔴 <strong>URGENT</strong> ':a.level===2?'🟠 ':'⚠️ ')+escHtml(a.name)+' — reste '+a.stock+(a.perDay>0?' (≈'+a.perDay+'/jour'+(a.daysLeft!==null?', environ '+a.daysLeft+' jour(s) de stock':'')+')':'')+'</li>').join('')+'</ul>' : '')+
     '<p><strong>🏆 Prospects closés aujourd\'hui :</strong> '+r.closedOrders.length+' commande(s) — '+money(r.revenueToday)+'</p>'+
     (r.closedOrders.length ? '<ul>'+r.closedOrders.map(o=>'<li>'+escHtml(o.number)+' — '+money(o.amount)+'</li>').join('')+'</ul>' : '')+
     '<p><strong>🚚 Livraisons prévues / en attente :</strong> '+r.pendingDeliveries.length+'</p>'+
@@ -2668,7 +2744,7 @@ async function ensureMigrations() {
     "ALTER TABLE prospects ADD COLUMN IF NOT EXISTS stage TEXT NOT NULL DEFAULT 'Nouveau'",
     "UPDATE prospects SET stage=status WHERE status IN ('Nouveau','À contacter','En discussion','Gagné','Perdu')",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT",
-    // Commandes passées depuis la vitrine web (1.10.17) : détail du produit, de la
+    // Commandes passées depuis la vitrine web (1.10.18) : détail du produit, de la
     // livraison et du client (le prospect peut manquer si le quota CRM est atteint).
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id) ON DELETE SET NULL",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_name TEXT",
@@ -2719,6 +2795,6 @@ const server=http.createServer((req,res)=>handler(req,res).catch(e=>{ if(e&&e.st
 ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>console.error('[demarrage] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.17 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.18 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

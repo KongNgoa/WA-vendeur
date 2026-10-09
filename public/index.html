@@ -53,6 +53,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <main class="wrap">
 <div id="billingBanner" class="hidden" style="margin-bottom:12px"></div>
 <div id="upgradeBanner" class="hidden" style="margin-bottom:12px"></div>
+<div id="stockBanner" class="hidden" style="margin-bottom:12px"></div>
 <section id="login" class="login">
 <h2 data-i18n="login_title">Connexion</h2><p class="muted" data-i18n="login_subtitle">Connectez-vous pour accéder à votre espace commercial.</p>
 <input id="email" type="email" value="demo@wavendeur.local" placeholder="Email" data-i18n-placeholder="placeholder_email"><input id="password" type="password" value="demo1234" placeholder="Mot de passe" data-i18n-placeholder="placeholder_password">
@@ -377,6 +378,10 @@ fr: {
   upgrade_prospects_near:"Vous approchez de votre limite de prospects ({u}/{n} ce mois-ci).", upgrade_ai_near:"Vous approchez de votre limite de réponses IA ({u}/{n} ce mois-ci).",
   upgrade_with:"Passez au forfait {plan} pour continuer sans limite.", upgrade_btn:"Passer à {plan}",
   th_order_items:"Commande", order_from_shop:"Vitrine",
+  ostatus_bloquee:"Bloquée", order_hidden:"Coordonnées masquées : forfait supérieur requis",
+  upgrade_blocked_orders:"🚨 URGENT : {n} commande(s) de votre vitrine ({total}) sont BLOQUÉES car votre quota de prospects est atteint. Les coordonnées de vos clients sont masquées et ils attendent votre appel — chaque heure compte.",
+  stock_head_critical:"🔴 URGENT — Stock presque épuisé : réapprovisionnez immédiatement !", stock_head_high:"🟠 Stock très bas : réapprovisionnez vite", stock_head_low:"⚠️ Stock faible : pensez à vous réapprovisionner",
+  stock_out:"épuisé", stock_left:"reste {n}", stock_rate:"≈ {r} vendu(s)/jour", stock_days:"environ {d} jour(s) de stock", stock_less_day:"moins d'un jour de stock", stock_btn:"Mettre à jour le stock", stock_more:"… et {n} autre(s) produit(s) à surveiller.",
   nav_promo:"Studio promo", promo_title:"Studio promo", promo_desc:"Créez en quelques secondes un texte et une affiche pour un produit de votre catalogue, prêts à publier en statut WhatsApp ou sur les réseaux sociaux.", promo_empty:"Ajoutez d'abord un produit à votre catalogue.",
   promo_product_label:"Produit", promo_format_label:"Type de texte", promo_format_status:"Statut WhatsApp", promo_format_post:"Publication Facebook / Instagram", promo_format_broadcast:"Message à un client",
   btn_generate_text:"✨ Générer le texte", btn_generating:"Génération…", placeholder_promo_text:"Le texte apparaîtra ici — vous pouvez le modifier.", btn_copy_text:"Copier le texte",
@@ -526,6 +531,10 @@ en: {
   upgrade_prospects_near:"You are close to your lead limit ({u}/{n} this month).", upgrade_ai_near:"You are close to your AI reply limit ({u}/{n} this month).",
   upgrade_with:"Upgrade to the {plan} plan to keep going without limits.", upgrade_btn:"Upgrade to {plan}",
   th_order_items:"Order", order_from_shop:"Storefront",
+  ostatus_bloquee:"Blocked", order_hidden:"Contact details hidden: upgrade required",
+  upgrade_blocked_orders:"🚨 URGENT: {n} order(s) from your storefront ({total}) are BLOCKED because your lead quota is reached. Your customers' contact details are hidden and they are waiting for your call — every hour counts.",
+  stock_head_critical:"🔴 URGENT — Stock almost gone: restock immediately!", stock_head_high:"🟠 Very low stock: restock soon", stock_head_low:"⚠️ Low stock: plan to restock",
+  stock_out:"out of stock", stock_left:"{n} left", stock_rate:"≈ {r} sold/day", stock_days:"about {d} day(s) of stock", stock_less_day:"less than a day of stock", stock_btn:"Update stock", stock_more:"… and {n} more product(s) to watch.",
   nav_promo:"Promo studio", promo_title:"Promo studio", promo_desc:"Create a text and a poster for a product in your catalog in seconds, ready to post on WhatsApp Status or social media.", promo_empty:"Add a product to your catalog first.",
   promo_product_label:"Product", promo_format_label:"Text type", promo_format_status:"WhatsApp Status", promo_format_post:"Facebook / Instagram post", promo_format_broadcast:"Message to a customer",
   btn_generate_text:"✨ Generate text", btn_generating:"Generating…", placeholder_promo_text:"The text will appear here — you can edit it.", btn_copy_text:"Copy text",
@@ -666,7 +675,7 @@ function setLang(l){
 // libellé affiché. raw peut être n'importe quelle valeur (y compris du texte
 // libre saisi via prompt()) — si elle n'est pas reconnue, affichée telle quelle.
 const STATUS_KEY_MAP = { 'Nouveau':'status_nouveau','À contacter':'status_a_contacter','En discussion':'status_en_discussion','Gagné':'status_gagne','Perdu':'status_perdu',
-  'En attente':'ostatus_en_attente','Confirmée':'ostatus_confirmee','En préparation':'ostatus_en_preparation','Livrée':'ostatus_livree','Annulée':'ostatus_annulee',
+  'En attente':'ostatus_en_attente','Confirmée':'ostatus_confirmee','En préparation':'ostatus_en_preparation','Livrée':'ostatus_livree','Annulée':'ostatus_annulee','Bloquée':'ostatus_bloquee',
   'Programmée':'fstatus_programmee','Envoyée':'fstatus_envoyee',
   'Proposé':'astatus_propose','Confirmé':'astatus_confirme','Annulé':'astatus_annule',
   'Chaud':'qualification_hot','Tiède':'qualification_warm','Froid':'qualification_cold' };
@@ -842,7 +851,7 @@ function tab(name) {
 
 function renderAll() {
   $('companyNameTag').textContent = data.company?.name ? '— '+data.company.name : '';
-  renderBillingBanner(); renderUpgradeBanner();
+  renderBillingBanner(); renderUpgradeBanner(); renderStockBanner();
   renderDashboard(); renderProducts(); renderCRM(); renderConversations(); renderOrders(); renderFollowups(); renderAppointments(); populateProspectSelects(); initAiAutoReplyToggle(); renderAiUsagePanel();
 }
 function initAiAutoReplyToggle() {
@@ -913,10 +922,11 @@ function renderDashboard() {
   ).join('') || '<div class="empty">'+t('empty_products_dash')+'</div>';
 }
 
+function stockCell(p){ const a=(data.stockAlerts||[]).find(x=>x.id===p.id); return a?'<span style="color:'+(a.level>=3?'#d62839':a.level===2?'#f08a24':'#b7791f')+';font-weight:700">'+stockLevelIcon(a.level)+' '+p.stock+'</span>':String(p.stock); }
 function renderProducts() {
   $('productCount').textContent = '('+data.products.length+')';
   $('productTable').innerHTML = data.products.length ? '<table><thead><tr><th></th><th>'+t('th_product')+'</th><th>'+t('th_category')+'</th><th>'+t('th_price')+'</th><th>'+t('th_stock')+'</th><th>'+t('th_actions')+'</th></tr></thead><tbody>' +
-    data.products.map(p => '<tr><td>'+(p.imageUrl?'<img src="'+esc(p.imageUrl)+'" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px" onerror="this.style.display=\'none\'">':'')+'</td><td><strong>'+esc(p.name)+'</strong></td><td>'+esc(p.category||'—')+'</td><td>'+money(p.price)+'</td><td>'+p.stock+'</td><td><div class="actions">' +
+    data.products.map(p => '<tr><td>'+(p.imageUrl?'<img src="'+esc(p.imageUrl)+'" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px" onerror="this.style.display=\'none\'">':'')+'</td><td><strong>'+esc(p.name)+'</strong></td><td>'+esc(p.category||'—')+'</td><td>'+money(p.price)+'</td><td>'+stockCell(p)+'</td><td><div class="actions">' +
     '<label class="btn" style="cursor:pointer" title="'+t('btn_change_photo')+'">📷<input type="file" accept="image/*" hidden onchange="changeProductPhoto(\''+p.id+'\',this)"></label>'+'<button class="btn" data-edit-product="'+p.id+'">'+t('btn_edit')+'</button><button class="btn danger" data-delete-product="'+p.id+'">'+t('btn_delete')+'</button></div></td></tr>').join('') +
     '</tbody></table>' : '<div class="empty">'+t('empty_products')+'</div>';
 }
@@ -1216,6 +1226,10 @@ function renderOrders(){
       list.map(o=>{
         const tel=o.phone?'<br><a href="https://wa.me/'+esc(String(o.phone).replace(/\D/g,''))+'" target="_blank" rel="noopener" class="muted">+'+esc(String(o.phone).replace(/\D/g,''))+'</a>':'';
         const items=o.productName?esc(o.productName)+' × '+(o.quantity||1)+(o.address?'<br><span class="muted">📍 '+esc(o.address)+'</span>':'')+(o.note?'<br><span class="muted">💬 '+esc(o.note)+'</span>':''):'—';
+        if(o.status==='Bloquée'){
+          const nx=NEXT_PLAN[data.subscription?.plan]||'Pro';
+          return '<tr style="background:#fff1f2"><td><strong>'+esc(o.number)+'</strong><br><span class="badge">🛒 '+t('order_from_shop')+'</span></td><td>🔒 <span class="muted">'+t('order_hidden')+'</span></td><td>'+(o.productName?esc(o.productName)+' × '+(o.quantity||1):'—')+'</td><td>'+money(o.amount)+'</td><td><span class="error">🚨 '+t('ostatus_bloquee')+'</span><br><button class="btn primary" onclick="goUpgrade(\''+nx+'\')">'+tf('upgrade_btn',{plan:nx})+'</button></td></tr>';
+        }
         const sel='<select onchange="setOrderStatus(\''+o.id+'\',this.value)">'+ORDER_STATUSES.map(s=>'<option value="'+s+'"'+(s===o.status?' selected':'')+'>'+esc(statusLabel(s))+'</option>').join('')+'</select>';
         return '<tr><td><strong>'+esc(o.number)+'</strong>'+(o.source==='vitrine'?'<br><span class="badge">🛒 '+t('order_from_shop')+'</span>':'')+'</td><td>'+esc(o.client||'—')+tel+'</td><td>'+items+'</td><td>'+money(o.amount)+'</td><td>'+sel+'</td></tr>';
       }).join('')+'</tbody></table>'
@@ -1563,6 +1577,24 @@ function sharePromoText(){
   window.open('https://wa.me/?text='+encodeURIComponent(v),'_blank','noopener');
 }
 
+// Alertes de stock permanentes (non masquables) : urgence croissante à 5, 2 puis 1 unité,
+// et selon la vitesse de vente des 14 derniers jours (commandes de la vitrine).
+function stockLevelIcon(l){ return l>=3?'🔴':l===2?'🟠':'⚠️'; }
+function renderStockBanner(){
+  const el=$('stockBanner'); if(!el) return;
+  const al=data.stockAlerts||[];
+  if(!al.length){ el.classList.add('hidden'); return; }
+  const worst=Math.max(...al.map(a=>a.level));
+  const head=worst>=3?t('stock_head_critical'):worst===2?t('stock_head_high'):t('stock_head_low');
+  const col=worst>=3?'#d62839':worst===2?'#f08a24':'#e9b949';
+  const items=al.slice(0,8).map(a=>{
+    const left=a.stock<=0?t('stock_out'):tf('stock_left',{n:a.stock});
+    const rate=a.perDay>0?' · '+tf('stock_rate',{r:String(a.perDay).replace('.',',')})+(a.daysLeft!==null?' · '+(a.daysLeft<1?t('stock_less_day'):tf('stock_days',{d:String(Math.round(a.daysLeft*10)/10).replace('.',',')})):''):'';
+    return '<li>'+stockLevelIcon(a.level)+' <strong>'+esc(a.name)+'</strong> — '+left+rate+'</li>';
+  }).join('');
+  el.innerHTML='<div class="panel" style="border:2px solid '+col+';margin:0"><div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><strong>'+head+'</strong><button class="btn primary" onclick="tab(\'products\')">'+t('stock_btn')+'</button></div><ul style="margin:8px 0 0;padding-left:18px">'+items+'</ul>'+(al.length>8?'<p class="muted" style="margin:6px 0 0">'+tf('stock_more',{n:al.length-8})+'</p>':'')+'</div>';
+  el.classList.remove('hidden');
+}
 // Invitation à passer au forfait supérieur quand un quota approche ou est atteint
 const NEXT_PLAN={Starter:'Business',Business:'Pro'};
 function renderUpgradeBanner(){
@@ -1572,8 +1604,10 @@ function renderUpgradeBanner(){
   const aFull=ai && ai.limit!=null && ai.remaining!==null && ai.remaining<=0;
   const pNear=us.prospectsLimit!=null && us.prospectsThisMonth>=us.prospectsLimit*0.8;
   const aNear=ai && ai.limit!=null && ai.used>=ai.limit*0.8;
-  let msg='', full=pFull||aFull;
-  if(pFull) msg=tf('upgrade_prospects_full',{n:us.prospectsLimit});
+  const bo=data.blockedOrders||{count:0,total:0};
+  let msg='', full=pFull||aFull||bo.count>0;
+  if(bo.count>0) msg=tf('upgrade_blocked_orders',{n:bo.count,total:money(bo.total)});
+  else if(pFull) msg=tf('upgrade_prospects_full',{n:us.prospectsLimit});
   else if(aFull) msg=tf('upgrade_ai_full',{n:ai.limit});
   else if(pNear) msg=tf('upgrade_prospects_near',{u:us.prospectsThisMonth,n:us.prospectsLimit});
   else if(aNear) msg=tf('upgrade_ai_near',{u:ai.used,n:ai.limit});
