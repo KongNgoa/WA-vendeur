@@ -23,7 +23,7 @@ const MTN_MOMO_NUMBER = process.env.MTN_MOMO_NUMBER || '+237672353499';
 const AFFILIATE_PERCENT = Math.min(90, Math.max(0, Number(process.env.AFFILIATE_PERCENT ?? 20) || 0));
 const AFFILIATE_MAX_PAYMENTS = Math.max(1, Math.floor(Number(process.env.AFFILIATE_MAX_PAYMENTS ?? 12) || 12));
 const json = (res,status,data) => { res.writeHead(status, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY','Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type, Authorization','Access-Control-Allow-Methods':'GET,POST,PUT,PATCH,DELETE,OPTIONS'}); res.end(JSON.stringify(data)); };
-const body = async req => { let s=''; for await (const c of req) s += c; if (s.length > 1000000) throw new Error('Payload trop volumineux'); return s ? JSON.parse(s) : {}; };
+const body = async (req, max = 1000000) => { let s=''; for await (const c of req) s += c; if (s.length > max) throw new Error('Payload trop volumineux'); return s ? JSON.parse(s) : {}; };
 const rawBody = async req => { let s=''; for await (const c of req) s += c; if (s.length > 1000000) throw new Error('Payload trop volumineux'); return s; };
 const hashPassword = (password,salt=crypto.randomBytes(16).toString('hex')) => ({salt,hash:crypto.scryptSync(password,salt,64).toString('hex')});
 const verifyPassword = (password,salt,expected) => crypto.timingSafeEqual(Buffer.from(hashPassword(password,salt).hash,'hex'),Buffer.from(expected,'hex'));
@@ -1119,8 +1119,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.12',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.12'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.13',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.13'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -1844,13 +1844,13 @@ async function handler(req,res) {
   }
 
   if(req.method==='POST'&&u.pathname==='/api/products/image') {
-    const b=await body(req);
+    const b=await body(req,3200000);
     const buf=Buffer.from(String(b.data||'').replace(/^data:[^,]*,/,''),'base64');
-    if(!buf.length||buf.length>700*1024) return json(res,400,{error:'Image invalide ou trop lourde (700 Ko maximum)'});
+    if(!buf.length||buf.length>2*1024*1024) return json(res,400,{error:'Image invalide ou trop lourde (2 Mo maximum)'});
     const mime=buf.subarray(0,3).equals(Buffer.from([0xff,0xd8,0xff]))?'image/jpeg':buf.subarray(0,8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]))?'image/png':(buf.subarray(0,4).toString()==='RIFF'&&buf.subarray(8,12).toString()==='WEBP')?'image/webp':null;
     if(!mime) return json(res,400,{error:'Format non pris en charge (JPEG, PNG ou WebP)'});
     const cnt=await query('SELECT COUNT(*)::int AS n FROM product_images WHERE company_id=$1',[companyId]);
-    if(cnt.rows[0].n>=1000) return json(res,400,{error:'Limite de photos atteinte'});
+    if(cnt.rows[0].n>=500) return json(res,400,{error:'Limite de photos atteinte'});
     const r=await query('INSERT INTO product_images(company_id,data,mime) VALUES($1,$2,$3) RETURNING id',[companyId,buf,mime]);
     return json(res,201,{url:requestOrigin(req)+'/img/'+r.rows[0].id});
   }
@@ -2559,6 +2559,6 @@ const server=http.createServer((req,res)=>handler(req,res).catch(e=>{console.err
 ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>console.error('[demarrage] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.12 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.13 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

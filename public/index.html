@@ -345,6 +345,7 @@ fr: {
   dash_hot:"🔥 Chauds", dash_warm:"🟠 Tièdes", dash_cold:"❄️ Froids", dash_products:"Produits", dash_low_stock:"Stock faible",
   dash_prospects_month:"Prospects ce mois", dash_unlimited:"illimité", empty_products_dash:"Aucun produit.", stock_label:"Stock",
   product_photo_label:"Photo du produit (optionnel)", product_photo_uploading:"Envoi de la photo…", product_photo_ok:"Photo ajoutée.", product_photo_error:"Impossible de lire cette image.",
+  btn_change_photo:"Changer la photo",
   nav_promo:"Studio promo", promo_title:"Studio promo", promo_desc:"Créez en quelques secondes un texte et une affiche pour un produit de votre catalogue, prêts à publier en statut WhatsApp ou sur les réseaux sociaux.", promo_empty:"Ajoutez d'abord un produit à votre catalogue.",
   promo_product_label:"Produit", promo_format_label:"Type de texte", promo_format_status:"Statut WhatsApp", promo_format_post:"Publication Facebook / Instagram", promo_format_broadcast:"Message à un client",
   btn_generate_text:"✨ Générer le texte", btn_generating:"Génération…", placeholder_promo_text:"Le texte apparaîtra ici — vous pouvez le modifier.", btn_copy_text:"Copier le texte",
@@ -481,6 +482,7 @@ en: {
   dash_hot:"🔥 Hot", dash_warm:"🟠 Warm", dash_cold:"❄️ Cold", dash_products:"Products", dash_low_stock:"Low stock",
   dash_prospects_month:"Leads this month", dash_unlimited:"unlimited", empty_products_dash:"No products.", stock_label:"Stock",
   product_photo_label:"Product photo (optional)", product_photo_uploading:"Uploading photo…", product_photo_ok:"Photo added.", product_photo_error:"Could not read this image.",
+  btn_change_photo:"Change photo",
   nav_promo:"Promo studio", promo_title:"Promo studio", promo_desc:"Create a text and a poster for a product in your catalog in seconds, ready to post on WhatsApp Status or social media.", promo_empty:"Add a product to your catalog first.",
   promo_product_label:"Product", promo_format_label:"Text type", promo_format_status:"WhatsApp Status", promo_format_post:"Facebook / Instagram post", promo_format_broadcast:"Message to a customer",
   btn_generate_text:"✨ Generate text", btn_generating:"Generating…", placeholder_promo_text:"The text will appear here — you can edit it.", btn_copy_text:"Copy text",
@@ -870,7 +872,7 @@ function renderProducts() {
   $('productCount').textContent = '('+data.products.length+')';
   $('productTable').innerHTML = data.products.length ? '<table><thead><tr><th></th><th>'+t('th_product')+'</th><th>'+t('th_category')+'</th><th>'+t('th_price')+'</th><th>'+t('th_stock')+'</th><th>'+t('th_actions')+'</th></tr></thead><tbody>' +
     data.products.map(p => '<tr><td>'+(p.imageUrl?'<img src="'+esc(p.imageUrl)+'" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px" onerror="this.style.display=\'none\'">':'')+'</td><td><strong>'+esc(p.name)+'</strong></td><td>'+esc(p.category||'—')+'</td><td>'+money(p.price)+'</td><td>'+p.stock+'</td><td><div class="actions">' +
-    '<button class="btn" data-edit-product="'+p.id+'">'+t('btn_edit')+'</button><button class="btn danger" data-delete-product="'+p.id+'">'+t('btn_delete')+'</button></div></td></tr>').join('') +
+    '<label class="btn" style="cursor:pointer" title="'+t('btn_change_photo')+'">📷<input type="file" accept="image/*" hidden onchange="changeProductPhoto(\''+p.id+'\',this)"></label>'+'<button class="btn" data-edit-product="'+p.id+'">'+t('btn_edit')+'</button><button class="btn danger" data-delete-product="'+p.id+'">'+t('btn_delete')+'</button></div></td></tr>').join('') +
     '</tbody></table>' : '<div class="empty">'+t('empty_products')+'</div>';
 }
 
@@ -963,20 +965,34 @@ async function moveProspectStage(id,newStage){
   } catch(e){ alert(e.message); }
 }
 
-// Photo produit : redimensionnée dans le navigateur (JPEG, 900 px max) avant envoi.
+// Photo produit : redimensionnée dans le navigateur (JPEG, 1600 px max) avant envoi.
+async function sendProductPhoto(f){
+  const bmp=await new Promise((ok,ko)=>{ const u=URL.createObjectURL(f), im=new Image(); im.onload=()=>{URL.revokeObjectURL(u);ok(im);}; im.onerror=()=>ko(new Error(t('product_photo_error'))); im.src=u; });
+  const sc=Math.min(1,1600/Math.max(bmp.width,bmp.height)), cv=document.createElement('canvas');
+  cv.width=Math.round(bmp.width*sc); cv.height=Math.round(bmp.height*sc);
+  const cx=cv.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,cv.width,cv.height); cx.drawImage(bmp,0,0,cv.width,cv.height);
+  let q=.88, d=cv.toDataURL('image/jpeg',q);
+  while(d.length>2500000 && q>.4){ q-=.1; d=cv.toDataURL('image/jpeg',q); }
+  const r=await api('/api/products/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:d})});
+  return {url:r.url,preview:d};
+}
 async function uploadProductPhoto(inp){
   const f=inp.files&&inp.files[0]; if(!f) return;
   const st=$('pImageStatus'); st.textContent=t('product_photo_uploading');
   try{
-    const bmp=await new Promise((ok,ko)=>{ const u=URL.createObjectURL(f), im=new Image(); im.onload=()=>{URL.revokeObjectURL(u);ok(im);}; im.onerror=()=>ko(new Error(t('product_photo_error'))); im.src=u; });
-    const sc=Math.min(1,900/Math.max(bmp.width,bmp.height)), cv=document.createElement('canvas');
-    cv.width=Math.round(bmp.width*sc); cv.height=Math.round(bmp.height*sc);
-    const cx=cv.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,cv.width,cv.height); cx.drawImage(bmp,0,0,cv.width,cv.height);
-    let q=.85, d=cv.toDataURL('image/jpeg',q);
-    while(d.length>880000 && q>.4){ q-=.1; d=cv.toDataURL('image/jpeg',q); }
-    const r=await api('/api/products/image',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:d})});
-    $('pImageUrl').value=r.url; const pv=$('pImagePreview'); pv.src=d; pv.classList.remove('hidden'); st.textContent=t('product_photo_ok');
+    const r=await sendProductPhoto(f);
+    $('pImageUrl').value=r.url; const pv=$('pImagePreview'); pv.src=r.preview; pv.classList.remove('hidden'); st.textContent=t('product_photo_ok');
   }catch(e){ st.textContent=e.message||t('product_photo_error'); inp.value=''; }
+}
+async function changeProductPhoto(id,inp){
+  const f=inp.files&&inp.files[0]; if(!f) return;
+  const p=data.products.find(x=>x.id===id); if(!p) return;
+  try{
+    const r=await sendProductPhoto(f);
+    await api('/api/products/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:p.name,price:Number(p.price),stock:Number(p.stock),category:p.category||'',imageUrl:r.url})});
+    await load(); tab('products');
+  }catch(e){ alert(e.message||t('product_photo_error')); }
+  inp.value='';
 }
 async function saveProduct(e) {
   e.preventDefault();
