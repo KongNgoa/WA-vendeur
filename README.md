@@ -87,6 +87,10 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - **Pensée pour le référencement et le partage** : aperçu riche (titre, description, photo) dans Facebook/WhatsApp, données structurées schema.org (produits, prix en XAF, disponibilité), lien canonique.
 - **Sûre** : tout le contenu est échappé, la page disparaît (404) si l'entreprise la désactive, est suspendue ou n'est pas encore validée, et les requêtes répétées sont limitées par IP.
 
+## Invitation à monter en gamme (1.10.15)
+- **Bannière dans le tableau de bord** pour les forfaits Starter et Business : à partir de 80 % du quota de prospects ou de réponses IA du mois, un message prévient le client (avec croix pour le masquer le temps de la session) ; à 100 %, la bannière devient rouge et explique la conséquence (nouveaux contacts non enregistrés, ou réponses IA de secours).
+- Le bouton "Passer à Business / Pro" ouvre l'onglet Abonnement avec le forfait supérieur déjà sélectionné. Le montant du forfait supérieur reste le prix plein (pas de prorata).
+
 ## Paiement manuel amélioré (1.10.14)
 - **Nouvel onglet "Abonnement"** (administrateur de l'équipe uniquement) : forfait, prix, date d'échéance et jours restants, numéro Orange Money / MTN à payer (copiable), formulaire de renouvellement ou de changement de forfait, historique des paiements avec leur statut. Une bannière prévient 5 jours avant l'échéance et après.
 - **Chaque paiement validé prolonge l'abonnement de 30 jours** à partir de l'échéance en cours (plus de perte si on paie en avance). Les abonnements actifs existants reçoivent 30 jours à partir du déploiement. L'accès n'est jamais coupé automatiquement : la bannière sert de rappel et le super-admin garde la main.

@@ -52,6 +52,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <header><div class="brand"><img src="assets/logo-mark-112.png" alt="VENDIA"><div><h1>VENDIA <span id="companyNameTag" class="tag"></span></h1><div class="tag" data-i18n="tagline">Le commercial IA qui travaille pour vous 24h/24</div></div></div><div class="actions" style="align-items:center"><div class="langSwitch" id="langSwitch"><button data-lang="fr" onclick="setLang('fr')">FR</button><button data-lang="en" onclick="setLang('en')">EN</button></div><span class="badge" data-i18n="beta_badge">BÊTA</span><button class="btn" style="margin-left:8px" onclick="logout()" data-i18n="logout_btn">Déconnexion</button></div></header>
 <main class="wrap">
 <div id="billingBanner" class="hidden" style="margin-bottom:12px"></div>
+<div id="upgradeBanner" class="hidden" style="margin-bottom:12px"></div>
 <section id="login" class="login">
 <h2 data-i18n="login_title">Connexion</h2><p class="muted" data-i18n="login_subtitle">Connectez-vous pour accéder à votre espace commercial.</p>
 <input id="email" type="email" value="demo@wavendeur.local" placeholder="Email" data-i18n-placeholder="placeholder_email"><input id="password" type="password" value="demo1234" placeholder="Mot de passe" data-i18n-placeholder="placeholder_password">
@@ -371,6 +372,10 @@ fr: {
   billing_pending_note:"Votre paiement est en cours de validation : vous serez prévenu dès qu'il sera confirmé.", billing_renew_hint:"Chaque paiement validé prolonge votre abonnement de 30 jours à partir de l'échéance actuelle.",
   billing_history_title:"Historique des paiements", billing_no_history:"Aucun paiement enregistré.", billing_st_pending:"⏳ En attente", billing_st_approved:"✅ Validé", billing_st_rejected:"❌ Refusé",
   billing_banner_late:"Votre abonnement est arrivé à échéance. Renouvelez-le pour ne pas être interrompu.", billing_banner_soon:"Votre abonnement expire dans {n} jour(s).", billing_banner_btn:"Renouveler",
+  upgrade_prospects_full:"Vous avez atteint la limite de {n} nouveaux prospects ce mois-ci : les nouveaux contacts ne sont plus enregistrés dans votre CRM.",
+  upgrade_ai_full:"Vous avez utilisé vos {n} réponses IA du mois : l'assistant répond désormais avec un message de secours.",
+  upgrade_prospects_near:"Vous approchez de votre limite de prospects ({u}/{n} ce mois-ci).", upgrade_ai_near:"Vous approchez de votre limite de réponses IA ({u}/{n} ce mois-ci).",
+  upgrade_with:"Passez au forfait {plan} pour continuer sans limite.", upgrade_btn:"Passer à {plan}",
   nav_promo:"Studio promo", promo_title:"Studio promo", promo_desc:"Créez en quelques secondes un texte et une affiche pour un produit de votre catalogue, prêts à publier en statut WhatsApp ou sur les réseaux sociaux.", promo_empty:"Ajoutez d'abord un produit à votre catalogue.",
   promo_product_label:"Produit", promo_format_label:"Type de texte", promo_format_status:"Statut WhatsApp", promo_format_post:"Publication Facebook / Instagram", promo_format_broadcast:"Message à un client",
   btn_generate_text:"✨ Générer le texte", btn_generating:"Génération…", placeholder_promo_text:"Le texte apparaîtra ici — vous pouvez le modifier.", btn_copy_text:"Copier le texte",
@@ -515,6 +520,10 @@ en: {
   billing_pending_note:"Your payment is being validated: you will be notified once it is confirmed.", billing_renew_hint:"Each confirmed payment extends your subscription by 30 days from the current due date.",
   billing_history_title:"Payment history", billing_no_history:"No payments recorded.", billing_st_pending:"⏳ Pending", billing_st_approved:"✅ Confirmed", billing_st_rejected:"❌ Rejected",
   billing_banner_late:"Your subscription is past due. Renew it to avoid interruption.", billing_banner_soon:"Your subscription expires in {n} day(s).", billing_banner_btn:"Renew",
+  upgrade_prospects_full:"You have reached the limit of {n} new leads this month: new contacts are no longer saved to your CRM.",
+  upgrade_ai_full:"You have used your {n} AI replies for the month: the assistant now answers with a fallback message.",
+  upgrade_prospects_near:"You are close to your lead limit ({u}/{n} this month).", upgrade_ai_near:"You are close to your AI reply limit ({u}/{n} this month).",
+  upgrade_with:"Upgrade to the {plan} plan to keep going without limits.", upgrade_btn:"Upgrade to {plan}",
   nav_promo:"Promo studio", promo_title:"Promo studio", promo_desc:"Create a text and a poster for a product in your catalog in seconds, ready to post on WhatsApp Status or social media.", promo_empty:"Add a product to your catalog first.",
   promo_product_label:"Product", promo_format_label:"Text type", promo_format_status:"WhatsApp Status", promo_format_post:"Facebook / Instagram post", promo_format_broadcast:"Message to a customer",
   btn_generate_text:"✨ Generate text", btn_generating:"Generating…", placeholder_promo_text:"The text will appear here — you can edit it.", btn_copy_text:"Copy text",
@@ -831,7 +840,7 @@ function tab(name) {
 
 function renderAll() {
   $('companyNameTag').textContent = data.company?.name ? '— '+data.company.name : '';
-  renderBillingBanner();
+  renderBillingBanner(); renderUpgradeBanner();
   renderDashboard(); renderProducts(); renderCRM(); renderConversations(); renderOrders(); renderFollowups(); renderAppointments(); populateProspectSelects(); initAiAutoReplyToggle(); renderAiUsagePanel();
 }
 function initAiAutoReplyToggle() {
@@ -1539,6 +1548,27 @@ function sharePromoText(){
   window.open('https://wa.me/?text='+encodeURIComponent(v),'_blank','noopener');
 }
 
+// Invitation à passer au forfait supérieur quand un quota approche ou est atteint
+const NEXT_PLAN={Starter:'Business',Business:'Pro'};
+function renderUpgradeBanner(){
+  const el=$('upgradeBanner'); if(!el) return;
+  const next=NEXT_PLAN[data.subscription?.plan], us=data.usage||{}, ai=us.aiMessages;
+  const pFull=us.prospectsLimit!=null && us.prospectsThisMonth>=us.prospectsLimit;
+  const aFull=ai && ai.limit!=null && ai.remaining!==null && ai.remaining<=0;
+  const pNear=us.prospectsLimit!=null && us.prospectsThisMonth>=us.prospectsLimit*0.8;
+  const aNear=ai && ai.limit!=null && ai.used>=ai.limit*0.8;
+  let msg='', full=pFull||aFull;
+  if(pFull) msg=tf('upgrade_prospects_full',{n:us.prospectsLimit});
+  else if(aFull) msg=tf('upgrade_ai_full',{n:ai.limit});
+  else if(pNear) msg=tf('upgrade_prospects_near',{u:us.prospectsThisMonth,n:us.prospectsLimit});
+  else if(aNear) msg=tf('upgrade_ai_near',{u:ai.used,n:ai.limit});
+  let hidden=false; try{ hidden=!full && sessionStorage.getItem('upgradeBannerHidden')==='1'; }catch(e){}
+  if(!next||!msg||hidden){ el.classList.add('hidden'); return; }
+  el.innerHTML='<div class="panel" style="border:2px solid '+(full?'#d62839':'#1f6feb')+';margin:0;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>'+(full?'🚫 ':'📈 ')+msg+' '+tf('upgrade_with',{plan:next})+'</span><span class="actions"><button class="btn primary" onclick="goUpgrade(\''+next+'\')">'+tf('upgrade_btn',{plan:next})+'</button>'+(full?'':'<button class="btn" onclick="hideUpgradeBanner()">✕</button>')+'</span></div>';
+  el.classList.remove('hidden');
+}
+function hideUpgradeBanner(){ try{ sessionStorage.setItem('upgradeBannerHidden','1'); }catch(e){} $('upgradeBanner').classList.add('hidden'); }
+async function goUpgrade(plan){ tab('billing'); await loadBilling(); if(billing && [...$('billPlan').options].some(o=>o.value===plan)){ $('billPlan').value=plan; updateBillingInstructions(); } }
 // Abonnement : échéance, renouvellement manuel (mobile money) et historique
 let billing=null;
 function billDate(d){ return new Date(d).toLocaleDateString(lang==='en'?'en-GB':'fr-FR',{day:'numeric',month:'long',year:'numeric'}); }
