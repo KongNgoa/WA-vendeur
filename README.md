@@ -81,4 +81,10 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - **Export comptable simple** (onglet Commandes → "📊 Exporter en Excel") : génère un fichier Excel (.xlsx) avec le détail de toutes les commandes et un résumé des totaux par statut, prêt à transmettre à un comptable ou à importer ailleurs.
 - **Démarrage du serveur plus rapide** : l'initialisation de la démo (compte d'exemple) ne s'exécute plus qu'une seule fois au démarrage du serveur au lieu d'être revérifiée à chaque requête, ce qui réduit la charge sur la base de données.
 
+## Vitrine web publique (1.10.9)
+- **Une boutique en ligne par entreprise** (Paramètres → "Vitrine web") : une page publique `/boutique/<nom>` générée automatiquement depuis le catalogue (photos, prix, catégories, recherche), à partager sur Facebook, TikTok ou Instagram. Chaque produit a un bouton **"Commander sur WhatsApp"** qui ouvre la conversation avec le message déjà rédigé : la vente se conclut avec l'assistant IA, comme avant.
+- **Désactivée par défaut** : l'entreprise choisit son lien (modifiable), renseigne le numéro WhatsApp affiché (un numéro camerounais local reçoit automatiquement l'indicatif +237) puis l'active. Impossible d'activer sans numéro WhatsApp valide.
+- **Pensée pour le référencement et le partage** : aperçu riche (titre, description, photo) dans Facebook/WhatsApp, données structurées schema.org (produits, prix en XAF, disponibilité), lien canonique.
+- **Sûre** : tout le contenu est échappé, la page disparaît (404) si l'entreprise la désactive, est suspendue ou n'est pas encore validée, et les requêtes répétées sont limitées par IP.
+
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.

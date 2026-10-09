@@ -22,7 +22,7 @@ const rawBody = async req => { let s=''; for await (const c of req) s += c; if (
 const hashPassword = (password,salt=crypto.randomBytes(16).toString('hex')) => ({salt,hash:crypto.scryptSync(password,salt,64).toString('hex')});
 const verifyPassword = (password,salt,expected) => crypto.timingSafeEqual(Buffer.from(hashPassword(password,salt).hash,'hex'),Buffer.from(expected,'hex'));
 const token = () => crypto.randomBytes(32).toString('hex');
-const escHtml = v => String(v ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const escHtml = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const genTempPassword = () => crypto.randomBytes(9).toString('base64url');
 
 // Chiffrement au repos des secrets sensibles (jetons d'accès WhatsApp) avant
@@ -362,6 +362,105 @@ const SECTOR_TEMPLATES={
     ],
   },
 };
+
+// ---- Vitrine web publique (/boutique/<slug>) --------------------------------
+// Page publique par entreprise, générée côté serveur depuis son catalogue :
+// partageable sur Facebook/TikTok/bio Instagram, indexable, avec un bouton
+// "Commander sur WhatsApp" par produit. La commande se conclut toujours dans
+// la conversation WhatsApp (là où l'assistant IA travaille).
+function slugify(name) {
+  const s = String(name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
+  return s.length >= 3 ? s : 'boutique';
+}
+const SHOP_SLUG_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
+async function uniqueShopSlug(base, companyId) {
+  let candidate = base;
+  for (let i = 0; i < 50; i++) {
+    const r = await query('SELECT id FROM companies WHERE shop_slug=$1 AND id<>$2', [candidate, companyId]);
+    if (!r.rows[0]) return candidate;
+    const suffix = '-' + (i + 2);
+    candidate = base.slice(0, 40 - suffix.length) + suffix;
+  }
+  return base.slice(0, 33) + '-' + crypto.randomBytes(3).toString('hex');
+}
+// Numéro WhatsApp au format international sans "+" (exigé par wa.me).
+// Un numéro camerounais local (9 chiffres commençant par 6) reçoit 237.
+function normalizeWaNumber(raw) {
+  let d = String(raw || '').replace(/\D/g, '');
+  if (d.startsWith('00')) d = d.slice(2);
+  if (/^6\d{8}$/.test(d)) d = '237' + d;
+  return /^\d{8,15}$/.test(d) ? d : null;
+}
+function formatFcfa(n) {
+  return Number(n || 0).toLocaleString('fr-FR').replace(/[  ]/g, ' ') + ' FCFA';
+}
+function renderShopNotFound() {
+  return '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Boutique introuvable</title>' +
+    '<style>body{font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#0b1b33;color:#e8eefc;text-align:center;padding:16px}a{color:#5fd1a0}</style></head>' +
+    '<body><div><h1>Boutique introuvable</h1><p>Ce lien n\'existe pas ou la boutique n\'est plus disponible.</p><p><a href="/">VENDIA</a></p></div></body></html>';
+}
+function renderShopPage(c, products, origin) {
+  const wa = c.shopWhatsapp;
+  const waLink = text => 'https://wa.me/' + wa + '?text=' + encodeURIComponent(text);
+  const title = c.name + ' — Boutique en ligne';
+  const desc = String(c.tagline || ('Découvrez les produits de ' + c.name + ' et commandez directement sur WhatsApp.')).slice(0, 200);
+  const url = origin + '/boutique/' + c.shopSlug;
+  const firstImg = products.map(p => validImageUrl(p.imageUrl)).find(Boolean);
+  const cats = [...new Set(products.map(p => p.category).filter(Boolean))];
+  const cards = products.map(p => {
+    const img = validImageUrl(p.imageUrl);
+    const soldOut = Number(p.stock) <= 0;
+    const msg = 'Bonjour, je souhaite commander : ' + p.name + ' (' + formatFcfa(p.price) + '). Est-ce disponible ?';
+    return '<article class="card" data-name="' + escHtml(String(p.name).toLowerCase()) + '" data-cat="' + escHtml(p.category || '') + '">' +
+      '<div class="ph">' + (img ? '<img src="' + escHtml(img) + '" alt="' + escHtml(p.name) + '" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">' : '<span aria-hidden="true">🛍️</span>') + '</div>' +
+      '<div class="bd"><h3>' + escHtml(p.name) + '</h3>' + (p.category ? '<p class="cat">' + escHtml(p.category) + '</p>' : '') +
+      '<p class="pr">' + escHtml(formatFcfa(p.price)) + '</p>' +
+      (soldOut ? '<span class="btn off">Épuisé</span>' : '<a class="btn" href="' + escHtml(waLink(msg)) + '" rel="noopener">Commander sur WhatsApp</a>') +
+      '</div></article>';
+  }).join('');
+  const ld = {
+    '@context': 'https://schema.org', '@type': 'ItemList', name: title,
+    itemListElement: products.slice(0, 100).map((p, i) => ({
+      '@type': 'ListItem', position: i + 1,
+      item: { '@type': 'Product', name: p.name, ...(validImageUrl(p.imageUrl) ? { image: validImageUrl(p.imageUrl) } : {}),
+        offers: { '@type': 'Offer', priceCurrency: 'XAF', price: String(Number(p.price)), availability: Number(p.stock) > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock' } }
+    }))
+  };
+  const ldJson = JSON.stringify(ld).replace(/</g, '\\u003c');
+  return '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<title>' + escHtml(title) + '</title><meta name="description" content="' + escHtml(desc) + '">' +
+    '<link rel="canonical" href="' + escHtml(url) + '">' +
+    '<meta property="og:type" content="website"><meta property="og:title" content="' + escHtml(title) + '"><meta property="og:description" content="' + escHtml(desc) + '"><meta property="og:url" content="' + escHtml(url) + '">' +
+    (firstImg ? '<meta property="og:image" content="' + escHtml(firstImg) + '">' : '') +
+    '<meta name="twitter:card" content="summary_large_image">' +
+    '<style>:root{--bg:#f6f8fc;--fg:#10223f;--card:#fff;--mut:#5b6b86;--bd:#dde4f0;--a:#1f6feb;--g:#1fa971}' +
+    '@media(prefers-color-scheme:dark){:root{--bg:#0b1b33;--fg:#e8eefc;--card:#12284a;--mut:#9db0cf;--bd:#22406e}}' +
+    '*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--fg)}' +
+    'header{padding:28px 16px 20px;text-align:center;background:linear-gradient(135deg,var(--a),var(--g));color:#fff}' +
+    'header h1{margin:0 0 6px;font-size:1.6rem}header p{margin:0;opacity:.92}main{max-width:1000px;margin:0 auto;padding:16px 16px 96px}' +
+    '.tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}.tools input{flex:1;min-width:180px;padding:10px 12px;border:1px solid var(--bd);border-radius:10px;background:var(--card);color:var(--fg);font-size:1rem}' +
+    '.chip{padding:8px 12px;border:1px solid var(--bd);border-radius:999px;background:var(--card);color:var(--fg);cursor:pointer;font-size:.9rem}.chip.on{background:var(--a);color:#fff;border-color:var(--a)}' +
+    '.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}' +
+    '.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}' +
+    '.ph{aspect-ratio:4/3;background:var(--bd);display:grid;place-items:center;font-size:2.4rem}.ph img{width:100%;height:100%;object-fit:cover}' +
+    '.bd{padding:12px;display:flex;flex-direction:column;gap:6px;flex:1}.bd h3{margin:0;font-size:1rem}.cat{margin:0;color:var(--mut);font-size:.85rem}.pr{margin:0;font-weight:700;font-size:1.05rem}' +
+    '.btn{margin-top:auto;display:block;text-align:center;padding:10px;border-radius:10px;background:#25d366;color:#05301a;font-weight:700;text-decoration:none}.btn.off{background:var(--bd);color:var(--mut)}' +
+    '.empty{padding:40px 0;text-align:center;color:var(--mut)}.fab{position:fixed;right:16px;bottom:16px;padding:14px 18px;border-radius:999px;background:#25d366;color:#05301a;font-weight:700;text-decoration:none;box-shadow:0 6px 20px rgba(0,0,0,.25)}' +
+    'footer{text-align:center;color:var(--mut);font-size:.85rem;padding:0 16px 24px}footer a{color:var(--a)}</style></head><body>' +
+    '<header><h1>' + escHtml(c.name) + '</h1><p>' + escHtml(c.tagline || c.sector || '') + '</p></header><main>' +
+    (products.length ? '<div class="tools"><input id="q" type="search" placeholder="Rechercher un produit…" aria-label="Rechercher un produit">' +
+      cats.map(k => '<button type="button" class="chip" data-cat="' + escHtml(k) + '">' + escHtml(k) + '</button>').join('') + '</div>' +
+      '<div class="grid" id="g">' + cards + '</div><p class="empty" id="none" hidden>Aucun produit ne correspond.</p>'
+      : '<p class="empty">Le catalogue sera bientôt disponible.</p>') +
+    '</main><a class="fab" href="' + escHtml(waLink('Bonjour, je souhaite avoir des informations.')) + '" rel="noopener">💬 WhatsApp</a>' +
+    '<footer>Boutique propulsée par <a href="/">VENDIA</a></footer>' +
+    '<script type="application/ld+json">' + ldJson + '</script>' +
+    '<script>(function(){var q=document.getElementById("q");if(!q)return;var cards=[].slice.call(document.querySelectorAll(".card")),chips=[].slice.call(document.querySelectorAll(".chip")),none=document.getElementById("none"),cat="";' +
+    'function run(){var t=q.value.trim().toLowerCase(),n=0;cards.forEach(function(c){var ok=(!t||c.dataset.name.indexOf(t)>-1)&&(!cat||c.dataset.cat===cat);c.hidden=!ok;if(ok)n++;});none.hidden=n>0;}' +
+    'q.addEventListener("input",run);chips.forEach(function(b){b.addEventListener("click",function(){cat=(cat===b.dataset.cat)?"":b.dataset.cat;chips.forEach(function(x){x.classList.toggle("on",x.dataset.cat===cat);});run();});});})();</script>' +
+    '</body></html>';
+}
 
 function classifyLead(text, products=[], prospect={}) {
   const q=String(text||'').toLowerCase();
@@ -902,8 +1001,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.8',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.8'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.9',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.9'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -920,6 +1019,23 @@ async function handler(req,res) {
       res.writeHead(200,{'Content-Type':assetTypes[ext],'Cache-Control':'public, max-age=604800, immutable'});
       return res.end(data);
     } catch { return json(res,404,{error:'Introuvable'}); }
+  }
+
+  // Vitrine web publique d'une entreprise — aucune authentification (c'est
+  // fait pour être partagée). Introuvable si désactivée par l'entreprise,
+  // suspendue ou non encore validée par le super-admin.
+  const shopMatch=u.pathname.match(/^\/boutique\/([^/]*)\/?$/);
+  if(req.method==='GET'&&shopMatch) {
+    const htmlHeaders={'Content-Type':'text/html; charset=utf-8','X-Content-Type-Options':'nosniff','X-Frame-Options':'SAMEORIGIN','Referrer-Policy':'strict-origin-when-cross-origin'};
+    if(rateLimited('shop:'+clientIp(req),120,60*1000)) { res.writeHead(429,{...htmlHeaders,'Cache-Control':'no-store'}); return res.end('Trop de requêtes. Réessayez dans une minute.'); }
+    if(!/^[a-z0-9-]{3,40}$/.test(shopMatch[1])) { res.writeHead(404,{...htmlHeaders,'Cache-Control':'no-store'}); return res.end(renderShopNotFound()); }
+    const c=await query('SELECT id,name,sector,shop_slug AS "shopSlug",shop_tagline AS tagline,shop_whatsapp AS "shopWhatsapp" FROM companies WHERE shop_slug=$1 AND shop_enabled=true AND suspended=false AND approved_at IS NOT NULL AND shop_whatsapp IS NOT NULL',[shopMatch[1]]);
+    if(!c.rows[0]) { res.writeHead(404,{...htmlHeaders,'Cache-Control':'no-store'}); return res.end(renderShopNotFound()); }
+    const prods=await query('SELECT name,category,price,stock,image_url AS "imageUrl" FROM products WHERE company_id=$1 ORDER BY category NULLS LAST,name LIMIT 300',[c.rows[0].id]);
+    const proto=String(req.headers['x-forwarded-proto']||'https').split(',')[0].trim()==='http'?'http':'https';
+    const origin=proto+'://'+req.headers.host;
+    res.writeHead(200,{...htmlHeaders,'Cache-Control':'public, max-age=60'});
+    return res.end(renderShopPage(c.rows[0],prods.rows,origin));
   }
 
   // Webhook WhatsApp (Meta Cloud API, phase 3) — appelé directement par Meta,
@@ -1430,6 +1546,48 @@ async function handler(req,res) {
     const b=await body(req);
     await query('UPDATE companies SET payment_orange_money=$1,payment_mtn_momo=$2 WHERE id=$3',[b.orangeMoney?String(b.orangeMoney).trim():null,b.mtnMomo?String(b.mtnMomo).trim():null,companyId]);
     return json(res,200,{ok:true});
+  }
+
+  // Réglages de la vitrine web publique (/boutique/<slug>). Le lien est créé
+  // automatiquement (désactivé) à la première lecture pour que l'entreprise le
+  // voie tout de suite ; elle choisit ensuite de l'activer. Une vitrine ne peut
+  // être activée qu'avec un numéro WhatsApp valide (c'est son bouton principal).
+  if(req.method==='GET'&&u.pathname==='/api/settings/shop') {
+    let r=await query('SELECT name,shop_slug AS slug,shop_enabled AS enabled,shop_whatsapp AS whatsapp,shop_tagline AS tagline FROM companies WHERE id=$1',[companyId]);
+    let row=r.rows[0];
+    if(!row) return json(res,404,{error:'Entreprise introuvable'});
+    if(!row.slug) {
+      row.slug=await uniqueShopSlug(slugify(row.name),companyId);
+      await query('UPDATE companies SET shop_slug=$1 WHERE id=$2 AND shop_slug IS NULL',[row.slug,companyId]);
+    }
+    return json(res,200,{enabled:row.enabled,slug:row.slug,whatsapp:row.whatsapp||'',tagline:row.tagline||''});
+  }
+  if(req.method==='PATCH'&&u.pathname==='/api/settings/shop') {
+    const b=await body(req);
+    const cur=(await query('SELECT name,shop_slug,shop_enabled,shop_whatsapp,shop_tagline FROM companies WHERE id=$1',[companyId])).rows[0];
+    if(!cur) return json(res,404,{error:'Entreprise introuvable'});
+    let slug=cur.shop_slug;
+    if(b.slug!==undefined) {
+      const wanted=String(b.slug).trim().toLowerCase();
+      if(!SHOP_SLUG_RE.test(wanted)) return json(res,400,{error:'Lien invalide : 3 à 40 caractères, lettres minuscules, chiffres et tirets uniquement.'});
+      const taken=await query('SELECT id FROM companies WHERE shop_slug=$1 AND id<>$2',[wanted,companyId]);
+      if(taken.rows[0]) return json(res,409,{error:'Ce lien est déjà utilisé par une autre boutique. Choisissez-en un autre.'});
+      slug=wanted;
+    }
+    if(!slug) slug=await uniqueShopSlug(slugify(cur.name),companyId);
+    let whatsapp=cur.shop_whatsapp;
+    if(b.whatsapp!==undefined) {
+      if(String(b.whatsapp).trim()==='') whatsapp=null;
+      else {
+        whatsapp=normalizeWaNumber(b.whatsapp);
+        if(!whatsapp) return json(res,400,{error:'Numéro WhatsApp invalide. Exemple : +237 6XX XX XX XX'});
+      }
+    }
+    const tagline=b.tagline!==undefined?(String(b.tagline).trim().slice(0,200)||null):cur.shop_tagline;
+    const enabled=b.enabled!==undefined?Boolean(b.enabled):cur.shop_enabled;
+    if(enabled&&!whatsapp) return json(res,400,{error:'Renseignez votre numéro WhatsApp avant d\'activer la vitrine.'});
+    await query('UPDATE companies SET shop_slug=$1,shop_enabled=$2,shop_whatsapp=$3,shop_tagline=$4 WHERE id=$5',[slug,enabled,whatsapp,tagline,companyId]);
+    return json(res,200,{ok:true,enabled,slug,whatsapp:whatsapp||'',tagline:tagline||''});
   }
 
   // Rendez-vous (livraison, démo, appel…) détectés automatiquement dans les
@@ -2124,6 +2282,12 @@ async function ensureMigrations() {
     "ALTER TABLE prospects ADD COLUMN IF NOT EXISTS stage TEXT NOT NULL DEFAULT 'Nouveau'",
     "UPDATE prospects SET stage=status WHERE status IN ('Nouveau','À contacter','En discussion','Gagné','Perdu')",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT",
+    // Vitrine web publique /boutique/<slug> (désactivée par défaut).
+    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_slug TEXT",
+    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_enabled BOOLEAN NOT NULL DEFAULT false",
+    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_whatsapp TEXT",
+    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_tagline TEXT",
+    "CREATE UNIQUE INDEX IF NOT EXISTS companies_shop_slug_idx ON companies(shop_slug) WHERE shop_slug IS NOT NULL",
   ];
   for (const stmt of statements) {
     try { await query(stmt); } catch(e) { console.error('[migrations] echec:',stmt.split('\n')[0],e.message); }
@@ -2137,6 +2301,6 @@ const server=http.createServer((req,res)=>handler(req,res).catch(e=>{console.err
 ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>console.error('[demarrage] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.8 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.9 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

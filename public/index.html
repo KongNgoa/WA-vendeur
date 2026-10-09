@@ -248,6 +248,18 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 </div>
 <p class="muted" id="metaConfigNote"></p>
 </div>
+<div class="panel"><h3 data-i18n="shop_title">Vitrine web (boutique en ligne)</h3>
+<p class="muted" data-i18n="shop_desc">Une page publique générée depuis votre catalogue, à partager sur Facebook, TikTok ou Instagram. Chaque produit a un bouton « Commander sur WhatsApp » : la vente se conclut dans la conversation avec votre assistant.</p>
+<form class="formgrid" onsubmit="saveShopSettings(event)">
+<label class="full"><input type="checkbox" id="sEnabled" style="width:auto"> <span data-i18n="shop_enable_label">Activer la vitrine (visible publiquement)</span></label>
+<input id="sWhatsapp" placeholder="Numéro WhatsApp affiché (ex. +237 6XX XX XX XX)" data-i18n-placeholder="placeholder_shop_whatsapp">
+<input id="sSlug" placeholder="mon-entreprise" data-i18n-placeholder="placeholder_shop_slug">
+<input id="sTagline" class="full" maxlength="200" placeholder="Slogan ou courte description (optionnel)" data-i18n-placeholder="placeholder_shop_tagline">
+<div class="full"><label class="muted" data-i18n="shop_link_label">Lien de votre vitrine</label><input id="sLink" readonly onclick="this.select()"></div>
+<div class="full"><button class="btn primary" data-i18n="save_btn">Enregistrer</button> <button type="button" class="btn" onclick="copyShopLink()" data-i18n="btn_copy_link">Copier le lien</button> <button type="button" class="btn" onclick="openShop()" data-i18n="btn_open_shop">Voir ma vitrine</button></div>
+</form>
+<div id="sStatus" style="margin-top:10px"></div>
+</div>
 <div class="panel"><h3 data-i18n="payment_title">Paiement mobile money (vos clients)</h3>
 <p class="muted" id="paymentDesc"></p>
 <form class="formgrid" onsubmit="savePaymentSettings(event)">
@@ -282,6 +294,10 @@ fr: {
   panel_commercial_state:"État commercial", panel_recent_catalog:"Catalogue récent",
   dash_hot:"🔥 Chauds", dash_warm:"🟠 Tièdes", dash_cold:"❄️ Froids", dash_products:"Produits", dash_low_stock:"Stock faible",
   dash_prospects_month:"Prospects ce mois", dash_unlimited:"illimité", empty_products_dash:"Aucun produit.", stock_label:"Stock",
+  shop_title:"Vitrine web (boutique en ligne)", shop_desc:"Une page publique générée depuis votre catalogue, à partager sur Facebook, TikTok ou Instagram. Chaque produit a un bouton « Commander sur WhatsApp » : la vente se conclut dans la conversation avec votre assistant.",
+  shop_enable_label:"Activer la vitrine (visible publiquement)", placeholder_shop_whatsapp:"Numéro WhatsApp affiché (ex. +237 6XX XX XX XX)", placeholder_shop_slug:"mon-entreprise", placeholder_shop_tagline:"Slogan ou courte description (optionnel)",
+  shop_link_label:"Lien de votre vitrine", btn_copy_link:"Copier le lien", btn_open_shop:"Voir ma vitrine",
+  shop_saved_on:"Vitrine enregistrée et en ligne.", shop_saved_off:"Réglages enregistrés (vitrine désactivée).", shop_link_copied:"Lien copié.",
   onboarding_templates_title:"Démarrage rapide — modèles par secteur", onboarding_templates_desc:"Pré-remplissez la personnalité de l'assistant IA et quelques produits d'exemple selon votre secteur. Vos produits existants ne sont jamais écrasés.",
   onboarding_template_product_count:"{n} produits d'exemple", btn_apply_template:"Utiliser ce modèle",
   confirm_apply_template:"Appliquer le modèle \"{s}\" ? Cela remplace la personnalité de l'assistant IA (nom, ton, consignes). Vos produits existants, s'il y en a, ne seront pas touchés.",
@@ -399,6 +415,10 @@ en: {
   panel_commercial_state:"Sales overview", panel_recent_catalog:"Recent catalog",
   dash_hot:"🔥 Hot", dash_warm:"🟠 Warm", dash_cold:"❄️ Cold", dash_products:"Products", dash_low_stock:"Low stock",
   dash_prospects_month:"Leads this month", dash_unlimited:"unlimited", empty_products_dash:"No products.", stock_label:"Stock",
+  shop_title:"Web storefront (online shop)", shop_desc:"A public page generated from your catalog, ready to share on Facebook, TikTok or Instagram. Every product has an “Order on WhatsApp” button: the sale closes in the conversation with your assistant.",
+  shop_enable_label:"Enable the storefront (publicly visible)", placeholder_shop_whatsapp:"WhatsApp number shown (e.g. +237 6XX XX XX XX)", placeholder_shop_slug:"my-business", placeholder_shop_tagline:"Tagline or short description (optional)",
+  shop_link_label:"Your storefront link", btn_copy_link:"Copy link", btn_open_shop:"View my storefront",
+  shop_saved_on:"Storefront saved and live.", shop_saved_off:"Settings saved (storefront disabled).", shop_link_copied:"Link copied.",
   onboarding_templates_title:"Quick start — templates by sector", onboarding_templates_desc:"Pre-fill the AI assistant's personality and a few sample products based on your sector. Your existing products are never overwritten.",
   onboarding_template_product_count:"{n} sample products", btn_apply_template:"Use this template",
   confirm_apply_template:"Apply the \"{s}\" template? This replaces the AI assistant's personality (name, tone, instructions). Your existing products, if any, won't be touched.",
@@ -689,7 +709,7 @@ function tab(name) {
   if (name === 'analytics') loadAnalytics();
   if (name === 'team') loadTeam();
   if (name === 'assistant') loadAiSettings();
-  if (name === 'settings') { loadWhatsappSettings(); loadPaymentSettings(); }
+  if (name === 'settings') { loadWhatsappSettings(); loadShopSettings(); loadPaymentSettings(); }
 }
 
 function renderAll() {
@@ -1212,6 +1232,36 @@ async function testWhatsappSettings(){
       : '<span class="error">'+t('test_fail_prefix')+' '+esc(r.error||t('test_fail_default'))+'</span>';
   }catch(x){ $('wStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
 }
+
+// Vitrine web publique (/boutique/<slug>)
+function shopUrl(slug){ return location.origin+'/boutique/'+slug; }
+async function loadShopSettings(){
+  try{
+    const s=await api('/api/settings/shop');
+    $('sEnabled').checked=!!s.enabled;
+    $('sWhatsapp').value=s.whatsapp||'';
+    $('sSlug').value=s.slug||'';
+    $('sTagline').value=s.tagline||'';
+    $('sLink').value=s.slug?shopUrl(s.slug):'';
+  }catch(x){ $('sStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
+}
+async function saveShopSettings(e){
+  e.preventDefault();
+  try{
+    const s=await api('/api/settings/shop',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      enabled:$('sEnabled').checked, whatsapp:$('sWhatsapp').value.trim(),
+      slug:$('sSlug').value.trim().toLowerCase(), tagline:$('sTagline').value.trim()
+    })});
+    $('sWhatsapp').value=s.whatsapp||''; $('sSlug').value=s.slug; $('sLink').value=shopUrl(s.slug);
+    $('sStatus').innerHTML='<span class="badge">'+t(s.enabled?'shop_saved_on':'shop_saved_off')+'</span>';
+  }catch(x){ $('sStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
+}
+async function copyShopLink(){
+  const v=$('sLink').value; if(!v) return;
+  try{ await navigator.clipboard.writeText(v); $('sStatus').innerHTML='<span class="badge">'+t('shop_link_copied')+'</span>'; }
+  catch(x){ $('sLink').select(); }
+}
+function openShop(){ const v=$('sLink').value; if(v) window.open(v,'_blank','noopener'); }
 
 async function loadPaymentSettings(){
   try{

@@ -275,3 +275,10 @@ CREATE TABLE IF NOT EXISTS appointments (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS appointments_company_idx ON appointments(company_id, scheduled_at);
+
+-- Vitrine web publique /boutique/<slug> (désactivée par défaut)
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_slug TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_enabled BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_whatsapp TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_tagline TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS companies_shop_slug_idx ON companies(shop_slug) WHERE shop_slug IS NOT NULL;
