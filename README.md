@@ -139,6 +139,10 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - Le tableau du parrain montre ses filleuls (abonné actif ou en attente de paiement) et ce que chacun lui a rapporté.
 
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.
+## 1.10.27 — Inscription avec paiement automatique
+
+Page d'inscription : si Campay est configuré, l'option « ⚡ Paiement automatique » est proposée en premier (aucune référence à saisir). Le futur client entre son numéro MTN/Orange, confirme sur son téléphone, et son compte est **activé immédiatement** (même logique que l'Abonnement : parrainage, e-mail d'activation). Échec immédiat de Campay : rien n'est créé. Paiement refusé ou expiré plus tard : le client peut réessayer avec le même e-mail et mot de passe (le compte non activé est réutilisé). Garde-fous : 3 demandes par numéro et par heure, suivi public protégé par un identifiant non devinable. Le paiement manuel reste disponible.
+
 ## 1.10.26 — Paiement automatique Mobile Money (Campay)
 
 Onglet Abonnement : bloc vert « Payer maintenant avec Mobile Money » (visible seulement si Campay est configuré). Le client saisit son numéro MTN/Orange, reçoit la demande de confirmation sur son téléphone, et son forfait est **activé automatiquement** (30 jours ajoutés, commission de parrainage, commandes bloquées libérées, e-mail) — le paiement manuel reste disponible en secours.

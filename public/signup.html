@@ -58,7 +58,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 
 <div class="full"><button class="btn" type="submit" data-i18n="btn_create_account">Créer mon compte</button></div>
 </form>
-<p class="muted" style="margin-top:10px" data-i18n="activation_note">Votre compte sera activé dès que le paiement sera validé (généralement sous quelques heures). Vous serez averti par email.</p>
+<p class="muted" id="activationNote" style="margin-top:10px" data-i18n="activation_note">Votre compte sera activé dès que le paiement sera validé (généralement sous quelques heures). Vous serez averti par email.</p>
 <div id="status" style="margin-top:10px"></div>
 <div style="margin-top:14px"><a href="/" data-i18n="already_account_link">Déjà un compte ? Se connecter</a></div>
 </section>
@@ -88,6 +88,7 @@ fr: {
   orange_money:"🟠 Orange Money", mtn_momo:"🟡 MTN Mobile Money",
   instructions_text:"Envoyez <strong>{price} FCFA</strong> via <strong>{label}</strong> au numéro <strong>{number}</strong>, puis indiquez ci-dessous le numéro depuis lequel vous avez payé et la référence de la transaction (reçue par SMS).",
   creating:"Création en cours…", generic_error:"Erreur lors de la création du compte",
+  auto_method:"⚡ Paiement automatique", auto_instructions:"Entrez votre numéro <strong>MTN MoMo ou Orange Money</strong> : vous recevez une demande de confirmation de <strong>{price} FCFA</strong> sur votre téléphone. Votre compte est activé <strong>immédiatement</strong> après confirmation.", placeholder_momo_phone:"Votre numéro Mobile Money (ex. 6XX XX XX XX)", auto_note:"Votre compte est activé automatiquement dès que le paiement est confirmé sur votre téléphone.", auto_waiting:"📱 Confirmez le paiement sur votre téléphone…", auto_ok:"✅ Paiement reçu : votre compte est activé ! Vous pouvez vous connecter.", auto_failed:"Le paiement a échoué ou a été refusé. Vous pouvez réessayer avec le même e-mail et le même mot de passe.", auto_timeout:"Toujours en attente : confirmez sur votre téléphone. Votre compte sera activé automatiquement ; vous serez averti par e-mail.",
 },
 en: {
   header_tag:"Create your company's account",
@@ -105,6 +106,7 @@ en: {
   orange_money:"🟠 Orange Money", mtn_momo:"🟡 MTN Mobile Money",
   instructions_text:"Send <strong>{price} FCFA</strong> via <strong>{label}</strong> to the number <strong>{number}</strong>, then enter below the number you paid from and the transaction reference (received by SMS).",
   creating:"Creating account…", generic_error:"Error creating the account",
+  auto_method:"⚡ Automatic payment", auto_instructions:"Enter your <strong>MTN MoMo or Orange Money</strong> number: you receive a confirmation request for <strong>{price} FCFA</strong> on your phone. Your account is activated <strong>immediately</strong> after you confirm.", placeholder_momo_phone:"Your Mobile Money number (e.g. 6XX XX XX XX)", auto_note:"Your account is activated automatically as soon as the payment is confirmed on your phone.", auto_waiting:"📱 Confirm the payment on your phone…", auto_ok:"✅ Payment received: your account is active! You can log in.", auto_failed:"The payment failed or was declined. You can try again with the same email and password.", auto_timeout:"Still pending: confirm on your phone. Your account will be activated automatically; you'll be notified by email.",
 }
 };
 let lang = localStorage.getItem('vendia_lang') || 'fr';
@@ -125,10 +127,11 @@ function setLang(l){
 
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let plansData=null, selectedPlan='Starter', selectedMethod='orange_money';
+let plansData=null, selectedPlan='Starter', selectedMethod='orange_money', signupPoll=null;
 
 async function loadPlans(){
   const r=await fetch('/api/plans'); plansData=await r.json();
+  if(plansData.campay) selectedMethod='campay';
   renderPlans(); renderMethods(); renderInstructions();
 }
 function renderPlans(){
@@ -142,13 +145,18 @@ function renderPlans(){
 }
 function selectPlan(n){ selectedPlan=n; renderPlans(); renderInstructions(); }
 function renderMethods(){
-  $('methods').innerHTML=''+
+  $('methods').innerHTML=(plansData&&plansData.campay?'<div class="method'+(selectedMethod==='campay'?' active':'')+'" onclick="selectMethod(\'campay\')" style="grid-column:1/-1"><strong>'+t('auto_method')+'</strong></div>':'')+
     '<div class="method'+(selectedMethod==='orange_money'?' active':'')+'" onclick="selectMethod(\'orange_money\')"><strong>'+t('orange_money')+'</strong></div>'+
     '<div class="method'+(selectedMethod==='mtn_momo'?' active':'')+'" onclick="selectMethod(\'mtn_momo\')"><strong>'+t('mtn_momo')+'</strong></div>';
 }
 function selectMethod(m){ selectedMethod=m; renderMethods(); renderInstructions(); }
 function renderInstructions(){
   const price=Number(plansData.plans[selectedPlan].monthlyPrice).toLocaleString('fr-FR');
+  const auto=selectedMethod==='campay';
+  $('reference').classList.toggle('hidden',auto); $('reference').required=!auto;
+  $('payerPhone').placeholder=t(auto?'placeholder_momo_phone':'placeholder_payer_phone');
+  $('activationNote').innerHTML=t(auto?'auto_note':'activation_note');
+  if(auto){ $('paymentInstructions').innerHTML=tf('auto_instructions',{price}); return; }
   const number=selectedMethod==='orange_money'?plansData.payment.orangeMoney:plansData.payment.mtnMomo;
   const label=selectedMethod==='orange_money'?t('orange_money').replace(/^\S+\s/,''):t('mtn_momo').replace(/^\S+\s/,'');
   $('paymentInstructions').innerHTML=tf('instructions_text',{price,label,number:esc(number)});
@@ -161,16 +169,27 @@ async function submitSignup(e){
     const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       companyName:$('companyName').value.trim(), sector:$('sector').value.trim(),
       ownerName:$('ownerName').value.trim(), ownerEmail:$('ownerEmail').value.trim(), ownerPassword:$('ownerPassword').value,
-      plan:selectedPlan, paymentMethod:selectedMethod, payerPhone:$('payerPhone').value.trim(), reference:$('reference').value.trim(),
+      plan:selectedPlan, paymentMethod:selectedMethod, payerPhone:$('payerPhone').value.trim(), reference:selectedMethod==='campay'?'':$('reference').value.trim(),
       referralCode:$('referralCode').value.trim(),
       lang
     })});
     const d=await r.json();
     if(!r.ok) throw new Error(d.error||t('generic_error'));
+    if(d.auto){ status.className='muted'; status.innerHTML=t('auto_waiting')+(d.ussd?' ('+esc(d.ussd)+')':''); pollSignupPayment(d.paymentId,Date.now()); return; }
     $('form').classList.add('hidden');
     $('done').classList.remove('hidden');
     $('doneMsg').textContent=d.message;
   }catch(x){ status.className='error'; status.textContent=x.message; }
+}
+async function pollSignupPayment(id,t0){
+  const status=$('status');
+  try{
+    const r=await fetch('/api/signup/pay/'+id); const d=await r.json();
+    if(d.status==='approved'){ status.className=''; status.textContent=''; $('form').classList.add('hidden'); $('done').classList.remove('hidden'); $('doneMsg').textContent=t('auto_ok').replace(/^✅\s*/,''); return; }
+    if(d.status==='rejected'){ status.className='error'; status.textContent=t('auto_failed'); return; }
+  }catch(e){}
+  if(Date.now()-t0>180000){ status.className='muted'; status.textContent=t('auto_timeout'); return; }
+  signupPoll=setTimeout(()=>pollSignupPayment(id,t0),4000);
 }
 applyI18n();
 // Lien de parrainage /signup.html?ref=CODE : pré-remplit le champ code.

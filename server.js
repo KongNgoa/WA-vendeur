@@ -1576,8 +1576,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.26',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.26'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.27',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.27'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -1938,7 +1938,7 @@ async function handler(req,res) {
       monthlyPrice:l.monthlyPrice, maxProspectsPerMonth:l.maxProspectsPerMonth, maxUsers:l.maxUsers,
       aiMessagesLimit:l.aiMessagesLimit, autoFollowups:l.autoFollowups, prioritySupport:l.prioritySupport
     }]));
-    return json(res,200,{plans,payment:{orangeMoney:ORANGE_MONEY_NUMBER,mtnMomo:MTN_MOMO_NUMBER}});
+    return json(res,200,{plans,payment:{orangeMoney:ORANGE_MONEY_NUMBER,mtnMomo:MTN_MOMO_NUMBER},campay:campayConfigured()});
   }
 
   // Inscription en libre-service : crée l'entreprise (nom saisi par
@@ -1958,13 +1958,32 @@ async function handler(req,res) {
     if(!b.companyName||!b.ownerName||!b.ownerEmail||!b.ownerPassword) return json(res,400,{error:SIGNUP_MSG.missing});
     if(String(b.ownerPassword).length<6) return json(res,400,{error:SIGNUP_MSG.shortPwd});
     const plan=['Starter','Business','Pro'].includes(b.plan) ? b.plan : 'Starter';
-    if(!['orange_money','mtn_momo'].includes(b.paymentMethod)) return json(res,400,{error:SIGNUP_MSG.method});
-    if(!b.payerPhone||!b.reference) return json(res,400,{error:SIGNUP_MSG.payer});
+    // Paiement automatique (Campay) ou manuel (référence de transaction à valider par le super-admin).
+    const auto=b.paymentMethod==='campay';
+    let autoPhone=null;
+    if(auto) {
+      if(!campayConfigured()) return json(res,503,{error:lang==='en'?'Automatic payment is not available yet. Use manual payment.':'Le paiement automatique n\'est pas encore disponible. Utilisez le paiement manuel.'});
+      autoPhone=normalizeWaNumber(b.payerPhone);
+      if(!autoPhone||!/^237[62]\d{8}$/.test(autoPhone)) return json(res,400,{error:lang==='en'?'Invalid Mobile Money number. Example: 6XX XX XX XX':'Numéro Mobile Money invalide. Exemple : 6XX XX XX XX'});
+      if(rateLimited('signup-pay-phone:'+autoPhone,3,60*60*1000)) return tooManyRequests(res);
+    } else {
+      if(!['orange_money','mtn_momo'].includes(b.paymentMethod)) return json(res,400,{error:SIGNUP_MSG.method});
+      if(!b.payerPhone||!b.reference) return json(res,400,{error:SIGNUP_MSG.payer});
+    }
     const email=String(b.ownerEmail).trim().toLowerCase();
-    const existingUser=await query('SELECT id FROM users WHERE email=$1',[email]);
-    if(existingUser.rows[0]) return json(res,409,{error:SIGNUP_MSG.emailUsed});
-    if(normPaymentRef(b.reference).length<6) return json(res,400,{error:lang==='en'?'The transaction reference looks too short (copy it from the confirmation SMS)':'La référence de transaction semble trop courte (recopiez-la depuis le SMS de confirmation)'});
-    if(await paymentRefTaken(b.reference)) return json(res,409,{error:lang==='en'?'This transaction reference has already been used':'Cette référence de transaction a déjà été utilisée'});
+    // Nouvel essai de paiement : un compte déjà créé mais jamais activé peut relancer un paiement
+    // automatique avec le même e-mail et le même mot de passe.
+    let retry=null;
+    const existingUser=await query('SELECT u.company_id,u.password_hash,u.password_salt,c.approved_at FROM users u JOIN companies c ON c.id=u.company_id WHERE u.email=$1',[email]);
+    if(existingUser.rows[0]) {
+      const eu=existingUser.rows[0];
+      if(auto&&!eu.approved_at&&verifyPassword(String(b.ownerPassword),eu.password_salt,eu.password_hash)) retry=eu;
+      else return json(res,409,{error:SIGNUP_MSG.emailUsed});
+    }
+    if(!auto) {
+      if(normPaymentRef(b.reference).length<6) return json(res,400,{error:lang==='en'?'The transaction reference looks too short (copy it from the confirmation SMS)':'La référence de transaction semble trop courte (recopiez-la depuis le SMS de confirmation)'});
+      if(await paymentRefTaken(b.reference)) return json(res,409,{error:lang==='en'?'This transaction reference has already been used':'Cette référence de transaction a déjà été utilisée'});
+    }
     const amount=planLimits(plan).monthlyPrice;
     // Code de parrainage optionnel : un code inconnu ou d'une entreprise
     // suspendue est ignoré en silence (il ne doit jamais bloquer l'inscription).
@@ -1974,15 +1993,34 @@ async function handler(req,res) {
       const rr=await query('SELECT id,name FROM companies WHERE referral_code=$1 AND suspended=false',[refCode]);
       referrer=rr.rows[0]||null;
     }
+    const autoRef=auto?'VDP-'+Date.now().toString(36).toUpperCase()+crypto.randomBytes(3).toString('hex').toUpperCase():null;
     const result=await transaction(async client=>{
-      const c=await client.query('INSERT INTO companies(name,sector,referred_by) VALUES($1,$2,$3) RETURNING id',[String(b.companyName).trim(),b.sector||null,referrer?referrer.id:null]);
-      const newCompanyId=c.rows[0].id;
-      await client.query('INSERT INTO subscriptions(company_id,plan,status,monthly_price) VALUES($1,$2,$3,$4)',[newCompanyId,plan,'trial',amount]);
-      const h=hashPassword(String(b.ownerPassword));
-      await client.query('INSERT INTO users(company_id,email,name,role,password_hash,password_salt) VALUES($1,$2,$3,\'owner\',$4,$5)',[newCompanyId,email,String(b.ownerName).trim(),h.hash,h.salt]);
-      const pr=await client.query('INSERT INTO payment_requests(company_id,plan,method,amount,payer_phone,reference,reference_norm) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id',[newCompanyId,plan,b.paymentMethod,amount,String(b.payerPhone).trim(),String(b.reference).trim(),normPaymentRef(b.reference)]);
+      let newCompanyId;
+      if(retry) newCompanyId=retry.company_id;
+      else {
+        const c=await client.query('INSERT INTO companies(name,sector,referred_by) VALUES($1,$2,$3) RETURNING id',[String(b.companyName).trim(),b.sector||null,referrer?referrer.id:null]);
+        newCompanyId=c.rows[0].id;
+        await client.query('INSERT INTO subscriptions(company_id,plan,status,monthly_price) VALUES($1,$2,$3,$4)',[newCompanyId,plan,'trial',amount]);
+        const h=hashPassword(String(b.ownerPassword));
+        await client.query('INSERT INTO users(company_id,email,name,role,password_hash,password_salt) VALUES($1,$2,$3,\'owner\',$4,$5)',[newCompanyId,email,String(b.ownerName).trim(),h.hash,h.salt]);
+      }
+      const pr=auto
+        ? await client.query("INSERT INTO payment_requests(company_id,plan,method,amount,payer_phone,reference,reference_norm,provider) VALUES($1,$2,'mtn_momo',$3,$4,$5,$6,'campay') RETURNING id",[newCompanyId,plan,amount,autoPhone,autoRef,normPaymentRef(autoRef)])
+        : await client.query('INSERT INTO payment_requests(company_id,plan,method,amount,payer_phone,reference,reference_norm) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id',[newCompanyId,plan,b.paymentMethod,amount,String(b.payerPhone).trim(),String(b.reference).trim(),normPaymentRef(b.reference)]);
       return {companyId:newCompanyId,paymentRequestId:pr.rows[0].id};
     });
+    if(auto) {
+      // Demande de paiement envoyée sur le téléphone du client ; en cas d'échec immédiat on annule tout
+      // (pas de compte orphelin) pour qu'il puisse réessayer proprement.
+      const r=await campayCall('POST','/collect/',{amount:String(amount),currency:'XAF',from:autoPhone,description:('Abonnement VENDIA '+plan+' — '+String(b.companyName).trim()).slice(0,100),external_reference:autoRef});
+      if(r.error||!r.data.reference) {
+        if(retry) await query('DELETE FROM payment_requests WHERE id=$1',[result.paymentRequestId]);
+        else await query('DELETE FROM companies WHERE id=$1',[result.companyId]);
+        return json(res,502,{error:(lang==='en'?'Payment could not be started: ':'Le paiement n\'a pas pu être lancé : ')+(r.error||'réponse invalide')});
+      }
+      await query('UPDATE payment_requests SET provider_ref=$1,method=$2 WHERE id=$3',[String(r.data.reference),/orange/i.test(String(r.data.operator||''))?'orange_money':'mtn_momo',result.paymentRequestId]);
+      return json(res,201,{ok:true,auto:true,paymentId:result.paymentRequestId,ussd:r.data.ussd_code||null});
+    }
     await sendEmail(process.env.SUPERADMIN_EMAIL||'', 'VENDIA — Nouvelle demande d\'activation en attente',
       '<p>Nouvelle inscription à valider :</p><ul>'+
       '<li>Entreprise : '+escHtml(b.companyName)+'</li>'+
@@ -2001,6 +2039,13 @@ async function handler(req,res) {
   // entièrement indépendantes de l'authentification par entreprise
   // ci-dessous : un jeton de session super-admin n'a pas de companyId, et
   // réciproquement un jeton d'entreprise n'ouvre aucune route super-admin.
+  const signupPayMatch=req.method==='GET'?u.pathname.match(/^\/api\/signup\/pay\/([0-9a-f-]{36})$/i):null;
+  if(signupPayMatch) {
+    if(rateLimited('signup-pay-status:'+clientIp(req),90,5*60*1000)) return tooManyRequests(res);
+    const pr=(await query("SELECT id,status,provider_ref,reference,amount FROM payment_requests WHERE id=$1 AND provider='campay'",[signupPayMatch[1]])).rows[0];
+    if(!pr) return json(res,404,{error:'Paiement introuvable'});
+    return json(res,200,{status:await syncCampayPayment(pr)});
+  }
   if(req.method==='POST'&&u.pathname==='/api/superadmin/login') {
     if(rateLimited('sa-login:'+clientIp(req),10,5*60*1000)) return tooManyRequests(res);
     const b=await body(req);
@@ -3408,7 +3453,7 @@ async function ensureMigrations() {
     "ALTER TABLE prospects ADD COLUMN IF NOT EXISTS stage TEXT NOT NULL DEFAULT 'Nouveau'",
     "UPDATE prospects SET stage=status WHERE status IN ('Nouveau','À contacter','En discussion','Gagné','Perdu')",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT",
-    // Commandes passées depuis la vitrine web (1.10.26) : détail du produit, de la
+    // Commandes passées depuis la vitrine web (1.10.27) : détail du produit, de la
     // livraison et du client (le prospect peut manquer si le quota CRM est atteint).
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id) ON DELETE SET NULL",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_name TEXT",
@@ -3531,6 +3576,6 @@ ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>
   setInterval(()=>runCampaignTick(), 20*1000);
   setInterval(()=>checkPendingCampayPayments().catch(e=>console.error('[campay] sweep:',e.message)), 60*1000);
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.26 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.27 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});
