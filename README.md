@@ -87,6 +87,13 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - **Pensée pour le référencement et le partage** : aperçu riche (titre, description, photo) dans Facebook/WhatsApp, données structurées schema.org (produits, prix en XAF, disponibilité), lien canonique.
 - **Sûre** : tout le contenu est échappé, la page disparaît (404) si l'entreprise la désactive, est suspendue ou n'est pas encore validée, et les requêtes répétées sont limitées par IP.
 
+## Commande directe sur la vitrine (1.10.17)
+- **Bouton "Commander" sur chaque produit de la vitrine** : le client remplit un court formulaire (quantité, téléphone, nom, adresse de livraison) et valide, paiement à la livraison. Le lien "poser une question sur WhatsApp" reste disponible sous le bouton.
+- **Tout est enregistré automatiquement** : la commande (onglet Commandes, badge "🛒 Vitrine", produit, quantité, adresse, téléphone cliquable vers WhatsApp), le contact dans le CRM (même si le quota de prospects est atteint, une vente n'est jamais perdue) et un e-mail au propriétaire et aux responsables.
+- **Stock réservé de façon atomique** : jamais de vente au-delà du stock ; une commande annulée rend le stock au catalogue (une seule fois).
+- **Statut modifiable** depuis l'onglet Commandes (En attente → Confirmée → En préparation → Livrée / Annulée), jusqu'ici impossible depuis l'interface. L'export Excel inclut produit, quantité, adresse et origine.
+- **Protections** : champ piège anti-robot, 8 commandes / 10 min par IP, 60 / h par boutique, 3 commandes en attente maximum par téléphone, validation stricte, tout le contenu échappé.
+
 ## Audit et correctifs (1.10.16)
 - **Schéma SQL réparé** : `schema.sql` s'exécute désormais sans erreur sur une base vierge (tables sessions/password_resets créées après users) et peut être rejoué sans erreur.
 - **Requêtes** : une requête JSON trop volumineuse (413) ou invalide (400) renvoie un message clair au lieu d'une erreur 500, et le serveur ne garde plus en mémoire un corps déjà jugé trop gros.

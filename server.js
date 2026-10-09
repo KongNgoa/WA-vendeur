@@ -232,7 +232,7 @@ async function dashboard(companyId, userId) {
     query('SELECT id,name,sector,ai_name AS "aiName",ai_tone AS "aiTone",ai_language AS "aiLanguage",ai_rules AS "aiRules",ai_auto_reply_enabled AS "aiAutoReplyEnabled" FROM companies WHERE id=$1',[companyId]),
     query('SELECT id,name,category,price,stock,image_url AS "imageUrl",created_at AS "createdAt" FROM products WHERE company_id=$1 ORDER BY created_at DESC',[companyId]),
     query('SELECT id,name,phone,need,value,score,status,stage,order_intent AS "orderIntent",last_contact AS "lastContact",next_action AS "nextAction",next_action_priority AS "nextActionPriority",next_action_reason AS "nextActionReason",next_action_at AS "nextActionAt",created_at AS "createdAt" FROM prospects WHERE company_id=$1 ORDER BY score DESC,created_at DESC LIMIT 500',[companyId]),
-    query('SELECT o.id,o.order_number AS number,p.name AS client,o.amount,o.status,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC LIMIT 500',[companyId]),
+    query('SELECT o.id,o.order_number AS number,COALESCE(p.name,o.customer_name) AS client,COALESCE(p.phone,o.customer_phone) AS phone,o.amount,o.status,o.source,o.product_name AS "productName",o.quantity,o.delivery_address AS address,o.note,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC LIMIT 500',[companyId]),
     query('SELECT id,due_at AS "dueAt",status,text,prospect_id AS "prospectId",source,cancelled_reason AS "cancelledReason" FROM followups WHERE company_id=$1 ORDER BY due_at NULLS LAST LIMIT 500',[companyId]),
     query('SELECT plan,status,monthly_price AS "monthlyPrice",next_billing_at AS "nextBillingAt" FROM subscriptions WHERE company_id=$1',[companyId]),
     query(`SELECT a.id,a.prospect_id AS "prospectId",p.name AS prospect,a.type,a.scheduled_at AS "scheduledAt",a.status FROM appointments a LEFT JOIN prospects p ON p.id=a.prospect_id WHERE a.company_id=$1 ORDER BY a.scheduled_at NULLS LAST,a.created_at DESC LIMIT 500`,[companyId])
@@ -419,11 +419,11 @@ function renderShopPage(c, products, origin) {
     const img = validImageUrl(p.imageUrl);
     const soldOut = Number(p.stock) <= 0;
     const msg = 'Bonjour, je souhaite commander : ' + p.name + ' (' + formatFcfa(p.price) + '). Est-ce disponible ?';
-    return '<article class="card" data-name="' + escHtml(String(p.name).toLowerCase()) + '" data-cat="' + escHtml(p.category || '') + '">' +
+    return '<article class="card" data-id="' + escHtml(p.id) + '" data-pn="' + escHtml(p.name) + '" data-pp="' + escHtml(formatFcfa(p.price)) + '" data-max="' + Math.min(20, Math.max(0, Number(p.stock) || 0)) + '" data-name="' + escHtml(String(p.name).toLowerCase()) + '" data-cat="' + escHtml(p.category || '') + '">' +
       '<div class="ph">' + (img ? '<img src="' + escHtml(img) + '" alt="' + escHtml(p.name) + '" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">' : '<span aria-hidden="true">🛍️</span>') + '</div>' +
       '<div class="bd"><h3>' + escHtml(p.name) + '</h3>' + (p.category ? '<p class="cat">' + escHtml(p.category) + '</p>' : '') +
       '<p class="pr">' + escHtml(formatFcfa(p.price)) + '</p>' +
-      (soldOut ? '<span class="btn off">Épuisé</span>' : '<a class="btn" href="' + escHtml(waLink(msg)) + '" rel="noopener">Commander sur WhatsApp</a>') +
+      (soldOut ? '<span class="btn off">Épuisé</span>' : '<button type="button" class="btn buy" data-buy>Commander</button><a class="wa" href="' + escHtml(waLink(msg)) + '" rel="noopener">ou poser une question sur WhatsApp</a>') +
       '</div></article>';
   }).join('');
   const ld = {
@@ -453,6 +453,13 @@ function renderShopPage(c, products, origin) {
     '.ph{aspect-ratio:4/3;background:var(--bd);display:grid;place-items:center;font-size:2.4rem}.ph img{width:100%;height:100%;object-fit:cover}' +
     '.bd{padding:12px;display:flex;flex-direction:column;gap:6px;flex:1}.bd h3{margin:0;font-size:1rem}.cat{margin:0;color:var(--mut);font-size:.85rem}.pr{margin:0;font-weight:700;font-size:1.05rem}' +
     '.btn{margin-top:auto;display:block;text-align:center;padding:10px;border-radius:10px;background:#25d366;color:#05301a;font-weight:700;text-decoration:none}.btn.off{background:var(--bd);color:var(--mut)}' +
+    '.btn.buy{border:0;cursor:pointer;font:inherit;font-weight:700;background:var(--a);color:#fff;width:100%}.wa{display:block;text-align:center;font-size:.8rem;color:var(--mut);margin-top:6px}' +
+    '.ov{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-end;justify-content:center;z-index:50}.ov.on{display:flex}' +
+    '.sheet{background:var(--card);color:var(--fg);width:100%;max-width:480px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:18px 16px 24px}@media(min-width:560px){.ov{align-items:center}.sheet{border-radius:18px}}' +
+    '.sheet h2{margin:0 0 4px;font-size:1.15rem}.sheet .sum{margin:0 0 12px;color:var(--mut)}.sheet label{display:block;font-size:.85rem;color:var(--mut);margin:10px 0 4px}' +
+    '.sheet input,.sheet textarea{width:100%;padding:11px 12px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--fg);font:inherit}' +
+    '.sheet .row{display:flex;gap:10px}.sheet .row>div{flex:1}.sheet .go{margin-top:16px}.sheet .x{float:right;background:none;border:0;color:var(--mut);font-size:1.4rem;cursor:pointer}' +
+    '.err{color:#d62839;margin:10px 0 0;font-size:.9rem}.ok{text-align:center;padding:10px 0}.hp{position:absolute;left:-9999px;opacity:0;height:0;width:0}' +
     '.empty{padding:40px 0;text-align:center;color:var(--mut)}.fab{position:fixed;right:16px;bottom:16px;padding:14px 18px;border-radius:999px;background:#25d366;color:#05301a;font-weight:700;text-decoration:none;box-shadow:0 6px 20px rgba(0,0,0,.25)}' +
     'footer{text-align:center;color:var(--mut);font-size:.85rem;padding:0 16px 24px}footer a{color:var(--a)}</style></head><body>' +
     '<header><h1>' + escHtml(c.name) + '</h1><p>' + escHtml(c.tagline || c.sector || '') + '</p></header><main>' +
@@ -461,11 +468,30 @@ function renderShopPage(c, products, origin) {
       '<div class="grid" id="g">' + cards + '</div><p class="empty" id="none" hidden>Aucun produit ne correspond.</p>'
       : '<p class="empty">Le catalogue sera bientôt disponible.</p>') +
     '</main><a class="fab" href="' + escHtml(waLink('Bonjour, je souhaite avoir des informations.')) + '" rel="noopener">💬 WhatsApp</a>' +
+    '<div class="ov" id="ov" role="dialog" aria-modal="true" aria-labelledby="ot"><div class="sheet"><button type="button" class="x" id="ox" aria-label="Fermer">×</button>' +
+    '<div id="of"><h2 id="ot">Commander</h2><p class="sum" id="os"></p><form id="oform" novalidate>' +
+    '<div class="row"><div><label for="oq">Quantité</label><input id="oq" type="number" min="1" value="1" inputmode="numeric"></div><div><label for="op">Votre téléphone</label><input id="op" type="tel" inputmode="tel" placeholder="6XX XX XX XX" autocomplete="tel" required></div></div>' +
+    '<label for="on">Votre nom</label><input id="on" autocomplete="name" required maxlength="80">' +
+    '<label for="oa">Adresse de livraison (quartier, repère)</label><textarea id="oa" rows="2" maxlength="200" required></textarea>' +
+    '<label for="ono">Précision (facultatif)</label><input id="ono" maxlength="200">' +
+    '<input class="hp" id="oh" tabindex="-1" autocomplete="off" aria-hidden="true">' +
+    '<p class="err" id="oe" hidden></p><button class="btn buy go" id="osub" type="submit">Confirmer la commande</button>' +
+    '<p class="sum" style="margin-top:10px;font-size:.8rem">Paiement à la livraison. Le vendeur vous appelle pour confirmer.</p></form></div>' +
+    '<div class="ok" id="od" hidden><h2>✅ Commande enregistrée</h2><p id="odm"></p><a class="btn" id="odw" href="#" rel="noopener">Suivre sur WhatsApp</a></div></div></div>' +
     '<footer>Boutique propulsée par <a href="/">VENDIA</a></footer>' +
     '<script type="application/ld+json">' + ldJson + '</script>' +
     '<script>(function(){var q=document.getElementById("q");if(!q)return;var cards=[].slice.call(document.querySelectorAll(".card")),chips=[].slice.call(document.querySelectorAll(".chip")),none=document.getElementById("none"),cat="";' +
     'function run(){var t=q.value.trim().toLowerCase(),n=0;cards.forEach(function(c){var ok=(!t||c.dataset.name.indexOf(t)>-1)&&(!cat||c.dataset.cat===cat);c.hidden=!ok;if(ok)n++;});none.hidden=n>0;}' +
     'q.addEventListener("input",run);chips.forEach(function(b){b.addEventListener("click",function(){cat=(cat===b.dataset.cat)?"":b.dataset.cat;chips.forEach(function(x){x.classList.toggle("on",x.dataset.cat===cat);});run();});});})();</script>' +
+    '<script>(function(){var ov=document.getElementById("ov");if(!ov)return;var cur=null,form=document.getElementById("oform"),err=document.getElementById("oe"),sub=document.getElementById("osub"),SLUG=' + JSON.stringify(c.shopSlug) + ',WA=' + JSON.stringify(c.shopWhatsapp) + ';' +
+    'function $(i){return document.getElementById(i);}function close(){ov.classList.remove("on");}' +
+    '[].forEach.call(document.querySelectorAll("[data-buy]"),function(b){b.addEventListener("click",function(){var a=b.closest(".card");cur={id:a.dataset.id,name:a.dataset.pn,price:a.dataset.pp,max:+a.dataset.max||1};$("ot").textContent=cur.name;$("os").textContent=cur.price+" l\u2019unit\u00e9";$("oq").max=cur.max;$("oq").value=1;err.hidden=true;$("of").hidden=false;$("od").hidden=true;sub.disabled=false;ov.classList.add("on");setTimeout(function(){$("op").focus();},50);});});' +
+    '$("ox").addEventListener("click",close);ov.addEventListener("click",function(e){if(e.target===ov)close();});document.addEventListener("keydown",function(e){if(e.key==="Escape")close();});' +
+    'form.addEventListener("submit",function(e){e.preventDefault();err.hidden=true;var q=parseInt($("oq").value,10)||1;sub.disabled=true;sub.textContent="Envoi\u2026";' +
+    'fetch("/api/boutique/"+SLUG+"/order",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({productId:cur.id,quantity:q,name:$("on").value,phone:$("op").value,address:$("oa").value,note:$("ono").value,website:$("oh").value})})' +
+    '.then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j};});}).then(function(x){sub.textContent="Confirmer la commande";if(!x.ok){err.textContent=x.j.error||"Une erreur est survenue.";err.hidden=false;sub.disabled=false;return;}' +
+    '$("of").hidden=true;$("od").hidden=false;$("odm").textContent="Commande n\u00b0 "+x.j.number+" \u2014 total "+x.j.total+". Le vendeur vous contactera au "+$("op").value+".";$("odw").href="https://wa.me/"+WA+"?text="+encodeURIComponent("Bonjour, je viens de passer la commande "+x.j.number+" sur votre boutique.");})' +
+    '.catch(function(){sub.textContent="Confirmer la commande";sub.disabled=false;err.textContent="Connexion impossible. R\u00e9essayez.";err.hidden=false;});});})();</script>' +
     '</body></html>';
 }
 
@@ -1128,8 +1154,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.16',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.16'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.17',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.17'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -1159,6 +1185,56 @@ async function handler(req,res) {
   // Vitrine web publique d'une entreprise — aucune authentification (c'est
   // fait pour être partagée). Introuvable si désactivée par l'entreprise,
   // suspendue ou non encore validée par le super-admin.
+  // Commande passée par un client depuis la vitrine (paiement à la livraison).
+  // Publique : validée strictement, limitée par IP / entreprise / téléphone, et
+  // le stock est réservé de façon atomique (jamais de vente d'un produit épuisé).
+  const shopOrderMatch=req.method==='POST'?u.pathname.match(/^\/api\/boutique\/([a-z0-9-]{3,40})\/order$/):null;
+  if(shopOrderMatch) {
+    if(rateLimited('shoporder:'+clientIp(req),8,10*60*1000)) return tooManyRequests(res);
+    const b=await body(req,20000);
+    if(b.website) return json(res,201,{ok:true,number:'VND-0',total:''}); // piège anti-robot : succès factice
+    const co=await query('SELECT id,name FROM companies WHERE shop_slug=$1 AND shop_enabled=true AND suspended=false AND approved_at IS NOT NULL AND shop_whatsapp IS NOT NULL',[shopOrderMatch[1]]);
+    if(!co.rows[0]) return json(res,404,{error:'Boutique introuvable'});
+    const companyId=co.rows[0].id;
+    if(rateLimited('shoporder-co:'+companyId,60,60*60*1000)) return json(res,429,{error:'Trop de commandes pour le moment. Contactez la boutique sur WhatsApp.'});
+    const name=String(b.name||'').trim().slice(0,80), address=String(b.address||'').trim().slice(0,200), note=String(b.note||'').trim().slice(0,200);
+    const phone=normalizeWaNumber(b.phone);
+    const qty=Math.floor(Number(b.quantity));
+    if(name.length<2) return json(res,400,{error:'Indiquez votre nom.'});
+    if(!phone) return json(res,400,{error:'Numéro de téléphone invalide.'});
+    if(address.length<3) return json(res,400,{error:'Indiquez votre adresse de livraison.'});
+    if(!(qty>=1&&qty<=20)||!/^[0-9a-f-]{36}$/i.test(String(b.productId||''))) return json(res,400,{error:'Commande invalide.'});
+    const pend=await query("SELECT COUNT(*)::int AS n FROM orders WHERE company_id=$1 AND customer_phone=$2 AND source='vitrine' AND status='En attente' AND created_at > now() - interval '24 hours'",[companyId,phone]);
+    if(pend.rows[0].n>=3) return json(res,429,{error:'Vous avez déjà des commandes en attente : le vendeur va vous contacter.'});
+    const number='VND-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+crypto.randomBytes(3).toString('hex').toUpperCase();
+    const out=await transaction(async client=>{
+      const p=await client.query('UPDATE products SET stock=stock-$1 WHERE id=$2 AND company_id=$3 AND stock>=$1 RETURNING name,price',[qty,b.productId,companyId]);
+      if(!p.rows[0]) return null;
+      const total=Number(p.rows[0].price)*qty;
+      await client.query("INSERT INTO orders(company_id,prospect_id,order_number,amount,status,product_id,product_name,quantity,delivery_address,note,customer_name,customer_phone,source,stock_reserved) VALUES($1,NULL,$2,$3,'En attente',$4,$5,$6,$7,$8,$9,$10,'vitrine',true)",[companyId,number,total,b.productId,p.rows[0].name,qty,address,note||null,name,phone]);
+      return {total,productName:p.rows[0].name};
+    });
+    if(!out) return json(res,409,{error:'Ce produit n\'est plus disponible en cette quantité.'});
+    // Contact CRM (sans bloquer la commande si le quota de prospects est atteint).
+    try {
+      const pid=await findOrCreateProspectByPhone(companyId,phone,name,out.productName);
+      if(pid) {
+        await query("UPDATE orders SET prospect_id=$1 WHERE company_id=$2 AND order_number=$3",[pid,companyId,number]);
+        await query("UPDATE prospects SET order_intent=true,value=GREATEST(COALESCE(value,0),$3),stage=CASE WHEN stage IS NULL OR stage IN ('Nouveau','À contacter') THEN 'En discussion' ELSE stage END WHERE id=$1 AND company_id=$2",[pid,companyId,out.total]);
+        await cancelAutoFollowups(companyId,pid,'Commande créée — relance automatique inutile');
+      }
+    } catch(e) { console.error('[boutique] contact CRM non créé:',e.message); }
+    const team=await query("SELECT email,name FROM users WHERE company_id=$1 AND role IN ('owner','admin')",[companyId]);
+    for(const o of team.rows) {
+      await sendEmail(o.email,'🛒 Nouvelle commande sur votre vitrine — '+number,
+        '<p>Bonjour '+escHtml(o.name)+',</p><p>Nouvelle commande <strong>'+number+'</strong> (paiement à la livraison) :</p><ul>'+
+        '<li>Produit : '+escHtml(out.productName)+' × '+qty+'</li><li>Total : <strong>'+Number(out.total).toLocaleString('fr-FR')+' FCFA</strong></li>'+
+        '<li>Client : '+escHtml(name)+' — <a href="https://wa.me/'+phone+'">+'+phone+'</a></li><li>Livraison : '+escHtml(address)+'</li>'+(note?'<li>Précision : '+escHtml(note)+'</li>':'')+'</ul>'+
+        '<p>Appelez le client pour confirmer, puis suivez la commande dans l\'onglet Commandes de VENDIA.</p>');
+    }
+    return json(res,201,{ok:true,number,total:Number(out.total).toLocaleString('fr-FR')+' FCFA'});
+  }
+
   const shopMatch=u.pathname.match(/^\/boutique\/([^/]*)\/?$/);
   if(req.method==='GET'&&shopMatch) {
     const htmlHeaders={'Content-Type':'text/html; charset=utf-8','X-Content-Type-Options':'nosniff','X-Frame-Options':'SAMEORIGIN','Referrer-Policy':'strict-origin-when-cross-origin'};
@@ -1166,7 +1242,7 @@ async function handler(req,res) {
     if(!/^[a-z0-9-]{3,40}$/.test(shopMatch[1])) { res.writeHead(404,{...htmlHeaders,'Cache-Control':'no-store'}); return res.end(renderShopNotFound()); }
     const c=await query('SELECT id,name,sector,shop_slug AS "shopSlug",shop_tagline AS tagline,shop_whatsapp AS "shopWhatsapp" FROM companies WHERE shop_slug=$1 AND shop_enabled=true AND suspended=false AND approved_at IS NOT NULL AND shop_whatsapp IS NOT NULL',[shopMatch[1]]);
     if(!c.rows[0]) { res.writeHead(404,{...htmlHeaders,'Cache-Control':'no-store'}); return res.end(renderShopNotFound()); }
-    const prods=await query('SELECT name,category,price,stock,image_url AS "imageUrl" FROM products WHERE company_id=$1 ORDER BY category NULLS LAST,name LIMIT 300',[c.rows[0].id]);
+    const prods=await query('SELECT id,name,category,price,stock,image_url AS "imageUrl" FROM products WHERE company_id=$1 ORDER BY category NULLS LAST,name LIMIT 300',[c.rows[0].id]);
     const proto=String(req.headers['x-forwarded-proto']||'https').split(',')[0].trim()==='http'?'http':'https';
     const origin=proto+'://'+req.headers.host;
     res.writeHead(200,{...htmlHeaders,'Cache-Control':'public, max-age=60'});
@@ -2248,7 +2324,7 @@ async function handler(req,res) {
     return json(res,201,{order:r.rows[0]});
   }
   if(req.method==='GET'&&u.pathname==='/api/orders') {
-    const r=await query('SELECT o.id,o.order_number AS number,o.prospect_id AS "prospectId",p.name AS client,o.amount,o.status,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC LIMIT 500',[companyId]);
+    const r=await query('SELECT o.id,o.order_number AS number,o.prospect_id AS "prospectId",COALESCE(p.name,o.customer_name) AS client,COALESCE(p.phone,o.customer_phone) AS phone,o.amount,o.status,o.source,o.product_name AS "productName",o.quantity,o.delivery_address AS address,o.note,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC LIMIT 500',[companyId]);
     return json(res,200,{orders:r.rows});
   }
 
@@ -2258,7 +2334,7 @@ async function handler(req,res) {
   // statut (dont le total "encaissé" = commandes Livrée) pour un rapprochement
   // rapide. Pas de dépendance externe — généré à la volée avec exceljs.
   if(req.method==='GET'&&u.pathname==='/api/export/orders.xlsx') {
-    const rows=(await query('SELECT o.order_number AS number,p.name AS client,p.phone,o.amount,o.status,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC LIMIT 5000',[companyId])).rows;
+    const rows=(await query('SELECT o.order_number AS number,COALESCE(p.name,o.customer_name) AS client,COALESCE(p.phone,o.customer_phone) AS phone,o.product_name AS "productName",o.quantity,o.delivery_address AS address,o.source,o.amount,o.status,o.created_at AS "createdAt" FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 ORDER BY o.created_at DESC LIMIT 5000',[companyId])).rows;
     const wb=new ExcelJS.Workbook();
     wb.creator='VENDIA'; wb.created=new Date();
 
@@ -2267,12 +2343,16 @@ async function handler(req,res) {
       {header:'Numéro',key:'number',width:24},
       {header:'Client',key:'client',width:26},
       {header:'Téléphone',key:'phone',width:16},
+      {header:'Produit',key:'productName',width:26},
+      {header:'Qté',key:'quantity',width:8},
+      {header:'Adresse de livraison',key:'address',width:34},
+      {header:'Origine',key:'source',width:12},
       {header:'Montant (FCFA)',key:'amount',width:16},
       {header:'Statut',key:'status',width:16},
       {header:'Date',key:'createdAt',width:20},
     ];
     sheet.getRow(1).font={bold:true};
-    for(const r of rows) sheet.addRow({number:r.number,client:r.client||'—',phone:r.phone||'—',amount:Number(r.amount),status:r.status,createdAt:new Date(r.createdAt)});
+    for(const r of rows) sheet.addRow({number:r.number,client:r.client||'—',phone:r.phone||'—',productName:r.productName||'—',quantity:r.quantity||'',address:r.address||'—',source:r.source==='vitrine'?'Vitrine':'Manuel',amount:Number(r.amount),status:r.status,createdAt:new Date(r.createdAt)});
     sheet.getColumn('amount').numFmt='#,##0';
     sheet.getColumn('createdAt').numFmt='dd/mm/yyyy hh:mm';
 
@@ -2298,7 +2378,16 @@ async function handler(req,res) {
   const orderMatch=u.pathname.match(/^\/api\/orders\/([0-9a-f-]+)$/i);
   if(orderMatch && (req.method==='PUT'||req.method==='PATCH')) {
     const b=await body(req);
-    const r=await query('UPDATE orders SET amount=$1,status=$2 WHERE id=$3 AND company_id=$4 RETURNING id,order_number AS number,prospect_id AS "prospectId",amount,status,created_at AS "createdAt"',[Math.max(0,Number(b.amount||0)),b.status||'En attente',orderMatch[1],companyId]);
+    const r=await transaction(async client=>{
+      const u2=await client.query('UPDATE orders SET amount=$1,status=$2 WHERE id=$3 AND company_id=$4 RETURNING id,order_number AS number,prospect_id AS "prospectId",amount,status,created_at AS "createdAt",product_id,quantity,stock_reserved',[Math.max(0,Number(b.amount||0)),b.status||'En attente',orderMatch[1],companyId]);
+      const o=u2.rows[0];
+      // Commande annulée : le stock réservé à la vitrine est rendu au catalogue (une seule fois).
+      if(o && o.stock_reserved && o.status==='Annulée' && o.product_id && o.quantity) {
+        await client.query('UPDATE products SET stock=stock+$1 WHERE id=$2 AND company_id=$3',[o.quantity,o.product_id,companyId]);
+        await client.query('UPDATE orders SET stock_reserved=false WHERE id=$1',[o.id]);
+      }
+      return u2;
+    });
     if(!r.rows[0]) return json(res,404,{error:'Commande introuvable'});
     return json(res,200,{order:r.rows[0]});
   }
@@ -2579,6 +2668,17 @@ async function ensureMigrations() {
     "ALTER TABLE prospects ADD COLUMN IF NOT EXISTS stage TEXT NOT NULL DEFAULT 'Nouveau'",
     "UPDATE prospects SET stage=status WHERE status IN ('Nouveau','À contacter','En discussion','Gagné','Perdu')",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT",
+    // Commandes passées depuis la vitrine web (1.10.17) : détail du produit, de la
+    // livraison et du client (le prospect peut manquer si le quota CRM est atteint).
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id) ON DELETE SET NULL",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_name TEXT",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS quantity INTEGER",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_address TEXT",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS note TEXT",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_name TEXT",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_phone TEXT",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manuel'",
+    "ALTER TABLE orders ADD COLUMN IF NOT EXISTS stock_reserved BOOLEAN NOT NULL DEFAULT false",
     "CREATE TABLE IF NOT EXISTS product_images (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE, data BYTEA NOT NULL, mime TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
     "CREATE INDEX IF NOT EXISTS product_images_company_idx ON product_images(company_id)",
     // Vitrine web publique /boutique/<slug> (désactivée par défaut).
@@ -2619,6 +2719,6 @@ const server=http.createServer((req,res)=>handler(req,res).catch(e=>{ if(e&&e.st
 ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>console.error('[demarrage] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.16 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.17 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

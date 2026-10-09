@@ -311,3 +311,14 @@ CREATE INDEX IF NOT EXISTS product_images_company_idx ON product_images(company_
 -- Paiement manuel : anti-doublon de référence et échéance d'abonnement (1.10.14)
 ALTER TABLE payment_requests ADD COLUMN IF NOT EXISTS reference_norm TEXT;
 CREATE INDEX IF NOT EXISTS payment_requests_refnorm_idx ON payment_requests(reference_norm);
+
+-- Commandes depuis la vitrine web (1.10.17)
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id) ON DELETE SET NULL;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_name TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS quantity INTEGER;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_address TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS note TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_name TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_phone TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manuel';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS stock_reserved BOOLEAN NOT NULL DEFAULT false;

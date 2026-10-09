@@ -376,6 +376,7 @@ fr: {
   upgrade_ai_full:"Vous avez utilisé vos {n} réponses IA du mois : l'assistant répond désormais avec un message de secours.",
   upgrade_prospects_near:"Vous approchez de votre limite de prospects ({u}/{n} ce mois-ci).", upgrade_ai_near:"Vous approchez de votre limite de réponses IA ({u}/{n} ce mois-ci).",
   upgrade_with:"Passez au forfait {plan} pour continuer sans limite.", upgrade_btn:"Passer à {plan}",
+  th_order_items:"Commande", order_from_shop:"Vitrine",
   nav_promo:"Studio promo", promo_title:"Studio promo", promo_desc:"Créez en quelques secondes un texte et une affiche pour un produit de votre catalogue, prêts à publier en statut WhatsApp ou sur les réseaux sociaux.", promo_empty:"Ajoutez d'abord un produit à votre catalogue.",
   promo_product_label:"Produit", promo_format_label:"Type de texte", promo_format_status:"Statut WhatsApp", promo_format_post:"Publication Facebook / Instagram", promo_format_broadcast:"Message à un client",
   btn_generate_text:"✨ Générer le texte", btn_generating:"Génération…", placeholder_promo_text:"Le texte apparaîtra ici — vous pouvez le modifier.", btn_copy_text:"Copier le texte",
@@ -524,6 +525,7 @@ en: {
   upgrade_ai_full:"You have used your {n} AI replies for the month: the assistant now answers with a fallback message.",
   upgrade_prospects_near:"You are close to your lead limit ({u}/{n} this month).", upgrade_ai_near:"You are close to your AI reply limit ({u}/{n} this month).",
   upgrade_with:"Upgrade to the {plan} plan to keep going without limits.", upgrade_btn:"Upgrade to {plan}",
+  th_order_items:"Order", order_from_shop:"Storefront",
   nav_promo:"Promo studio", promo_title:"Promo studio", promo_desc:"Create a text and a poster for a product in your catalog in seconds, ready to post on WhatsApp Status or social media.", promo_empty:"Add a product to your catalog first.",
   promo_product_label:"Product", promo_format_label:"Text type", promo_format_status:"WhatsApp Status", promo_format_post:"Facebook / Instagram post", promo_format_broadcast:"Message to a customer",
   btn_generate_text:"✨ Generate text", btn_generating:"Generating…", placeholder_promo_text:"The text will appear here — you can edit it.", btn_copy_text:"Copy text",
@@ -1205,13 +1207,26 @@ async function loadConversations(){
   }catch(e){alert(e.message);}
 }
 
+const ORDER_STATUSES=['En attente','Confirmée','En préparation','Livrée','Annulée'];
 function renderOrders(){
-  $('orderCount').textContent='('+(data.orders||[]).length+')';
-  $('orderTable').innerHTML=(data.orders||[]).length
-    ? '<table><thead><tr><th>'+t('th_number')+'</th><th>'+t('th_client')+'</th><th>'+t('th_amount')+'</th><th>'+t('th_status')+'</th></tr></thead><tbody>'+
-      data.orders.map(o=>'<tr><td><strong>'+esc(o.number)+'</strong></td><td>'+esc(o.client||'—')+'</td><td>'+money(o.amount)+'</td><td>'+esc(statusLabel(o.status))+'</td></tr>').join('')+
-      '</tbody></table>'
+  const list=data.orders||[];
+  $('orderCount').textContent='('+list.length+')';
+  $('orderTable').innerHTML=list.length
+    ? '<table><thead><tr><th>'+t('th_number')+'</th><th>'+t('th_client')+'</th><th>'+t('th_order_items')+'</th><th>'+t('th_amount')+'</th><th>'+t('th_status')+'</th></tr></thead><tbody>'+
+      list.map(o=>{
+        const tel=o.phone?'<br><a href="https://wa.me/'+esc(String(o.phone).replace(/\D/g,''))+'" target="_blank" rel="noopener" class="muted">+'+esc(String(o.phone).replace(/\D/g,''))+'</a>':'';
+        const items=o.productName?esc(o.productName)+' × '+(o.quantity||1)+(o.address?'<br><span class="muted">📍 '+esc(o.address)+'</span>':'')+(o.note?'<br><span class="muted">💬 '+esc(o.note)+'</span>':''):'—';
+        const sel='<select onchange="setOrderStatus(\''+o.id+'\',this.value)">'+ORDER_STATUSES.map(s=>'<option value="'+s+'"'+(s===o.status?' selected':'')+'>'+esc(statusLabel(s))+'</option>').join('')+'</select>';
+        return '<tr><td><strong>'+esc(o.number)+'</strong>'+(o.source==='vitrine'?'<br><span class="badge">🛒 '+t('order_from_shop')+'</span>':'')+'</td><td>'+esc(o.client||'—')+tel+'</td><td>'+items+'</td><td>'+money(o.amount)+'</td><td>'+sel+'</td></tr>';
+      }).join('')+'</tbody></table>'
     : '<div class="empty">'+t('empty_orders')+'</div>';
+}
+async function setOrderStatus(id,status){
+  const o=(data.orders||[]).find(x=>x.id===id); if(!o) return;
+  try{
+    await api('/api/orders/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:Number(o.amount),status})});
+    await load(); tab('orders');
+  }catch(e){ alert(e.message); await load(); tab('orders'); }
 }
 async function saveOrder(e){
   e.preventDefault();
