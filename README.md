@@ -139,6 +139,10 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - Le tableau du parrain montre ses filleuls (abonné actif ou en attente de paiement) et ce que chacun lui a rapporté.
 
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.
+## 1.10.23 — Campagnes de diffusion WhatsApp
+
+Nouvel onglet **Campagnes** (propriétaire/admin) : message envoyé à un segment du CRM (étape, température, clients / jamais commandé, inactivité), personnalisable avec `{prénom}`. Garde-fous : forfait **Business** (500 messages/mois) ou **Pro** (3 000), Starter verrouillé avec bouton de montée en gamme ; confirmation obligatoire que les contacts ont accepté d'être sollicités ; **STOP** (et variantes) = désabonnement définitif de la campagne, **REPRENDRE** pour se réabonner, dédoublonnage par numéro ; mention « Répondez STOP » ajoutée à chaque message. Envoi étalé (lots de 10 toutes les 20 s) ; message libre dans la fenêtre WhatsApp de 24 h, sinon **modèle Meta Marketing** (`Bonjour {{1}}, {{2}}`) s'il est renseigné, sinon contact ignoré (raison visible dans Détails). Tables `campaigns`, `campaign_recipients`, colonnes `prospects.opted_out*`.
+
 ## 1.10.22 — Suivi de commande automatique par WhatsApp
 
 Réglages WhatsApp → « Suivi de commande automatique » : quand une commande passe en *Confirmée*, *En préparation*, *Livrée* ou *Annulée*, le client reçoit un message WhatsApp (un seul envoi par statut). WhatsApp n'autorise un message libre que dans les 24 h suivant le dernier message du client : hors fenêtre, VENDIA bascule sur un **modèle Meta approuvé** (catégorie Utility, variables {{1}} prénom, {{2}} n° de commande, {{3}} statut) si son nom est renseigné ; sinon la commande affiche « Client non prévenu ». Désactivé par défaut. Colonnes : `companies.order_notify_*`, `orders.last_notified_status/notify_result`.

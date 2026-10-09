@@ -331,3 +331,35 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS order_notify_template TEXT;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS order_notify_lang TEXT NOT NULL DEFAULT 'fr';
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS last_notified_status TEXT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS notify_result TEXT;
+
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS opted_out BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS opted_out_at TIMESTAMPTZ;
+CREATE TABLE IF NOT EXISTS campaigns (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  message TEXT NOT NULL,
+  template_name TEXT,
+  template_lang TEXT NOT NULL DEFAULT 'fr',
+  audience JSONB NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'Brouillon',
+  note TEXT,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  started_at TIMESTAMPTZ,
+  finished_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS campaigns_company_idx ON campaigns(company_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS campaign_recipients (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  prospect_id UUID REFERENCES prospects(id) ON DELETE SET NULL,
+  phone TEXT NOT NULL,
+  first_name TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  error TEXT,
+  sent_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS campaign_recipients_campaign_idx ON campaign_recipients(campaign_id, status);
+CREATE INDEX IF NOT EXISTS campaign_recipients_company_sent_idx ON campaign_recipients(company_id, sent_at) WHERE status='sent';

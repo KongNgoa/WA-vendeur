@@ -1023,9 +1023,9 @@ function extractSelectedProductId(msg) {
 // façon, Business impose un administrateur unique (transférable), Pro en
 // autorise jusqu'à 3 pour les équipes plus grandes.
 const PLAN_LIMITS = {
-  Starter:  { monthlyPrice: 10000, maxProspectsPerMonth: 100, maxUsers: 1,    maxAdmins: 1, aiAutoReply: true, aiMessagesLimit: 100, autoFollowups: false, prioritySupport: false },
-  Business: { monthlyPrice: 25000, maxProspectsPerMonth: 300, maxUsers: 3,    maxAdmins: 1, aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: false },
-  Pro:      { monthlyPrice: 50000, maxProspectsPerMonth: null, maxUsers: null, maxAdmins: 3, aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: true  },
+  Starter:  { monthlyPrice: 10000, maxProspectsPerMonth: 100, maxUsers: 1,    maxAdmins: 1, aiAutoReply: true, aiMessagesLimit: 100, autoFollowups: false, prioritySupport: false, campaignsPerMonth: 0 },
+  Business: { monthlyPrice: 25000, maxProspectsPerMonth: 300, maxUsers: 3,    maxAdmins: 1, aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: false, campaignsPerMonth: 500 },
+  Pro:      { monthlyPrice: 50000, maxProspectsPerMonth: null, maxUsers: null, maxAdmins: 3, aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: true,  campaignsPerMonth: 3000 },
 };
 const planLimits = plan => PLAN_LIMITS[plan] || PLAN_LIMITS.Starter;
 
@@ -1173,6 +1173,108 @@ async function notifyOrderStatus(companyId, orderId, status) {
   }
 }
 
+// --- Campagnes de diffusion WhatsApp ---------------------------------------
+// Envoi d'un même message à une audience de contacts (segment du CRM). Règles :
+//  - réservé aux forfaits Business/Pro (quota mensuel de messages, PLAN_LIMITS) ;
+//  - l'entreprise doit confirmer que les contacts ont accepté d'être sollicités ;
+//  - les contacts ayant répondu STOP (prospects.opted_out) sont toujours exclus,
+//    et chaque message libre se termine par la mention « Répondez STOP » ;
+//  - message libre seulement dans la fenêtre de 24 h ; sinon modèle Meta
+//    (catégorie Marketing, {{1}} prénom, {{2}} message) ou contact ignoré ;
+//  - envoi étalé (petits lots toutes les 20 s) pour ne pas déclencher les
+//    limites/blocages de WhatsApp.
+const STOP_RE = /^\s*(stop|arr[êe]t|unsubscribe|d[ée]sabonner|d[ée]sinscri(?:re|ption))\s*[.!]*\s*$/i;
+const RESUME_RE = /^\s*(reprendre|start|subscribe|r[ée]abonner)\s*[.!]*\s*$/i;
+const CAMPAIGN_STAGES = ['Nouveau', 'À contacter', 'En discussion', 'Gagné', 'Perdu'];
+const CAMPAIGN_HEATS = ['Chaud', 'Tiède', 'Froid'];
+
+function cleanAudience(a) {
+  a = a && typeof a === 'object' ? a : {};
+  return {
+    stages: (Array.isArray(a.stages) ? a.stages : []).filter(x => CAMPAIGN_STAGES.includes(x)),
+    heats: (Array.isArray(a.heats) ? a.heats : []).filter(x => CAMPAIGN_HEATS.includes(x)),
+    customers: ['only', 'never'].includes(a.customers) ? a.customers : 'all',
+    inactiveDays: Math.min(365, Math.max(0, parseInt(a.inactiveDays, 10) || 0))
+  };
+}
+function audienceWhere(aud, startIdx = 2) {
+  const cond = ["p.company_id=$1", "p.phone IS NOT NULL", "btrim(p.phone)<>''"];
+  const params = [];
+  const add = v => { params.push(v); return '$' + (startIdx + params.length - 1); };
+  if (aud.stages.length) cond.push('p.stage = ANY(' + add(aud.stages) + '::text[])');
+  if (aud.heats.length) cond.push('p.status = ANY(' + add(aud.heats) + '::text[])');
+  const hasOrder = "EXISTS (SELECT 1 FROM orders o WHERE o.prospect_id=p.id AND o.status NOT IN ('Annulée','Bloquée'))";
+  if (aud.customers === 'only') cond.push(hasOrder);
+  if (aud.customers === 'never') cond.push('NOT ' + hasOrder);
+  if (aud.inactiveDays > 0) cond.push("(p.last_contact IS NULL OR p.last_contact < now() - (" + add(aud.inactiveDays) + " || ' days')::interval)");
+  return { cond, params };
+}
+async function audienceCount(companyId, aud) {
+  const w = audienceWhere(aud);
+  const r = await query(`SELECT COUNT(DISTINCT right(regexp_replace(p.phone,'\\D','','g'),9)) FILTER (WHERE NOT p.opted_out)::int AS n, COUNT(DISTINCT right(regexp_replace(p.phone,'\\D','','g'),9)) FILTER (WHERE p.opted_out)::int AS "optedOut" FROM prospects p WHERE ${w.cond.join(' AND ')}`, [companyId, ...w.params]);
+  return r.rows[0];
+}
+async function campaignQuota(companyId) {
+  const sub = await query('SELECT plan FROM subscriptions WHERE company_id=$1', [companyId]);
+  const plan = sub.rows[0]?.plan || 'Starter';
+  const limit = planLimits(plan).campaignsPerMonth;
+  const u = await query("SELECT COUNT(*)::int AS n FROM campaign_recipients WHERE company_id=$1 AND status IN ('sent','pending','sending') AND COALESCE(sent_at, now()) >= date_trunc('month', now())", [companyId]);
+  return { plan, limit, used: u.rows[0].n, remaining: Math.max(0, limit - u.rows[0].n) };
+}
+function campaignText(message, firstName) {
+  const m = String(message).replace(/\{pr[ée]nom\}/gi, firstName || '').replace(/[ ]{2,}/g, ' ').trim();
+  return m + '\n\nRépondez STOP pour ne plus recevoir nos messages.';
+}
+let campaignTickRunning = false;
+async function runCampaignTick() {
+  if (campaignTickRunning) return;
+  campaignTickRunning = true;
+  try {
+    const camps = (await query("SELECT id,company_id AS \"companyId\",message,template_name AS tpl,template_lang AS lang FROM campaigns WHERE status='En cours' ORDER BY started_at LIMIT 20")).rows;
+    for (const c of camps) {
+      const co = (await query('SELECT c.name,c.suspended,c.approved_at AS "approvedAt",c.whatsapp_phone_number_id AS "whatsappPhoneNumberId",c.whatsapp_access_token AS "whatsappAccessToken" FROM companies c WHERE c.id=$1', [c.companyId])).rows[0];
+      const stop = async note => {
+        await query("UPDATE campaigns SET status='Annulée',note=$1,finished_at=now() WHERE id=$2", [note, c.id]);
+        await query("UPDATE campaign_recipients SET status='skipped',error=$1 WHERE campaign_id=$2 AND status='pending'", [note, c.id]);
+      };
+      if (!co || co.suspended || !co.approvedAt) { await stop('Entreprise suspendue ou non validée'); continue; }
+      const company = { whatsappPhoneNumberId: co.whatsappPhoneNumberId, whatsappAccessToken: co.whatsappAccessToken ? decryptSecret(co.whatsappAccessToken) : null };
+      if (!company.whatsappPhoneNumberId || !company.whatsappAccessToken) { await stop('WhatsApp non configuré'); continue; }
+      const batch = (await query(`UPDATE campaign_recipients SET status='sending' WHERE id IN (SELECT id FROM campaign_recipients WHERE campaign_id=$1 AND status='pending' ORDER BY id LIMIT 10 FOR UPDATE SKIP LOCKED) RETURNING id,prospect_id AS "prospectId",phone,first_name AS "firstName"`, [c.id])).rows;
+      for (const rcp of batch) {
+        let status = 'failed', error = null;
+        try {
+          const pr = (await query("SELECT 1 FROM prospects WHERE company_id=$1 AND opted_out AND right(regexp_replace(COALESCE(phone,''),'\\D','','g'),9)=right(regexp_replace($2,'\\D','','g'),9) LIMIT 1", [c.companyId, rcp.phone])).rows[0];
+          if (pr) { status = 'skipped'; error = 'Désabonné (STOP)'; }
+          else {
+            const last = (await query("SELECT max(m.created_at) AS t FROM messages m JOIN conversations cv ON cv.id=m.conversation_id WHERE cv.company_id=$1 AND m.direction='in' AND right(regexp_replace(COALESCE(cv.external_contact,''),'\\D','','g'),9)=right(regexp_replace($2,'\\D','','g'),9)", [c.companyId, rcp.phone])).rows[0].t;
+            const inWindow = last && (Date.now() - new Date(last).getTime()) < 23.5 * 3600 * 1000;
+            let sent = null, logged = null;
+            if (inWindow) { logged = campaignText(c.message, rcp.firstName); sent = await sendWhatsAppMessage(company, rcp.phone, logged); }
+            if ((!sent || (sent.error && sent.outsideWindow)) && c.tpl) {
+              const flat = String(c.message).replace(/\{pr[ée]nom\}/gi, rcp.firstName || '').replace(/\s+/g, ' ').trim();
+              logged = flat;
+              sent = await sendWhatsAppTemplate(company, rcp.phone, c.tpl, c.lang || 'fr', [rcp.firstName || 'client', flat]);
+            }
+            if (!sent) { status = 'skipped'; error = 'Hors fenêtre 24 h et aucun modèle Meta configuré'; }
+            else if (sent.error) { error = sent.error.slice(0, 200); }
+            else {
+              status = 'sent';
+              const cv = rcp.prospectId ? (await query("SELECT id FROM conversations WHERE company_id=$1 AND prospect_id=$2 AND channel='whatsapp' ORDER BY created_at DESC LIMIT 1", [c.companyId, rcp.prospectId])).rows[0] : null;
+              if (cv) await query("INSERT INTO messages(conversation_id,direction,body,provider_message_id) VALUES($1,'out',$2,$3)", [cv.id, '📣 ' + logged, sent.providerMessageId || null]).catch(() => {});
+            }
+          }
+        } catch (e) { error = String(e.message).slice(0, 200); }
+        await query("UPDATE campaign_recipients SET status=$1,error=$2,sent_at=CASE WHEN $1='sent' THEN now() ELSE NULL END WHERE id=$3", [status, error, rcp.id]);
+        await new Promise(r => setTimeout(r, 250));
+      }
+      const left = (await query("SELECT COUNT(*)::int AS n FROM campaign_recipients WHERE campaign_id=$1 AND status IN ('pending','sending')", [c.id])).rows[0].n;
+      if (!left) await query("UPDATE campaigns SET status='Terminée',finished_at=now() WHERE id=$1 AND status='En cours'", [c.id]);
+    }
+  } catch (e) { console.error('[campaigns] echec:', e.message); }
+  finally { campaignTickRunning = false; }
+}
+
 // Statut du quota mensuel de nouveaux prospects (plan Starter/Business/Pro —
 // voir PLAN_LIMITS). limit=null signifie illimité. Utilisé à la fois pour la
 // création manuelle (POST /api/prospects) et pour la création automatique
@@ -1292,8 +1394,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.22',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.22'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.23',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.23'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -1475,6 +1577,18 @@ async function handler(req,res) {
             const text=extractInboundText(msg);
             const conversationRow=await findOrCreateWhatsAppConversation(targetCompanyId,from);
             const ingestResult=await ingestMessage(targetCompanyId,conversationRow.id,conversationRow,{body:text,direction:'in',phone:from,name:contactName,providerMessageId:msg.id||null});
+
+            // Désabonnement des campagnes : STOP / REPRENDRE (réponse automatique courte, sans IA).
+            const optStop=STOP_RE.test(text||''), optResume=RESUME_RE.test(text||'');
+            if((optStop||optResume) && ingestResult.prospectId) {
+              try {
+                await query("UPDATE prospects SET opted_out=$1,opted_out_at=CASE WHEN $1 THEN now() ELSE NULL END WHERE company_id=$3 AND (id=$2 OR right(regexp_replace(COALESCE(phone,''),'\\D','','g'),9)=right(regexp_replace($4,'\\D','','g'),9))",[optStop,ingestResult.prospectId,targetCompanyId,from]);
+                await ingestMessage(targetCompanyId,conversationRow.id,conversationRow,{direction:'out',body: optStop
+                  ? 'Vous ne recevrez plus de messages promotionnels de '+companyRow.name+'. Répondez REPRENDRE pour vous réabonner.'
+                  : 'Merci ! Vous recevrez à nouveau les actualités de '+companyRow.name+'.'});
+              } catch(e) { console.error('[campaigns] echec desabonnement companyId=%s erreur=%s',targetCompanyId,e.message); }
+              continue;
+            }
 
             // Catalogue avec images : si le client vient de sélectionner un
             // article dans la liste interactive et que ce produit a une
@@ -2029,6 +2143,73 @@ async function handler(req,res) {
   // automatiquement (désactivé) à la première lecture pour que l'entreprise le
   // voie tout de suite ; elle choisit ensuite de l'activer. Une vitrine ne peut
   // être activée qu'avec un numéro WhatsApp valide (c'est son bouton principal).
+  // --- Campagnes de diffusion WhatsApp (propriétaire/admin) -----------------
+  if(u.pathname==='/api/campaigns' || u.pathname.startsWith('/api/campaigns/')) {
+    if(!['owner','admin'].includes(await getUserRole(session.userId))) return json(res,403,{error:'Réservé au propriétaire ou à un administrateur.'});
+    const cm=u.pathname.match(/^\/api\/campaigns\/([0-9a-f-]{36})(?:\/(start|cancel))?$/i);
+    if(req.method==='GET'&&u.pathname==='/api/campaigns') {
+      const r=await query(`SELECT c.id,c.name,c.status,c.note,c.created_at AS "createdAt",c.started_at AS "startedAt",c.finished_at AS "finishedAt",
+          COUNT(r.id)::int AS total,COUNT(r.id) FILTER (WHERE r.status='sent')::int AS sent,COUNT(r.id) FILTER (WHERE r.status='failed')::int AS failed,COUNT(r.id) FILTER (WHERE r.status='skipped')::int AS skipped
+        FROM campaigns c LEFT JOIN campaign_recipients r ON r.campaign_id=c.id WHERE c.company_id=$1 GROUP BY c.id ORDER BY c.created_at DESC LIMIT 100`,[companyId]);
+      return json(res,200,{campaigns:r.rows,quota:await campaignQuota(companyId)});
+    }
+    if(req.method==='POST'&&u.pathname==='/api/campaigns') {
+      const b=await body(req);
+      const quota=await campaignQuota(companyId);
+      if(quota.limit===0) return json(res,403,{error:'Les campagnes de diffusion sont disponibles à partir du forfait Business.',upgrade:true});
+      if(b.preview) return json(res,200,{audience:await audienceCount(companyId,cleanAudience(b.audience)),quota});
+      const name=String(b.name||'').trim().slice(0,80), message=String(b.message||'').trim();
+      if(!name) return json(res,400,{error:'Donnez un nom à la campagne.'});
+      if(message.length<5||message.length>900) return json(res,400,{error:'Le message doit faire entre 5 et 900 caractères.'});
+      const tpl=String(b.template||'').trim();
+      if(tpl && !/^[a-z0-9_]{1,512}$/.test(tpl)) return json(res,400,{error:'Nom de modèle invalide : minuscules, chiffres et _ uniquement (tel que dans Meta).'});
+      const lang=String(b.lang||'fr').trim();
+      if(!/^[a-z]{2}(_[A-Z]{2})?$/.test(lang)) return json(res,400,{error:'Code langue invalide (ex. fr, en, en_US).'});
+      const r=await query('INSERT INTO campaigns(company_id,name,message,template_name,template_lang,audience,created_by) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id',[companyId,name,message,tpl||null,lang,JSON.stringify(cleanAudience(b.audience)),session.userId]);
+      return json(res,201,{id:r.rows[0].id});
+    }
+    if(cm && req.method==='GET' && !cm[2]) {
+      const c=(await query('SELECT id,name,message,template_name AS template,template_lang AS lang,audience,status,note,created_at AS "createdAt" FROM campaigns WHERE id=$1 AND company_id=$2',[cm[1],companyId])).rows[0];
+      if(!c) return json(res,404,{error:'Campagne introuvable'});
+      const rc=await query("SELECT phone,first_name AS \"firstName\",status,error FROM campaign_recipients WHERE campaign_id=$1 AND status IN ('failed','skipped') ORDER BY status LIMIT 200",[c.id]);
+      return json(res,200,{campaign:c,problems:rc.rows});
+    }
+    if(cm && cm[2]==='start' && req.method==='POST') {
+      const b=await body(req);
+      if(b.confirmOptIn!==true) return json(res,400,{error:'Confirmez que ces contacts ont accepté de recevoir vos messages.'});
+      const out=await transaction(async client=>{
+        const c=(await client.query("SELECT id,audience,status FROM campaigns WHERE id=$1 AND company_id=$2 FOR UPDATE",[cm[1],companyId])).rows[0];
+        if(!c) return {code:404,error:'Campagne introuvable'};
+        if(c.status!=='Brouillon') return {code:409,error:'Cette campagne a déjà été lancée.'};
+        const ws=await client.query("SELECT whatsapp_phone_number_id AS id,whatsapp_access_token AS tok FROM companies WHERE id=$1",[companyId]);
+        if(!ws.rows[0]?.id||!ws.rows[0]?.tok) return {code:400,error:'Configurez d\'abord WhatsApp dans les Réglages.'};
+        const aud=cleanAudience(c.audience), w=audienceWhere(aud);
+        const rec=await client.query(`SELECT DISTINCT ON (right(regexp_replace(p.phone,'\\D','','g'),9)) p.id,p.phone,p.name FROM prospects p WHERE ${w.cond.join(' AND ')} AND NOT EXISTS (SELECT 1 FROM prospects q WHERE q.company_id=p.company_id AND q.opted_out AND right(regexp_replace(q.phone,'\\D','','g'),9)=right(regexp_replace(p.phone,'\\D','','g'),9)) ORDER BY right(regexp_replace(p.phone,'\\D','','g'),9),p.created_at LIMIT 5000`,[companyId,...w.params]);
+        if(!rec.rows.length) return {code:400,error:'Aucun contact dans cette audience.'};
+        const quota=await campaignQuota(companyId);
+        if(rec.rows.length>quota.remaining) return {code:403,upgrade:true,error:'Quota mensuel insuffisant : '+rec.rows.length+' contacts ciblés, '+quota.remaining+' message(s) restant(s) ce mois-ci ('+quota.limit+' avec le forfait '+quota.plan+').'};
+        for(const p of rec.rows) await client.query('INSERT INTO campaign_recipients(campaign_id,company_id,prospect_id,phone,first_name) VALUES($1,$2,$3,$4,$5)',[c.id,companyId,p.id,p.phone,String(p.name||'').trim().split(/\s+/)[0]||null]);
+        await client.query("UPDATE campaigns SET status='En cours',started_at=now() WHERE id=$1",[c.id]);
+        return {code:200,total:rec.rows.length};
+      });
+      if(out.code!==200) return json(res,out.code,{error:out.error,upgrade:out.upgrade||false});
+      setTimeout(()=>runCampaignTick(),500);
+      return json(res,200,{ok:true,total:out.total});
+    }
+    if(cm && cm[2]==='cancel' && req.method==='POST') {
+      const c=(await query("UPDATE campaigns SET status='Annulée',finished_at=now(),note='Annulée manuellement' WHERE id=$1 AND company_id=$2 AND status='En cours' RETURNING id",[cm[1],companyId])).rows[0];
+      if(!c) return json(res,409,{error:'Seule une campagne en cours peut être annulée.'});
+      await query("UPDATE campaign_recipients SET status='skipped',error='Campagne annulée' WHERE campaign_id=$1 AND status='pending'",[cm[1]]);
+      return json(res,200,{ok:true});
+    }
+    if(cm && !cm[2] && req.method==='DELETE') {
+      const c=await query("DELETE FROM campaigns WHERE id=$1 AND company_id=$2 AND status IN ('Brouillon','Terminée','Annulée') RETURNING id",[cm[1],companyId]);
+      if(!c.rows[0]) return json(res,409,{error:'Impossible de supprimer une campagne en cours : annulez-la d\'abord.'});
+      return json(res,200,{ok:true});
+    }
+    return json(res,404,{error:'Route introuvable'});
+  }
+
   // Notifications WhatsApp automatiques de suivi de commande (propriétaire/admin).
   if(u.pathname==='/api/settings/order-notify' && (req.method==='GET'||req.method==='PATCH')) {
     if(req.method==='PATCH') {
@@ -2918,7 +3099,7 @@ async function ensureMigrations() {
     "ALTER TABLE prospects ADD COLUMN IF NOT EXISTS stage TEXT NOT NULL DEFAULT 'Nouveau'",
     "UPDATE prospects SET stage=status WHERE status IN ('Nouveau','À contacter','En discussion','Gagné','Perdu')",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT",
-    // Commandes passées depuis la vitrine web (1.10.22) : détail du produit, de la
+    // Commandes passées depuis la vitrine web (1.10.23) : détail du produit, de la
     // livraison et du client (le prospect peut manquer si le quota CRM est atteint).
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id) ON DELETE SET NULL",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS product_name TEXT",
@@ -2929,6 +3110,37 @@ async function ensureMigrations() {
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_phone TEXT",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manuel'",
     "ALTER TABLE orders ADD COLUMN IF NOT EXISTS stock_reserved BOOLEAN NOT NULL DEFAULT false",
+    "ALTER TABLE prospects ADD COLUMN IF NOT EXISTS opted_out BOOLEAN NOT NULL DEFAULT false",
+    "ALTER TABLE prospects ADD COLUMN IF NOT EXISTS opted_out_at TIMESTAMPTZ",
+    `CREATE TABLE IF NOT EXISTS campaigns (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+       name TEXT NOT NULL,
+       message TEXT NOT NULL,
+       template_name TEXT,
+       template_lang TEXT NOT NULL DEFAULT 'fr',
+       audience JSONB NOT NULL DEFAULT '{}',
+       status TEXT NOT NULL DEFAULT 'Brouillon',
+       note TEXT,
+       created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+       started_at TIMESTAMPTZ,
+       finished_at TIMESTAMPTZ
+     )`,
+    "CREATE INDEX IF NOT EXISTS campaigns_company_idx ON campaigns(company_id, created_at DESC)",
+    `CREATE TABLE IF NOT EXISTS campaign_recipients (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+       company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+       prospect_id UUID REFERENCES prospects(id) ON DELETE SET NULL,
+       phone TEXT NOT NULL,
+       first_name TEXT,
+       status TEXT NOT NULL DEFAULT 'pending',
+       error TEXT,
+       sent_at TIMESTAMPTZ
+     )`,
+    "CREATE INDEX IF NOT EXISTS campaign_recipients_campaign_idx ON campaign_recipients(campaign_id, status)",
+    "CREATE INDEX IF NOT EXISTS campaign_recipients_company_sent_idx ON campaign_recipients(company_id, sent_at) WHERE status='sent'",
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS order_notify_enabled BOOLEAN NOT NULL DEFAULT false",
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS order_notify_template TEXT",
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS order_notify_lang TEXT NOT NULL DEFAULT 'fr'",
@@ -2977,7 +3189,8 @@ async function ensureMigrations() {
 const server=http.createServer((req,res)=>handler(req,res).catch(e=>{ if(e&&e.status){ return json(res,e.status,{error:e.status===413?'Requête trop volumineuse':'Requête invalide'}); } console.error(e);json(res,500,{error:'Erreur serveur'}); }));
 ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>console.error('[demarrage] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
+  setInterval(()=>runCampaignTick(), 20*1000);
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.22 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.23 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});
