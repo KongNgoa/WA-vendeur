@@ -268,6 +268,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <div id="billOwnerOnly" class="muted hidden" data-i18n="billing_owner_only">Seul l'administrateur de l'équipe peut gérer l'abonnement.</div>
 </div>
 <div class="panel" id="billRenewPanel"><h3 data-i18n="billing_renew_title">Renouveler ou changer de forfait</h3>
+<p id="billRecommend" class="hidden" style="background:#eef6ff;border:2px solid #1f6feb;border-radius:12px;padding:12px;font-weight:600"></p>
 <p class="muted" id="billPendingNote"></p>
 <form class="formgrid" id="billForm" onsubmit="submitRenewal(event)">
 <div><label class="muted" data-i18n="billing_plan_label">Forfait</label><select id="billPlan" onchange="updateBillingInstructions()"></select></div>
@@ -382,6 +383,8 @@ fr: {
   upgrade_blocked_orders:"🚨 URGENT : {n} commande(s) de votre vitrine ({total}) sont BLOQUÉES car votre quota de prospects est atteint. Les coordonnées de vos clients sont masquées et ils attendent votre appel — chaque heure compte.",
   stock_head_critical:"🔴 URGENT — Stock presque épuisé : réapprovisionnez immédiatement !", stock_head_high:"🟠 Stock très bas : réapprovisionnez vite", stock_head_low:"⚠️ Stock faible : pensez à vous réapprovisionner",
   stock_out:"épuisé", stock_left:"reste {n}", stock_rate:"≈ {r} vendu(s)/jour", stock_days:"environ {d} jour(s) de stock", stock_less_day:"moins d'un jour de stock", stock_btn:"Mettre à jour le stock", stock_more:"… et {n} autre(s) produit(s) à surveiller.",
+  renew_current_btn:"Renouveler mon forfait {plan}", billing_option_next:"⭐ {plan} — {price} (recommandé)", billing_option_current:"{plan} — {price} (renouvellement à l'identique)",
+  billing_recommend:"⭐ Recommandé : passez au forfait {plan} pour avoir plus de prospects, d'utilisateurs et de fonctions, sans interruption. Vous pouvez aussi simplement renouveler votre forfait actuel (voir la liste ci-dessous).",
   nav_promo:"Studio promo", promo_title:"Studio promo", promo_desc:"Créez en quelques secondes un texte et une affiche pour un produit de votre catalogue, prêts à publier en statut WhatsApp ou sur les réseaux sociaux.", promo_empty:"Ajoutez d'abord un produit à votre catalogue.",
   promo_product_label:"Produit", promo_format_label:"Type de texte", promo_format_status:"Statut WhatsApp", promo_format_post:"Publication Facebook / Instagram", promo_format_broadcast:"Message à un client",
   btn_generate_text:"✨ Générer le texte", btn_generating:"Génération…", placeholder_promo_text:"Le texte apparaîtra ici — vous pouvez le modifier.", btn_copy_text:"Copier le texte",
@@ -535,6 +538,8 @@ en: {
   upgrade_blocked_orders:"🚨 URGENT: {n} order(s) from your storefront ({total}) are BLOCKED because your lead quota is reached. Your customers' contact details are hidden and they are waiting for your call — every hour counts.",
   stock_head_critical:"🔴 URGENT — Stock almost gone: restock immediately!", stock_head_high:"🟠 Very low stock: restock soon", stock_head_low:"⚠️ Low stock: plan to restock",
   stock_out:"out of stock", stock_left:"{n} left", stock_rate:"≈ {r} sold/day", stock_days:"about {d} day(s) of stock", stock_less_day:"less than a day of stock", stock_btn:"Update stock", stock_more:"… and {n} more product(s) to watch.",
+  renew_current_btn:"Renew my {plan} plan", billing_option_next:"⭐ {plan} — {price} (recommended)", billing_option_current:"{plan} — {price} (same-plan renewal)",
+  billing_recommend:"⭐ Recommended: upgrade to the {plan} plan for more leads, users and features, with no interruption. You can also simply renew your current plan (see the list below).",
   nav_promo:"Promo studio", promo_title:"Promo studio", promo_desc:"Create a text and a poster for a product in your catalog in seconds, ready to post on WhatsApp Status or social media.", promo_empty:"Add a product to your catalog first.",
   promo_product_label:"Product", promo_format_label:"Text type", promo_format_status:"WhatsApp Status", promo_format_post:"Facebook / Instagram post", promo_format_broadcast:"Message to a customer",
   btn_generate_text:"✨ Generate text", btn_generating:"Generating…", placeholder_promo_text:"The text will appear here — you can edit it.", btn_copy_text:"Copy text",
@@ -1613,10 +1618,11 @@ function renderUpgradeBanner(){
   else if(aNear) msg=tf('upgrade_ai_near',{u:ai.used,n:ai.limit});
   let hidden=false; try{ hidden=!full && sessionStorage.getItem('upgradeBannerHidden')==='1'; }catch(e){}
   if(!next||!msg||hidden||data.role!=='owner'){ el.classList.add('hidden'); return; }
-  el.innerHTML='<div class="panel" style="border:2px solid '+(full?'#d62839':'#1f6feb')+';margin:0;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>'+(full?'🚫 ':'📈 ')+msg+' '+tf('upgrade_with',{plan:next})+'</span><span class="actions"><button class="btn primary" onclick="goUpgrade(\''+next+'\')">'+tf('upgrade_btn',{plan:next})+'</button>'+(full?'':'<button class="btn" onclick="hideUpgradeBanner()">✕</button>')+'</span></div>';
+  el.innerHTML='<div class="panel" style="border:2px solid '+(full?'#d62839':'#1f6feb')+';margin:0;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>'+(full?'🚫 ':'📈 ')+msg+' '+tf('upgrade_with',{plan:next})+'</span><span class="actions"><button class="btn primary" style="font-size:1.05em;padding:12px 18px" onclick="goUpgrade(\''+next+'\')">⭐ '+tf('upgrade_btn',{plan:next})+'</button><button class="btn" onclick="goRenew()">'+tf('renew_current_btn',{plan:data.subscription.plan})+'</button>'+(full?'':'<button class="btn" onclick="hideUpgradeBanner()">✕</button>')+'</span></div>';
   el.classList.remove('hidden');
 }
 function hideUpgradeBanner(){ try{ sessionStorage.setItem('upgradeBannerHidden','1'); }catch(e){} $('upgradeBanner').classList.add('hidden'); }
+async function goRenew(){ tab('billing'); await loadBilling(); const cp=billing&&billing.plan; if(cp&&[...$('billPlan').options].some(o=>o.value===cp)){ $('billPlan').value=cp; updateBillingInstructions(); } }
 async function goUpgrade(plan){ tab('billing'); await loadBilling(); if(billing && [...$('billPlan').options].some(o=>o.value===plan)){ $('billPlan').value=plan; updateBillingInstructions(); } }
 // Abonnement : échéance, renouvellement manuel (mobile money) et historique
 let billing=null;
@@ -1628,7 +1634,7 @@ function renderBillingBanner(){
   const days=Math.ceil((new Date(nb)-Date.now())/86400000);
   if(days>5){ el.classList.add('hidden'); return; }
   const late=days<=0;
-  el.innerHTML='<div class="panel" style="border:2px solid '+(late?'#d62839':'#e9b949')+';margin:0;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>'+(late?'⚠️ '+t('billing_banner_late'):'⏳ '+tf('billing_banner_soon',{n:days}))+'</span><button class="btn primary" onclick="tab(\'billing\')">'+t('billing_banner_btn')+'</button></div>';
+  el.innerHTML='<div class="panel" style="border:2px solid '+(late?'#d62839':'#e9b949')+';margin:0;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>'+(late?'⚠️ '+t('billing_banner_late'):'⏳ '+tf('billing_banner_soon',{n:days}))+'</span><span class="actions">'+(NEXT_PLAN[data.subscription?.plan]?'<button class="btn primary" onclick="goUpgrade(\''+NEXT_PLAN[data.subscription.plan]+'\')">⭐ '+tf('upgrade_btn',{plan:NEXT_PLAN[data.subscription.plan]})+'</button><button class="btn" onclick="goRenew()">'+t('billing_banner_btn')+'</button>':'<button class="btn primary" onclick="goRenew()">'+t('billing_banner_btn')+'</button>')+'</span></div>';
   el.classList.remove('hidden');
 }
 async function loadBilling(){
@@ -1642,9 +1648,13 @@ async function loadBilling(){
   $('billStats').innerHTML='<div class="stat"><div class="muted">'+t('billing_plan_label')+'</div><div class="num">'+esc(billing.plan||'—')+'</div></div>'+
     '<div class="stat"><div class="muted">'+t('billing_price')+'</div><div class="num">'+money(billing.monthlyPrice)+'</div></div>'+
     '<div class="stat"><div class="muted">'+t('billing_until')+'</div><div class="num" style="font-size:20px">'+until+'</div><div class="muted">'+left+'</div></div>';
-  const sel=$('billPlan'), cur=sel.value||billing.plan;
-  sel.innerHTML=Object.entries(billing.plans).map(([n,p])=>'<option value="'+n+'">'+n+' — '+money(p)+'</option>').join('');
-  if([...sel.options].some(o=>o.value===cur)) sel.value=cur;
+  const sel=$('billPlan'), cur=sel.value||'';
+  const nextP=NEXT_PLAN[billing.plan];
+  sel.innerHTML=Object.entries(billing.plans).map(([n,p])=>'<option value="'+n+'">'+(n===nextP?tf('billing_option_next',{plan:n,price:money(p)}):n===billing.plan?tf('billing_option_current',{plan:n,price:money(p)}):n+' — '+money(p))+'</option>').join('');
+  const want=cur||nextP||billing.plan;
+  if([...sel.options].some(o=>o.value===want)) sel.value=want;
+  $('billRecommend').innerHTML=nextP?tf('billing_recommend',{plan:nextP}):'';
+  $('billRecommend').classList.toggle('hidden',!nextP);
   $('billPendingNote').textContent=billing.pending?t('billing_pending_note'):t('billing_renew_hint');
   $('billBtn').disabled=!!billing.pending;
   updateBillingInstructions();
