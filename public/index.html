@@ -80,7 +80,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <button class="active" data-tab="dashboard" onclick="tab('dashboard')">📊 <span data-i18n="nav_dashboard">Tableau de bord</span></button>
 <button data-tab="products" onclick="tab('products')">📦 <span data-i18n="nav_products">Produits</span></button>
 <button data-tab="crm" onclick="tab('crm')">👥 <span data-i18n="nav_crm">CRM</span></button>
-<button data-tab="conversations" onclick="tab('conversations')">💬 <span data-i18n="nav_conversations">Conversations</span></button><button data-tab="orders" onclick="tab('orders')">🛒 <span data-i18n="nav_orders">Commandes</span></button><button data-tab="followups" onclick="tab('followups')">🔁 <span data-i18n="nav_followups">Relances</span></button><button data-tab="analytics" onclick="tab('analytics')">📈 <span data-i18n="nav_analytics">Analytics</span></button><button data-tab="assistant" onclick="tab('assistant')">🤖 <span data-i18n="nav_assistant">Assistant IA</span></button><button data-tab="team" onclick="tab('team')">👥 <span data-i18n="nav_team">Équipe</span></button><button data-tab="settings" onclick="tab('settings')">⚙️ <span data-i18n="nav_settings">Réglages WhatsApp</span></button>
+<button data-tab="conversations" onclick="tab('conversations')">💬 <span data-i18n="nav_conversations">Conversations</span></button><button data-tab="orders" onclick="tab('orders')">🛒 <span data-i18n="nav_orders">Commandes</span></button><button data-tab="followups" onclick="tab('followups')">🔁 <span data-i18n="nav_followups">Relances</span></button><button data-tab="analytics" onclick="tab('analytics')">📈 <span data-i18n="nav_analytics">Analytics</span></button><button data-tab="assistant" onclick="tab('assistant')">🤖 <span data-i18n="nav_assistant">Assistant IA</span></button><button data-tab="team" onclick="tab('team')">👥 <span data-i18n="nav_team">Équipe</span></button><button data-tab="referral" onclick="tab('referral')">🤝 <span data-i18n="nav_referral">Parrainage</span></button><button data-tab="settings" onclick="tab('settings')">⚙️ <span data-i18n="nav_settings">Réglages WhatsApp</span></button>
 </nav>
 
 <section id="dashboardTab">
@@ -230,6 +230,27 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 </div>
 </section>
 
+<section id="referralTab" class="hidden">
+<div class="panel"><h3 data-i18n="referral_title">Parrainez et gagnez</h3>
+<p class="muted" id="refDesc"></p>
+<div class="stats" id="refStats"></div>
+<div class="formgrid" style="margin-top:14px">
+<div class="full"><label class="muted" data-i18n="referral_link_label">Votre lien de parrainage</label><input id="refLink" readonly onclick="this.select()"></div>
+<div class="full"><span class="muted" data-i18n="referral_code_label">Votre code :</span> <strong id="refCode"></strong></div>
+<div class="full"><button type="button" class="btn primary" onclick="copyRefLink()" data-i18n="btn_copy_link">Copier le lien</button> <button type="button" class="btn" onclick="shareRefLink()" data-i18n="btn_share_whatsapp">Partager sur WhatsApp</button></div>
+</div>
+<div id="refStatus" style="margin-top:10px"></div>
+</div>
+<div class="panel"><h3 data-i18n="referral_payout_title">Où recevoir vos commissions</h3>
+<p class="muted" data-i18n="referral_payout_desc">Numéro Orange Money ou MTN MoMo sur lequel VENDIA vous verse vos commissions.</p>
+<form class="formgrid" onsubmit="saveReferralPayout(event)">
+<input id="refPhone" placeholder="Numéro de versement (ex. +237 6XX XX XX XX)" data-i18n-placeholder="placeholder_payout_phone">
+<div><button class="btn primary" data-i18n="save_btn">Enregistrer</button></div>
+</form>
+<div id="refPayoutStatus" style="margin-top:10px"></div>
+</div>
+<div class="panel"><h3 data-i18n="referral_list_title">Vos filleuls</h3><div id="refTable"></div></div>
+</section>
 <section id="settingsTab" class="hidden">
 <div class="panel"><h3 data-i18n="whatsapp_conn_title">Connexion WhatsApp (Meta Cloud API)</h3>
 <p class="muted" data-i18n="whatsapp_conn_desc">Renseigne les identifiants obtenus dans ton compte Meta Business (App WhatsApp → Configuration de l'API). Tant que ces champs sont vides, VENDIA fonctionne comme avant : les messages restent enregistrés dans le CRM mais ne sont pas envoyés sur WhatsApp.</p>
@@ -294,6 +315,12 @@ fr: {
   panel_commercial_state:"État commercial", panel_recent_catalog:"Catalogue récent",
   dash_hot:"🔥 Chauds", dash_warm:"🟠 Tièdes", dash_cold:"❄️ Froids", dash_products:"Produits", dash_low_stock:"Stock faible",
   dash_prospects_month:"Prospects ce mois", dash_unlimited:"illimité", empty_products_dash:"Aucun produit.", stock_label:"Stock",
+  nav_referral:"Parrainage", referral_title:"Parrainez et gagnez", referral_desc:"Partagez votre lien : pour chaque entreprise qui s'abonne grâce à vous, vous gagnez {p} % de son paiement (sur ses {n} premiers paiements). Les commissions vous sont versées par mobile money.",
+  referral_link_label:"Votre lien de parrainage", referral_code_label:"Votre code :", btn_share_whatsapp:"Partager sur WhatsApp",
+  referral_share_text:"Découvre VENDIA, l'assistant commercial IA qui répond à tes clients sur WhatsApp 24h/24 : {link}",
+  referral_stat_referred:"Filleuls", referral_stat_pending:"Commissions à recevoir", referral_stat_paid:"Commissions versées",
+  referral_payout_title:"Où recevoir vos commissions", referral_payout_desc:"Numéro Orange Money ou MTN MoMo sur lequel VENDIA vous verse vos commissions.", placeholder_payout_phone:"Numéro de versement (ex. +237 6XX XX XX XX)", referral_payout_saved:"Numéro enregistré.",
+  referral_list_title:"Vos filleuls", referral_th_name:"Entreprise", referral_th_status:"Statut", referral_th_earned:"Gagné", referral_status_active:"Abonné actif", referral_status_waiting:"En attente de paiement", empty_referrals:"Pas encore de filleul. Partagez votre lien pour commencer !",
   shop_title:"Vitrine web (boutique en ligne)", shop_desc:"Une page publique générée depuis votre catalogue, à partager sur Facebook, TikTok ou Instagram. Chaque produit a un bouton « Commander sur WhatsApp » : la vente se conclut dans la conversation avec votre assistant.",
   shop_enable_label:"Activer la vitrine (visible publiquement)", placeholder_shop_whatsapp:"Numéro WhatsApp affiché (ex. +237 6XX XX XX XX)", placeholder_shop_slug:"mon-entreprise", placeholder_shop_tagline:"Slogan ou courte description (optionnel)",
   shop_link_label:"Lien de votre vitrine", btn_copy_link:"Copier le lien", btn_open_shop:"Voir ma vitrine",
@@ -415,6 +442,12 @@ en: {
   panel_commercial_state:"Sales overview", panel_recent_catalog:"Recent catalog",
   dash_hot:"🔥 Hot", dash_warm:"🟠 Warm", dash_cold:"❄️ Cold", dash_products:"Products", dash_low_stock:"Low stock",
   dash_prospects_month:"Leads this month", dash_unlimited:"unlimited", empty_products_dash:"No products.", stock_label:"Stock",
+  nav_referral:"Referrals", referral_title:"Refer and earn", referral_desc:"Share your link: for every business that subscribes through you, you earn {p}% of its payment (on its first {n} payments). Commissions are paid out by mobile money.",
+  referral_link_label:"Your referral link", referral_code_label:"Your code:", btn_share_whatsapp:"Share on WhatsApp",
+  referral_share_text:"Check out VENDIA, the AI sales assistant that answers your customers on WhatsApp 24/7: {link}",
+  referral_stat_referred:"Referrals", referral_stat_pending:"Commissions to receive", referral_stat_paid:"Commissions paid",
+  referral_payout_title:"Where to receive your commissions", referral_payout_desc:"Orange Money or MTN MoMo number VENDIA pays your commissions to.", placeholder_payout_phone:"Payout number (e.g. +237 6XX XX XX XX)", referral_payout_saved:"Number saved.",
+  referral_list_title:"Your referrals", referral_th_name:"Business", referral_th_status:"Status", referral_th_earned:"Earned", referral_status_active:"Active subscriber", referral_status_waiting:"Awaiting payment", empty_referrals:"No referrals yet. Share your link to get started!",
   shop_title:"Web storefront (online shop)", shop_desc:"A public page generated from your catalog, ready to share on Facebook, TikTok or Instagram. Every product has an “Order on WhatsApp” button: the sale closes in the conversation with your assistant.",
   shop_enable_label:"Enable the storefront (publicly visible)", placeholder_shop_whatsapp:"WhatsApp number shown (e.g. +237 6XX XX XX XX)", placeholder_shop_slug:"my-business", placeholder_shop_tagline:"Tagline or short description (optional)",
   shop_link_label:"Your storefront link", btn_copy_link:"Copy link", btn_open_shop:"View my storefront",
@@ -700,7 +733,7 @@ async function load() {
 function tab(name) {
   currentTab=name;
   document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  ['dashboard','products','crm','assistant','conversations','orders','followups','analytics','team','settings'].forEach(x => $(x+'Tab').classList.toggle('hidden', x !== name));
+  ['dashboard','products','crm','assistant','conversations','orders','followups','analytics','team','referral','settings'].forEach(x => $(x+'Tab').classList.toggle('hidden', x !== name));
   if (name === 'products') { renderProducts(); renderOnboardingTemplates(); }
   if (name === 'crm') renderCRM();
   if (name === 'conversations') renderConversations();
@@ -708,6 +741,7 @@ function tab(name) {
   if (name === 'followups') { renderFollowups(); renderAppointments(); }
   if (name === 'analytics') loadAnalytics();
   if (name === 'team') loadTeam();
+  if (name === 'referral') loadReferral();
   if (name === 'assistant') loadAiSettings();
   if (name === 'settings') { loadWhatsappSettings(); loadShopSettings(); loadPaymentSettings(); }
 }
@@ -1231,6 +1265,41 @@ async function testWhatsappSettings(){
       ? '<span class="badge">'+t('test_success_prefix')+' '+esc(r.verifiedName||r.displayPhoneNumber||t('test_verified_number'))+'</span>'
       : '<span class="error">'+t('test_fail_prefix')+' '+esc(r.error||t('test_fail_default'))+'</span>';
   }catch(x){ $('wStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
+}
+
+// Parrainage
+function refLinkOf(code){ return location.origin+'/signup.html?ref='+code; }
+async function loadReferral(){
+  try{
+    const r=await api('/api/referral');
+    $('refDesc').textContent=tf('referral_desc',{p:r.percent,n:r.maxPayments});
+    $('refCode').textContent=r.code;
+    $('refLink').value=refLinkOf(r.code);
+    $('refPhone').value=r.payoutPhone||'';
+    $('refStats').innerHTML=
+      '<div class="stat"><div class="muted">'+t('referral_stat_referred')+'</div><div class="num">'+r.referrals.length+'</div></div>'+
+      '<div class="stat"><div class="muted">'+t('referral_stat_pending')+'</div><div class="num">'+money(r.pending)+'</div></div>'+
+      '<div class="stat"><div class="muted">'+t('referral_stat_paid')+'</div><div class="num">'+money(r.paid)+'</div></div>';
+    $('refTable').innerHTML=r.referrals.length ? '<table><thead><tr><th>'+t('referral_th_name')+'</th><th>'+t('referral_th_status')+'</th><th>'+t('referral_th_earned')+'</th></tr></thead><tbody>'+
+      r.referrals.map(x=>'<tr><td><strong>'+esc(x.name)+'</strong><br><span class="muted">'+dateFmt(x.joinedAt)+'</span></td><td>'+t(x.active?'referral_status_active':'referral_status_waiting')+'</td><td>'+money(x.earned)+'</td></tr>').join('')+
+      '</tbody></table>' : '<div class="empty">'+t('empty_referrals')+'</div>';
+  }catch(x){ $('refStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
+}
+async function copyRefLink(){
+  const v=$('refLink').value; if(!v) return;
+  try{ await navigator.clipboard.writeText(v); $('refStatus').innerHTML='<span class="badge">'+t('shop_link_copied')+'</span>'; }
+  catch(x){ $('refLink').select(); }
+}
+function shareRefLink(){
+  const v=$('refLink').value; if(!v) return;
+  window.open('https://wa.me/?text='+encodeURIComponent(tf('referral_share_text',{link:v})),'_blank','noopener');
+}
+async function saveReferralPayout(e){
+  e.preventDefault();
+  try{
+    await api('/api/referral',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({payoutPhone:$('refPhone').value.trim()})});
+    $('refPayoutStatus').innerHTML='<span class="badge">'+t('referral_payout_saved')+'</span>';
+  }catch(x){ $('refPayoutStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
 }
 
 // Vitrine web publique (/boutique/<slug>)

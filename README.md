@@ -17,7 +17,7 @@ npm install
 npm start
 ```
 
-Variables utiles : `PORT`, `DATABASE_URL`, `ANTHROPIC_API_KEY` (réponse IA automatique sur WhatsApp), `ANTHROPIC_MODEL` (optionnel, défaut `claude-haiku-4-5-20251001`), `META_APP_SECRET` (vérification de signature du webhook WhatsApp), `ENCRYPTION_KEY` (chiffre le jeton d'accès WhatsApp en base — recommandé en production, voir 1.10.6), `REQUIRE_WEBHOOK_SIGNATURE` (optionnel, `true` pour rejeter les webhooks WhatsApp sans signature valide — à activer seulement une fois `META_APP_SECRET` confirmé configuré).
+Variables utiles : `PORT`, `DATABASE_URL`, `ANTHROPIC_API_KEY` (réponse IA automatique sur WhatsApp), `ANTHROPIC_MODEL` (optionnel, défaut `claude-haiku-4-5-20251001`), `META_APP_SECRET` (vérification de signature du webhook WhatsApp), `ENCRYPTION_KEY` (chiffre le jeton d'accès WhatsApp en base — recommandé en production, voir 1.10.6), `REQUIRE_WEBHOOK_SIGNATURE` (optionnel, `true` pour rejeter les webhooks WhatsApp sans signature valide — à activer seulement une fois `META_APP_SECRET` confirmé configuré). `AFFILIATE_PERCENT` (commission de parrainage en %, défaut `20`, `0` pour la désactiver) et `AFFILIATE_MAX_PAYMENTS` (nombre maximal de paiements d'un filleul qui rapportent une commission, défaut `12`) — voir 1.10.10.
 
 Compte super-admin (vision et contrôle sur toutes les entreprises, via `/superadmin.html`) : `SUPERADMIN_EMAIL`, `SUPERADMIN_PASSWORD` (créés/synchronisés automatiquement au démarrage — changer `SUPERADMIN_PASSWORD` sur Railway suffit à faire tourner le mot de passe), `SUPERADMIN_NAME` (optionnel).
 
@@ -86,5 +86,11 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - **Désactivée par défaut** : l'entreprise choisit son lien (modifiable), renseigne le numéro WhatsApp affiché (un numéro camerounais local reçoit automatiquement l'indicatif +237) puis l'active. Impossible d'activer sans numéro WhatsApp valide.
 - **Pensée pour le référencement et le partage** : aperçu riche (titre, description, photo) dans Facebook/WhatsApp, données structurées schema.org (produits, prix en XAF, disponibilité), lien canonique.
 - **Sûre** : tout le contenu est échappé, la page disparaît (404) si l'entreprise la désactive, est suspendue ou n'est pas encore validée, et les requêtes répétées sont limitées par IP.
+
+## Programme de parrainage (1.10.10)
+- **Un lien de parrainage par entreprise** (nouvel onglet "Parrainage") : `/signup.html?ref=<code>`, à copier ou à partager d'un clic sur WhatsApp. Le champ "Code de parrainage" de l'inscription est pré-rempli ; un code inconnu ou invalide n'empêche jamais l'inscription.
+- **Commission calculée à la validation du paiement du filleul** : `AFFILIATE_PERCENT` % du montant (20 % par défaut), sur ses `AFFILIATE_MAX_PAYMENTS` premiers paiements (12 par défaut). Un paiement ne génère jamais deux commissions, et aucune commission n'est due si le parrain est suspendu ou non validé. Le parrain est prévenu par e-mail (si `RESEND_API_KEY` est configurée).
+- **Versement manuel, suivi dans l'appli** : le parrain renseigne son numéro Orange Money / MTN MoMo ; le super-admin voit les commissions à verser (panneau "Commissions de parrainage à verser"), les règle par mobile money puis les marque comme versées — le parrain est prévenu et ses compteurs "à recevoir / versées" se mettent à jour.
+- Le tableau du parrain montre ses filleuls (abonné actif ou en attente de paiement) et ce que chacun lui a rapporté.
 
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.

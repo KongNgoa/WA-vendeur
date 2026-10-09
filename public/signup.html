@@ -48,6 +48,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <input id="ownerName" placeholder="Votre nom complet" required data-i18n-placeholder="placeholder_your_name">
 <input id="ownerEmail" type="email" placeholder="Votre email" required data-i18n-placeholder="placeholder_your_email">
 <input id="ownerPassword" type="password" placeholder="Mot de passe (min. 6 caractères)" required class="full" data-i18n-placeholder="placeholder_password_min6">
+<input id="referralCode" class="full" maxlength="12" autocapitalize="characters" autocomplete="off" placeholder="Code de parrainage (optionnel)" data-i18n-placeholder="placeholder_referral_code">
 
 <div class="full"><h3 style="margin-bottom:4px" data-i18n="step3_title">3. Paiement</h3></div>
 <div class="full methods" id="methods"></div>
@@ -77,6 +78,7 @@ fr: {
   placeholder_company_name:"Nom de l'entreprise", placeholder_sector:"Secteur d'activité",
   placeholder_your_name:"Votre nom complet", placeholder_your_email:"Votre email",
   placeholder_password_min6:"Mot de passe (min. 6 caractères)",
+  placeholder_referral_code:"Code de parrainage (optionnel)",
   placeholder_payer_phone:"Votre numéro (celui utilisé pour payer)", placeholder_reference:"Référence de la transaction",
   btn_create_account:"Créer mon compte",
   activation_note:"Votre compte sera activé dès que le paiement sera validé (généralement sous quelques heures). Vous serez averti par email.",
@@ -93,6 +95,7 @@ en: {
   placeholder_company_name:"Company name", placeholder_sector:"Business sector",
   placeholder_your_name:"Your full name", placeholder_your_email:"Your email",
   placeholder_password_min6:"Password (min. 6 characters)",
+  placeholder_referral_code:"Referral code (optional)",
   placeholder_payer_phone:"Your number (the one you paid with)", placeholder_reference:"Transaction reference",
   btn_create_account:"Create my account",
   activation_note:"Your account will be activated once payment is confirmed (usually within a few hours). You'll be notified by email.",
@@ -159,6 +162,7 @@ async function submitSignup(e){
       companyName:$('companyName').value.trim(), sector:$('sector').value.trim(),
       ownerName:$('ownerName').value.trim(), ownerEmail:$('ownerEmail').value.trim(), ownerPassword:$('ownerPassword').value,
       plan:selectedPlan, paymentMethod:selectedMethod, payerPhone:$('payerPhone').value.trim(), reference:$('reference').value.trim(),
+      referralCode:$('referralCode').value.trim(),
       lang
     })});
     const d=await r.json();
@@ -169,6 +173,8 @@ async function submitSignup(e){
   }catch(x){ status.className='error'; status.textContent=x.message; }
 }
 applyI18n();
+// Lien de parrainage /signup.html?ref=CODE : pré-remplit le champ code.
+try{ const ref=new URLSearchParams(location.search).get('ref'); if(ref) $('referralCode').value=ref.replace(/[^A-Za-z0-9]/g,'').toUpperCase().slice(0,12); }catch(e){}
 loadPlans();
 </script>
 </body></html>

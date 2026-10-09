@@ -16,6 +16,12 @@ const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-2025100
 // d'environnement pour pouvoir les changer sans redéploiement de code.
 const ORANGE_MONEY_NUMBER = process.env.ORANGE_MONEY_NUMBER || '+237691965012';
 const MTN_MOMO_NUMBER = process.env.MTN_MOMO_NUMBER || '+237672353499';
+// Programme de parrainage : chaque entreprise a un code ; quand un filleul voit
+// un paiement d'abonnement validé, le parrain gagne AFFILIATE_PERCENT % du
+// montant, sur au plus AFFILIATE_MAX_PAYMENTS paiements par filleul. Les deux
+// valeurs se règlent par variable d'environnement sans toucher au code.
+const AFFILIATE_PERCENT = Math.min(90, Math.max(0, Number(process.env.AFFILIATE_PERCENT ?? 20) || 0));
+const AFFILIATE_MAX_PAYMENTS = Math.max(1, Math.floor(Number(process.env.AFFILIATE_MAX_PAYMENTS ?? 12) || 12));
 const json = (res,status,data) => { res.writeHead(status, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY','Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type, Authorization','Access-Control-Allow-Methods':'GET,POST,PUT,PATCH,DELETE,OPTIONS'}); res.end(JSON.stringify(data)); };
 const body = async req => { let s=''; for await (const c of req) s += c; if (s.length > 1000000) throw new Error('Payload trop volumineux'); return s ? JSON.parse(s) : {}; };
 const rawBody = async req => { let s=''; for await (const c of req) s += c; if (s.length > 1000000) throw new Error('Payload trop volumineux'); return s; };
@@ -460,6 +466,47 @@ function renderShopPage(c, products, origin) {
     'function run(){var t=q.value.trim().toLowerCase(),n=0;cards.forEach(function(c){var ok=(!t||c.dataset.name.indexOf(t)>-1)&&(!cat||c.dataset.cat===cat);c.hidden=!ok;if(ok)n++;});none.hidden=n>0;}' +
     'q.addEventListener("input",run);chips.forEach(function(b){b.addEventListener("click",function(){cat=(cat===b.dataset.cat)?"":b.dataset.cat;chips.forEach(function(x){x.classList.toggle("on",x.dataset.cat===cat);});run();});});})();</script>' +
     '</body></html>';
+}
+
+// ---- Programme de parrainage ----------------------------------------------
+const REFERRAL_CODE_RE = /^[A-Z0-9]{4,12}$/;
+// Alphabet sans caractères ambigus (0/O, 1/I) : le code se dicte et se retape.
+const REFERRAL_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+async function getOrCreateReferralCode(companyId) {
+  const cur = await query('SELECT referral_code AS code FROM companies WHERE id=$1', [companyId]);
+  if (!cur.rows[0]) return null;
+  if (cur.rows[0].code) return cur.rows[0].code;
+  for (let i = 0; i < 20; i++) {
+    let code = '';
+    for (let k = 0; k < 6; k++) code += REFERRAL_ALPHABET[crypto.randomInt(REFERRAL_ALPHABET.length)];
+    try {
+      const r = await query('UPDATE companies SET referral_code=$1 WHERE id=$2 AND referral_code IS NULL RETURNING referral_code AS code', [code, companyId]);
+      if (r.rows[0]) return r.rows[0].code;
+      const again = await query('SELECT referral_code AS code FROM companies WHERE id=$1', [companyId]); // posé entre-temps par une autre requête
+      if (again.rows[0]?.code) return again.rows[0].code;
+    } catch (e) { /* collision d'unicité : on retente avec un autre code */ }
+  }
+  throw new Error('Impossible de générer un code de parrainage');
+}
+// Appelée DANS la transaction de validation d'un paiement. Idempotente (un
+// paiement ne génère jamais deux commissions) et plafonnée par filleul.
+// Retourne {id,referrerId,amount} ou null si aucune commission n'est due.
+async function recordReferralCommission(client, referredCompanyId, paymentRequestId, baseAmount) {
+  if (!(AFFILIATE_PERCENT > 0)) return null;
+  const ref = await client.query(
+    `SELECT c.referred_by AS "referrerId" FROM companies c JOIN companies rc ON rc.id=c.referred_by
+      WHERE c.id=$1 AND rc.suspended=false AND rc.approved_at IS NOT NULL`, [referredCompanyId]);
+  if (!ref.rows[0]) return null;
+  const done = await client.query('SELECT COUNT(*)::int AS n FROM referral_commissions WHERE referred_company_id=$1', [referredCompanyId]);
+  if (done.rows[0].n >= AFFILIATE_MAX_PAYMENTS) return null;
+  const amount = Math.round(Number(baseAmount) * AFFILIATE_PERCENT / 100);
+  if (!(amount > 0)) return null;
+  const ins = await client.query(
+    `INSERT INTO referral_commissions(referrer_company_id,referred_company_id,payment_request_id,base_amount,percent,amount)
+     VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT (payment_request_id) DO NOTHING
+     RETURNING id,referrer_company_id AS "referrerId",amount`,
+    [ref.rows[0].referrerId, referredCompanyId, paymentRequestId, Number(baseAmount), AFFILIATE_PERCENT, amount]);
+  return ins.rows[0] || null;
 }
 
 function classifyLead(text, products=[], prospect={}) {
@@ -1001,8 +1048,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.9',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.9'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.10',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.10'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -1266,8 +1313,16 @@ async function handler(req,res) {
     const existingUser=await query('SELECT id FROM users WHERE email=$1',[email]);
     if(existingUser.rows[0]) return json(res,409,{error:SIGNUP_MSG.emailUsed});
     const amount=planLimits(plan).monthlyPrice;
+    // Code de parrainage optionnel : un code inconnu ou d'une entreprise
+    // suspendue est ignoré en silence (il ne doit jamais bloquer l'inscription).
+    let referrer=null;
+    const refCode=String(b.referralCode||'').trim().toUpperCase();
+    if(REFERRAL_CODE_RE.test(refCode)) {
+      const rr=await query('SELECT id,name FROM companies WHERE referral_code=$1 AND suspended=false',[refCode]);
+      referrer=rr.rows[0]||null;
+    }
     const result=await transaction(async client=>{
-      const c=await client.query('INSERT INTO companies(name,sector) VALUES($1,$2) RETURNING id',[String(b.companyName).trim(),b.sector||null]);
+      const c=await client.query('INSERT INTO companies(name,sector,referred_by) VALUES($1,$2,$3) RETURNING id',[String(b.companyName).trim(),b.sector||null,referrer?referrer.id:null]);
       const newCompanyId=c.rows[0].id;
       await client.query('INSERT INTO subscriptions(company_id,plan,status,monthly_price) VALUES($1,$2,$3,$4)',[newCompanyId,plan,'trial',amount]);
       const h=hashPassword(String(b.ownerPassword));
@@ -1282,7 +1337,8 @@ async function handler(req,res) {
       '<li>Propriétaire : '+escHtml(b.ownerName)+' — '+escHtml(email)+'</li>'+
       '<li>Moyen de paiement : '+(b.paymentMethod==='orange_money'?'Orange Money':'MTN Mobile Money')+'</li>'+
       '<li>Numéro payeur : '+escHtml(b.payerPhone)+'</li>'+
-      '<li>Référence : '+escHtml(b.reference)+'</li></ul>'+
+      '<li>Référence : '+escHtml(b.reference)+'</li>'+
+      (referrer?'<li>Parrainé par : '+escHtml(referrer.name)+' (code '+escHtml(refCode)+')</li>':'')+'</ul>'+
       '<p>Validez depuis le panneau super-admin : /superadmin.html</p>');
     return json(res,201,{ok:true,companyId:result.companyId,message:SIGNUP_MSG.success});
   }
@@ -1418,11 +1474,20 @@ async function handler(req,res) {
       const pr=await query('SELECT id,company_id AS "companyId",plan,amount FROM payment_requests WHERE id=$1 AND status=\'pending\'',[prApproveMatch[1]]);
       if(!pr.rows[0]) return json(res,404,{error:'Demande introuvable ou déjà traitée'});
       const {companyId:pendingCompanyId,plan}=pr.rows[0];
-      await transaction(async client=>{
+      const commission=await transaction(async client=>{
         await client.query('UPDATE payment_requests SET status=\'approved\',decided_at=now() WHERE id=$1',[prApproveMatch[1]]);
         await client.query('UPDATE companies SET approved_at=COALESCE(approved_at,now()) WHERE id=$1',[pendingCompanyId]);
         await client.query('UPDATE subscriptions SET plan=$1,status=\'active\',monthly_price=$2 WHERE company_id=$3',[plan,planLimits(plan).monthlyPrice,pendingCompanyId]);
+        return recordReferralCommission(client,pendingCompanyId,prApproveMatch[1],pr.rows[0].amount);
       });
+      if(commission) {
+        // Prévient le parrain (sans effet si l'envoi d'e-mails n'est pas configuré).
+        const refOwners=await query("SELECT email,name FROM users WHERE company_id=$1 AND role='owner'",[commission.referrerId]);
+        for(const o of refOwners.rows) {
+          await sendEmail(o.email,'Parrainage VENDIA : vous avez gagné une commission 🎉',
+            '<p>Bonjour '+escHtml(o.name)+',</p><p>Un de vos filleuls vient de voir son paiement validé : vous gagnez <strong>'+Number(commission.amount).toLocaleString('fr-FR')+' FCFA</strong> de commission. Retrouvez le détail dans l\'onglet Parrainage de votre espace VENDIA.</p>');
+        }
+      }
       const owners=await query("SELECT email,name FROM users WHERE company_id=$1 AND role='owner'",[pendingCompanyId]);
       for(const o of owners.rows) {
         await sendEmail(o.email,'Votre compte VENDIA est activé 🎉',
@@ -1434,6 +1499,29 @@ async function handler(req,res) {
     if(prRejectMatch&&req.method==='POST') {
       const r=await query('UPDATE payment_requests SET status=\'rejected\',decided_at=now() WHERE id=$1 AND status=\'pending\' RETURNING id',[prRejectMatch[1]]);
       if(!r.rows[0]) return json(res,404,{error:'Demande introuvable ou déjà traitée'});
+      return json(res,200,{ok:true});
+    }
+
+    // Commissions de parrainage : le super-admin les verse à la main (mobile
+    // money) puis les marque comme payées. Le numéro de versement est celui que
+    // le parrain a renseigné dans son onglet Parrainage.
+    if(req.method==='GET'&&u.pathname==='/api/superadmin/referral-commissions') {
+      const status=u.searchParams.get('status')==='paid'?'paid':'pending';
+      const r=await query(`SELECT rc.id,rc.amount,rc.percent,rc.base_amount AS "baseAmount",rc.status,rc.created_at AS "createdAt",rc.paid_at AS "paidAt",
+          ref.name AS "referrerName",ref.referral_payout_phone AS "payoutPhone",fil.name AS "referredName"
+        FROM referral_commissions rc JOIN companies ref ON ref.id=rc.referrer_company_id JOIN companies fil ON fil.id=rc.referred_company_id
+        WHERE rc.status=$1 ORDER BY rc.created_at DESC LIMIT 500`,[status]);
+      return json(res,200,{commissions:r.rows.map(x=>({...x,amount:Number(x.amount),percent:Number(x.percent),baseAmount:Number(x.baseAmount)}))});
+    }
+    const rcPayMatch=u.pathname.match(/^\/api\/superadmin\/referral-commissions\/([0-9a-f-]+)\/pay$/i);
+    if(rcPayMatch&&req.method==='POST') {
+      const r=await query('UPDATE referral_commissions SET status=\'paid\',paid_at=now() WHERE id=$1 AND status=\'pending\' RETURNING id,amount,referrer_company_id AS "referrerId"',[rcPayMatch[1]]);
+      if(!r.rows[0]) return json(res,404,{error:'Commission introuvable ou déjà versée'});
+      const owners=await query("SELECT email,name FROM users WHERE company_id=$1 AND role='owner'",[r.rows[0].referrerId]);
+      for(const o of owners.rows) {
+        await sendEmail(o.email,'Votre commission de parrainage VENDIA a été versée',
+          '<p>Bonjour '+escHtml(o.name)+',</p><p>Votre commission de <strong>'+Number(r.rows[0].amount).toLocaleString('fr-FR')+' FCFA</strong> vient de vous être versée. Merci de faire connaître VENDIA !</p>');
+      }
       return json(res,200,{ok:true});
     }
 
@@ -1588,6 +1676,31 @@ async function handler(req,res) {
     if(enabled&&!whatsapp) return json(res,400,{error:'Renseignez votre numéro WhatsApp avant d\'activer la vitrine.'});
     await query('UPDATE companies SET shop_slug=$1,shop_enabled=$2,shop_whatsapp=$3,shop_tagline=$4 WHERE id=$5',[slug,enabled,whatsapp,tagline,companyId]);
     return json(res,200,{ok:true,enabled,slug,whatsapp:whatsapp||'',tagline:tagline||''});
+  }
+
+  // Parrainage : code + lien du parrain, filleuls et commissions. Le code est
+  // créé à la première lecture. Les montants sont versés à la main par le
+  // super-admin sur le numéro mobile money renseigné ici.
+  if(req.method==='GET'&&u.pathname==='/api/referral') {
+    const code=await getOrCreateReferralCode(companyId);
+    const tot=await query(`SELECT COALESCE(SUM(amount) FILTER (WHERE status='pending'),0) AS pending,COALESCE(SUM(amount) FILTER (WHERE status='paid'),0) AS paid
+      FROM referral_commissions WHERE referrer_company_id=$1`,[companyId]);
+    const refs=await query(`SELECT c.name,c.created_at AS "joinedAt",(c.approved_at IS NOT NULL) AS active,COALESCE(SUM(rc.amount),0) AS earned
+      FROM companies c LEFT JOIN referral_commissions rc ON rc.referred_company_id=c.id
+      WHERE c.referred_by=$1 GROUP BY c.id ORDER BY c.created_at DESC LIMIT 200`,[companyId]);
+    const me=await query('SELECT referral_payout_phone AS "payoutPhone" FROM companies WHERE id=$1',[companyId]);
+    return json(res,200,{
+      code,percent:AFFILIATE_PERCENT,maxPayments:AFFILIATE_MAX_PAYMENTS,payoutPhone:me.rows[0]?.payoutPhone||'',
+      pending:Number(tot.rows[0].pending),paid:Number(tot.rows[0].paid),
+      referrals:refs.rows.map(x=>({name:x.name,joinedAt:x.joinedAt,active:x.active,earned:Number(x.earned)}))
+    });
+  }
+  if(req.method==='PATCH'&&u.pathname==='/api/referral') {
+    const b=await body(req);
+    const phone=String(b.payoutPhone||'').trim().slice(0,30);
+    if(phone&&!/^\+?[0-9 ()-]{6,30}$/.test(phone)) return json(res,400,{error:'Numéro de versement invalide. Exemple : +237 6XX XX XX XX'});
+    await query('UPDATE companies SET referral_payout_phone=$1 WHERE id=$2',[phone||null,companyId]);
+    return json(res,200,{ok:true,payoutPhone:phone});
   }
 
   // Rendez-vous (livraison, démo, appel…) détectés automatiquement dans les
@@ -2288,6 +2401,25 @@ async function ensureMigrations() {
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_whatsapp TEXT",
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_tagline TEXT",
     "CREATE UNIQUE INDEX IF NOT EXISTS companies_shop_slug_idx ON companies(shop_slug) WHERE shop_slug IS NOT NULL",
+    // Programme de parrainage.
+    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS referral_code TEXT",
+    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS referred_by UUID REFERENCES companies(id) ON DELETE SET NULL",
+    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS referral_payout_phone TEXT",
+    "CREATE UNIQUE INDEX IF NOT EXISTS companies_referral_code_idx ON companies(referral_code) WHERE referral_code IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS companies_referred_by_idx ON companies(referred_by) WHERE referred_by IS NOT NULL",
+    `CREATE TABLE IF NOT EXISTS referral_commissions (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       referrer_company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+       referred_company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+       payment_request_id UUID NOT NULL UNIQUE REFERENCES payment_requests(id) ON DELETE CASCADE,
+       base_amount NUMERIC(12,2) NOT NULL,
+       percent NUMERIC(5,2) NOT NULL,
+       amount NUMERIC(12,2) NOT NULL,
+       status TEXT NOT NULL DEFAULT 'pending',
+       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+       paid_at TIMESTAMPTZ
+     )`,
+    "CREATE INDEX IF NOT EXISTS referral_commissions_referrer_idx ON referral_commissions(referrer_company_id,status)",
   ];
   for (const stmt of statements) {
     try { await query(stmt); } catch(e) { console.error('[migrations] echec:',stmt.split('\n')[0],e.message); }
@@ -2301,6 +2433,6 @@ const server=http.createServer((req,res)=>handler(req,res).catch(e=>{console.err
 ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>console.error('[demarrage] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.9 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.10 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

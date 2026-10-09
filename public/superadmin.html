@@ -58,6 +58,10 @@ input,select{width:100%;padding:10px;border:1px solid #d9deea;border-radius:10px
 <div id="pendingTable"></div>
 </div>
 
+<div class="panel"><h3 data-i18n="commissions_title">Commissions de parrainage à verser</h3> <span class="muted" id="commissionCount"></span>
+<div id="commissionTable"></div>
+</div>
+
 <div class="panel"><h3 data-i18n="companies_title">Entreprises</h3> <span class="muted" id="companyCount"></span>
 <div id="companyTable"></div>
 </div>
@@ -87,6 +91,8 @@ fr: {
   new_company_title:"Nouvelle entreprise", placeholder_company_name:"Nom de l'entreprise", placeholder_sector:"Secteur",
   placeholder_owner_name:"Nom du propriétaire", placeholder_owner_email:"Email du propriétaire", placeholder_password_min6:"Mot de passe (min. 6 caractères)",
   btn_create_company:"Créer l'entreprise",
+  commissions_title:"Commissions de parrainage à verser", th_referrer:"Parrain", th_payout_phone:"Numéro de versement", th_referred:"Filleul", btn_mark_paid:"Marquer comme versée",
+  empty_commissions:"Aucune commission à verser.", confirm_pay_commission:"Confirmer que cette commission a bien été versée au parrain ?", payout_phone_missing:"non renseigné",
   pending_payments_title:"Validations de paiement en attente", companies_title:"Entreprises",
   detail_default_title:"Détail", btn_close:"Fermer", members_title:"Membres", placeholder_name:"Nom",
   role_owner:"👑 Administrateur", role_admin:"Responsable", role_sales:"Commercial", role_viewer:"Lecture seule",
@@ -116,6 +122,8 @@ en: {
   new_company_title:"New company", placeholder_company_name:"Company name", placeholder_sector:"Sector",
   placeholder_owner_name:"Owner's name", placeholder_owner_email:"Owner's email", placeholder_password_min6:"Password (min. 6 characters)",
   btn_create_company:"Create company",
+  commissions_title:"Referral commissions to pay", th_referrer:"Referrer", th_payout_phone:"Payout number", th_referred:"Referred", btn_mark_paid:"Mark as paid",
+  empty_commissions:"No commissions to pay.", confirm_pay_commission:"Confirm this commission has been paid to the referrer?", payout_phone_missing:"not provided",
   pending_payments_title:"Pending payment approvals", companies_title:"Companies",
   detail_default_title:"Details", btn_close:"Close", members_title:"Members", placeholder_name:"Name",
   role_owner:"👑 Admin", role_admin:"Manager", role_sales:"Sales rep", role_viewer:"Read only",
@@ -196,12 +204,25 @@ function logout(){
 
 async function loadCompanies(){
   try{
-    const [cr,pr]=await Promise.all([api('/api/superadmin/companies'),api('/api/superadmin/payment-requests?status=pending')]);
+    const [cr,pr,cm]=await Promise.all([api('/api/superadmin/companies'),api('/api/superadmin/payment-requests?status=pending'),api('/api/superadmin/referral-commissions?status=pending')]);
     companies=cr.companies||[];
     renderCompanies();
     lastPending=pr.paymentRequests||[];
     renderPending(lastPending);
+    renderCommissions(cm.commissions||[]);
   }catch(e){ $('companyTable').innerHTML='<div class="error">'+esc(e.message)+'</div>'; }
+}
+function renderCommissions(list){
+  $('commissionCount').textContent='('+list.length+')';
+  $('commissionTable').innerHTML = list.length ? '<table><thead><tr><th>'+t('th_referrer')+'</th><th>'+t('th_payout_phone')+'</th><th>'+t('th_referred')+'</th><th>'+t('th_amount')+'</th><th>'+t('th_actions')+'</th></tr></thead><tbody>'+
+    list.map(c=>'<tr><td><strong>'+esc(c.referrerName)+'</strong></td><td>'+(c.payoutPhone?esc(c.payoutPhone):'<span class="muted">'+t('payout_phone_missing')+'</span>')+'</td><td>'+esc(c.referredName)+'</td><td>'+money(c.amount)+'</td>'+
+      '<td><button class="btn primary" onclick="payCommission(\''+c.id+'\')">'+t('btn_mark_paid')+'</button></td></tr>').join('')+
+    '</tbody></table>' : '<div class="empty">'+t('empty_commissions')+'</div>';
+}
+async function payCommission(id){
+  if(!confirm(t('confirm_pay_commission'))) return;
+  try{ await api('/api/superadmin/referral-commissions/'+id+'/pay',{method:'POST'}); await loadCompanies(); }
+  catch(x){ alert(x.message); }
 }
 function renderPending(list){
   $('pendingCount').textContent='('+list.length+')';

@@ -282,3 +282,23 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_enabled BOOLEAN NOT NULL DEF
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_whatsapp TEXT;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS shop_tagline TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS companies_shop_slug_idx ON companies(shop_slug) WHERE shop_slug IS NOT NULL;
+
+-- Programme de parrainage : code par entreprise, filleuls et commissions
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS referral_code TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS referred_by UUID REFERENCES companies(id) ON DELETE SET NULL;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS referral_payout_phone TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS companies_referral_code_idx ON companies(referral_code) WHERE referral_code IS NOT NULL;
+CREATE INDEX IF NOT EXISTS companies_referred_by_idx ON companies(referred_by) WHERE referred_by IS NOT NULL;
+CREATE TABLE IF NOT EXISTS referral_commissions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  referrer_company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  referred_company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  payment_request_id UUID NOT NULL UNIQUE REFERENCES payment_requests(id) ON DELETE CASCADE,
+  base_amount NUMERIC(12,2) NOT NULL,
+  percent NUMERIC(5,2) NOT NULL,
+  amount NUMERIC(12,2) NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  paid_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS referral_commissions_referrer_idx ON referral_commissions(referrer_company_id,status);
