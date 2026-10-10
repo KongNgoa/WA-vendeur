@@ -111,6 +111,34 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
  .si.active:before{left:-14px}
  .sideScrim{display:block;position:fixed;inset:0;background:#0b144288;z-index:55;opacity:0;pointer-events:none;transition:opacity .25s}.sideScrim.on{opacity:1;pointer-events:auto}
 }
+
+/* ---- barre de stock compacte ---- */
+.stkBar{background:#fff;border-radius:14px;border-left:5px solid #e9b949;box-shadow:0 6px 20px #0b144210;padding:9px 14px}
+.stkRow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.stkHead{font-size:14px;white-space:nowrap}
+.stkChips{display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:0}.stkChip{background:#f3f6fc;border-radius:999px;padding:3px 10px;font-size:12.5px;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}.stkChip b{margin-left:3px}.stkChip.more{background:#e9edf5;font-weight:700}
+.stkAct{display:flex;align-items:center;gap:10px;margin-left:auto}.stkLink{border:0;background:none;color:#687386;font:inherit;font-size:13px;font-weight:600;cursor:pointer;text-decoration:underline}.stkBtn{padding:7px 12px!important;font-size:13px}
+.stkList{margin:8px 0 2px;padding-left:20px;font-size:13px;line-height:1.7}
+@media(max-width:640px){.stkChips{display:none}.stkAct{margin-left:auto}header .brand .tag[data-i18n]{display:none}}
+/* ---- bulle d'aide ---- */
+.supPanel.hidden,.supActs.hidden,.supDot.hidden,.supHumanHidden,#supHumanBtn.hidden{display:none!important}
+.supBubble{position:fixed;right:22px;bottom:22px;z-index:70;display:flex;align-items:center;gap:8px;border:0;border-radius:999px;padding:13px 20px 13px 16px;background:var(--gradient);color:#fff;font:inherit;font-weight:800;font-size:15px;cursor:pointer;box-shadow:0 12px 30px #17a2fe66;transition:transform .15s}.supBubble:hover{transform:translateY(-2px)}
+.supIc{font-size:20px;line-height:1}.supDot{position:absolute;top:-2px;right:-2px;width:16px;height:16px;border-radius:50%;background:#d62839;border:3px solid #fff}
+.supPanel{position:fixed;right:22px;bottom:90px;z-index:71;width:380px;max-width:calc(100vw - 24px);height:min(600px,calc(100vh - 120px));background:#fff;border-radius:22px;box-shadow:0 24px 70px #0b144255;display:flex;flex-direction:column;overflow:hidden}
+.supHead{display:flex;align-items:center;gap:12px;padding:14px 16px;background:linear-gradient(135deg,var(--navy),#1c3fb8);color:#fff}
+.supAv{width:40px;height:40px;border-radius:50%;background:var(--green);color:#062a1a;font-weight:900;display:flex;align-items:center;justify-content:center;flex:none}
+.supHt{flex:1;min-width:0;display:flex;flex-direction:column}.supHt strong{font-size:16px}.supSt{font-size:12px;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.supX{border:0;background:#ffffff22;color:#fff;width:32px;height:32px;border-radius:50%;font-size:20px;cursor:pointer;line-height:1}
+.supMsgs{flex:1;overflow:auto;padding:14px;background:#f5f7fb;display:flex;flex-direction:column;gap:9px}
+.supM{max-width:86%;padding:10px 13px;border-radius:16px;font-size:14px;line-height:1.45;white-space:pre-wrap;word-break:break-word;box-shadow:0 1px 3px #0001}
+.supM.user{align-self:flex-end;background:#d9fdd3;border-bottom-right-radius:5px}.supM.ai{align-self:flex-start;background:#fff;border-bottom-left-radius:5px}.supM.admin{align-self:flex-start;background:#e8f0ff;border:1px solid #c7d8ff;border-bottom-left-radius:5px}
+.supM .who{display:block;font-size:11px;font-weight:800;color:#687386;margin-bottom:2px}.supM.admin .who{color:#2a56c6}
+.supM.system{align-self:center;max-width:94%;background:#fff6dc;color:#7a5200;font-size:13px;text-align:center;box-shadow:none}
+.supTyping{align-self:flex-start;background:#fff;border-radius:16px;padding:10px 14px;display:flex;gap:5px}.supTyping i{width:7px;height:7px;border-radius:50%;background:#9aa6bb;animation:supb 1s infinite}.supTyping i:nth-child(2){animation-delay:.15s}.supTyping i:nth-child(3){animation-delay:.3s}@keyframes supb{0%,60%,100%{transform:none}30%{transform:translateY(-5px)}}
+.supQuick{display:flex;flex-wrap:wrap;gap:7px;padding:0 14px 10px;background:#f5f7fb}.supQuick button{border:1px solid #d6dff0;background:#fff;border-radius:999px;padding:7px 12px;font:inherit;font-size:13px;font-weight:600;color:#26407a;cursor:pointer}.supQuick button:hover{background:#eef3ff}
+.supActs{display:flex;gap:8px;padding:8px 14px;background:#f5f7fb;border-top:1px solid #e6ebf4}.supAct{flex:1;border:1px solid #d6dff0;background:#fff;border-radius:12px;padding:8px 6px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;color:#34415a}.supAct.ok{background:#e7f7ee;border-color:#bfe8d0;color:#18794e}
+.supForm{display:flex;gap:8px;padding:10px 12px;border-top:1px solid #e6ebf4;align-items:flex-end}.supForm textarea{flex:1;resize:none;border:1px solid #d6dff0;border-radius:14px;padding:10px 12px;font:inherit;font-size:14px;max-height:110px}
+.supSend{border:0;width:42px;height:42px;border-radius:50%;background:var(--gradient);color:#fff;font-size:17px;cursor:pointer;flex:none}.supSend:disabled{opacity:.5}
+@media(max-width:560px){.supBubble{right:14px;bottom:14px;padding:12px 16px}.supBubble .supTxt{display:none}.supPanel{right:8px;left:8px;bottom:78px;width:auto;max-width:none;height:calc(100vh - 100px)}}
 </style>
 </head>
 <body>
@@ -118,7 +146,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <main class="wrap">
 <div id="billingBanner" class="hidden" style="margin-bottom:12px"></div>
 <div id="upgradeBanner" class="hidden" style="margin-bottom:12px"></div>
-<div id="stockBanner" class="hidden" style="margin-bottom:12px"></div>
+<div id="stockBanner" class="hidden" style="margin-bottom:10px"></div>
 <section id="login" class="login">
 <h2 data-i18n="login_title">Connexion</h2><p class="muted" data-i18n="login_subtitle">Connectez-vous pour accéder à votre espace commercial.</p>
 <input id="email" type="email" value="demo@wavendeur.local" placeholder="Email" data-i18n-placeholder="placeholder_email"><input id="password" type="password" value="demo1234" placeholder="Mot de passe" data-i18n-placeholder="placeholder_password">
@@ -517,6 +545,14 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 </div>
 </section>
 </div></div>
+<button type="button" id="supBubble" class="supBubble" onclick="supToggle()" aria-label="Aide"><span class="supIc">💬</span><span class="supTxt" data-i18n="sup_bubble">Aide</span><span id="supDot" class="supDot hidden"></span></button>
+<div id="supPanel" class="supPanel hidden" role="dialog" aria-label="Aide VENDIA">
+<div class="supHead"><div class="supAv">V</div><div class="supHt"><strong data-i18n="sup_title">Aide VENDIA</strong><span id="supStatus" class="supSt" data-i18n="sup_sub">Posez votre question — l'assistant répond tout de suite</span></div><button type="button" class="supX" onclick="supToggle(false)" aria-label="Fermer">×</button></div>
+<div id="supMsgs" class="supMsgs"></div>
+<div id="supQuick" class="supQuick"></div>
+<div id="supActs" class="supActs hidden"><button type="button" class="supAct ok" onclick="supResolve()" data-i18n="sup_resolved">✅ Problème résolu</button><button type="button" class="supAct" id="supHumanBtn" onclick="supEscalate()" data-i18n="sup_human">👤 Parler à l'équipe</button></div>
+<form class="supForm" onsubmit="supSend(event)"><textarea id="supInput" rows="1" maxlength="1500" placeholder="Votre question…" data-i18n-placeholder="sup_placeholder" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();supSend(event)}"></textarea><button type="submit" class="supSend" id="supSendBtn" aria-label="Envoyer">➤</button></form>
+</div>
 </main>
 
 <div id="guideModal" class="gdOverlay" onclick="if(event.target===this)closeGuide()"><div class="gdModal">
@@ -570,6 +606,11 @@ fr: {
   ostatus_bloquee:"Bloquée", order_hidden:"Coordonnées masquées : forfait supérieur requis",
   upgrade_blocked_orders:"🚨 URGENT : {n} commande(s) de votre vitrine ({total}) sont BLOQUÉES car votre quota de prospects est atteint. Les coordonnées de vos clients sont masquées et ils attendent votre appel — chaque heure compte.",
   stock_head_critical:"🔴 URGENT — Stock presque épuisé : réapprovisionnez immédiatement !", stock_head_high:"🟠 Stock très bas : réapprovisionnez vite", stock_head_low:"⚠️ Stock faible : pensez à vous réapprovisionner",
+  sup_bubble:"Aide", sup_title:"Aide VENDIA", sup_sub:"Posez votre question — l'assistant répond tout de suite", sup_placeholder:"Votre question…", sup_ai_name:"Assistant VENDIA", sup_team_name:"Équipe VENDIA",
+  sup_welcome:"Bonjour 👋 Je suis l'assistant VENDIA. Dites-moi ce qui vous bloque ou ce que vous voulez faire, je vous guide. Si je ne peux pas résoudre, je transmets à l'équipe.",
+  sup_q1:"Comment connecter mon WhatsApp ?", sup_q2:"Mon IA ne répond pas aux clients", sup_q3:"J'ai un problème de paiement ou d'abonnement", sup_q4:"Je voudrais parler à quelqu'un",
+  sup_resolved:"✅ Problème résolu", sup_human:"👤 Parler à l'équipe", sup_closed:"✅ Demande clôturée. Merci !", sup_st_ai:"L'assistant vous répond", sup_st_waiting:"Transmis à l'équipe — réponse ici", sup_st_replied:"L'équipe vous a répondu",
+  stock_s_critical:"🔴 Stock critique", stock_s_high:"🟠 Stock très bas", stock_s_low:"⚠️ Stock faible", stock_details:"Détails", stock_hide:"Masquer", stock_btn_short:"Gérer le stock",
   stock_out:"épuisé", stock_left:"reste {n}", stock_rate:"≈ {r} vendu(s)/jour", stock_days:"environ {d} jour(s) de stock", stock_less_day:"moins d'un jour de stock", stock_btn:"Mettre à jour le stock", stock_more:"… et {n} autre(s) produit(s) à surveiller.",
   renew_current_btn:"Renouveler mon forfait {plan}", billing_option_next:"⭐ {plan} — {price} (recommandé)", billing_option_current:"{plan} — {price} (renouvellement à l'identique)",
   billing_recommend:"⭐ Recommandé : passez au forfait {plan} pour avoir plus de prospects, d'utilisateurs et de fonctions, sans interruption. Vous pouvez aussi simplement renouveler votre forfait actuel (voir la liste ci-dessous).",
@@ -858,6 +899,11 @@ en: {
   ostatus_bloquee:"Blocked", order_hidden:"Contact details hidden: upgrade required",
   upgrade_blocked_orders:"🚨 URGENT: {n} order(s) from your storefront ({total}) are BLOCKED because your lead quota is reached. Your customers' contact details are hidden and they are waiting for your call — every hour counts.",
   stock_head_critical:"🔴 URGENT — Stock almost gone: restock immediately!", stock_head_high:"🟠 Very low stock: restock soon", stock_head_low:"⚠️ Low stock: plan to restock",
+  sup_bubble:"Help", sup_title:"VENDIA Help", sup_sub:"Ask your question — the assistant answers right away", sup_placeholder:"Your question…", sup_ai_name:"VENDIA assistant", sup_team_name:"VENDIA team",
+  sup_welcome:"Hello 👋 I'm the VENDIA assistant. Tell me what's blocking you or what you want to do and I'll guide you. If I can't solve it, I'll pass it to the team.",
+  sup_q1:"How do I connect my WhatsApp?", sup_q2:"My AI isn't replying to customers", sup_q3:"I have a payment or subscription problem", sup_q4:"I'd like to talk to someone",
+  sup_resolved:"✅ Problem solved", sup_human:"👤 Talk to the team", sup_closed:"✅ Request closed. Thank you!", sup_st_ai:"The assistant is replying", sup_st_waiting:"Passed to the team — reply here", sup_st_replied:"The team has replied",
+  stock_s_critical:"🔴 Critical stock", stock_s_high:"🟠 Very low stock", stock_s_low:"⚠️ Low stock", stock_details:"Details", stock_hide:"Hide", stock_btn_short:"Manage stock",
   stock_out:"out of stock", stock_left:"{n} left", stock_rate:"≈ {r} sold/day", stock_days:"about {d} day(s) of stock", stock_less_day:"less than a day of stock", stock_btn:"Update stock", stock_more:"… and {n} more product(s) to watch.",
   renew_current_btn:"Renew my {plan} plan", billing_option_next:"⭐ {plan} — {price} (recommended)", billing_option_current:"{plan} — {price} (same-plan renewal)",
   billing_recommend:"⭐ Recommended: upgrade to the {plan} plan for more leads, users and features, with no interruption. You can also simply renew your current plan (see the list below).",
@@ -1122,7 +1168,7 @@ function setLang(l){
   if(lang===l) return;
   lang=l; localStorage.setItem('vendia_lang', l);
   applyI18n();
-  if(!$('app').classList.contains('hidden')) { renderAll(); tab(currentTab); }
+  if(!$('app').classList.contains('hidden')) { renderAll(); tab(currentTab); supRender(); }
 }
 // Traduction d'un statut STOCKÉ tel quel (valeur française conservée pour le
 // backend/API) : n'affecte jamais la valeur envoyée au serveur, seulement le
@@ -1303,6 +1349,56 @@ async function load() {
     handoffInit=false; handoffKnown=new Set(); afterLoadExtras();
   } catch(e) { console.error(e); }
 }
+
+
+// ---- Support : bulle d'aide ----
+let supOpen=false, supMsgs=[], supTicket=null, supBusy=false, supPollT=null;
+function supQuickList(){ return ['sup_q1','sup_q2','sup_q3','sup_q4'].map(k=>t(k)); }
+function supRender(){
+  const box=$('supMsgs'); if(!box) return;
+  const nearBottom=box.scrollHeight-box.scrollTop-box.clientHeight<80;
+  let h='';
+  if(!supMsgs.length) h+='<div class="supM ai"><span class="who">'+esc(t('sup_ai_name'))+'</span>'+esc(t('sup_welcome'))+'</div>';
+  supMsgs.forEach(m=>{ const who=m.sender==='ai'?'<span class="who">'+esc(t('sup_ai_name'))+'</span>':m.sender==='admin'?'<span class="who">'+esc(t('sup_team_name'))+'</span>':''; h+='<div class="supM '+m.sender+'">'+who+esc(m.body)+'</div>'; });
+  if(supBusy) h+='<div class="supTyping"><i></i><i></i><i></i></div>';
+  box.innerHTML=h; if(nearBottom||supBusy) box.scrollTop=box.scrollHeight;
+  $('supQuick').innerHTML=supMsgs.length?'':supQuickList().map((q,i)=>'<button type="button" onclick="supQuickSend('+i+')">'+esc(q)+'</button>').join('');
+  const has=supMsgs.some(m=>m.sender==='ai'||m.sender==='admin');
+  $('supActs').classList.toggle('hidden',!(supTicket&&has));
+  const esc_=supTicket&&supTicket.escalated; $('supHumanBtn').classList.toggle('hidden',!!esc_);
+  const st=$('supStatus'); st.textContent=!supTicket?t('sup_sub'):supTicket.status==='replied'?t('sup_st_replied'):supTicket.status==='waiting'?t('sup_st_waiting'):t('sup_st_ai');
+}
+async function supLoad(openIt){
+  try{ const r=await api('/api/support/current'+(openIt?'?open=1':'')); supTicket=r.ticket; supMsgs=r.messages||[]; if(openIt) $('supDot').classList.add('hidden'); else $('supDot').classList.toggle('hidden',!r.unread||supOpen); supRender(); }catch(e){}
+}
+function supToggle(force){
+  supOpen=force===undefined?!supOpen:force; $('supPanel').classList.toggle('hidden',!supOpen);
+  supPoll(); if(supOpen){ supLoad(true); setTimeout(()=>$('supInput').focus(),150); }
+}
+async function supSend(e){
+  if(e) e.preventDefault(); if(supBusy) return;
+  const inp=$('supInput'), text=inp.value.trim(); if(text.length<2) return;
+  inp.value=''; supBusy=true; $('supSendBtn').disabled=true;
+  supMsgs.push({sender:'user',body:text}); supRender();
+  try{
+    const r=await api('/api/support/message',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:text,tab:currentTab,lang:lang})});
+    supTicket=r.ticket; supMsgs=r.messages||[];
+  }catch(err){ supMsgs.push({sender:'system',body:err.message}); }
+  supBusy=false; $('supSendBtn').disabled=false; supRender();
+}
+function supQuickSend(i){ $('supInput').value=supQuickList()[i]; supSend(); }
+async function supResolve(){
+  try{ await api('/api/support/resolve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({satisfied:true})}); supMsgs.push({sender:'system',body:t('sup_closed')}); supTicket=null; supRender(); setTimeout(()=>{ if(!supTicket){ supMsgs=[]; supRender(); } },2500); }catch(e){}
+}
+async function supEscalate(){
+  try{ await api('/api/support/escalate',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); await supLoad(true); }catch(e){}
+}
+function supPoll(){
+  clearInterval(supPollT);
+  supPollT=setInterval(()=>{ if(document.hidden||$('app').classList.contains('hidden')||!token) return; supLoad(supOpen); },supOpen?7000:45000);
+}
+setInterval(()=>{ const mt=$('mobTitle'); if(mt&&!mt.textContent){ const a=document.querySelector('.si.active .lb'); if(a) mt.textContent=a.textContent; }
+  if(!$('app').classList.contains('hidden')&&token&&!window._supInit){ window._supInit=true; supLoad(false); supPoll(); if(new URLSearchParams(location.search).get('support')==='1') supToggle(true); } },1500);
 
 function toggleSide(force){ const o=force===undefined?!$('side').classList.contains('open'):force; $('side').classList.toggle('open',o); $('sideScrim').classList.toggle('on',o); }
 function tab(name) {
@@ -2028,16 +2124,19 @@ function renderStockBanner(){
   const al=data.stockAlerts||[];
   if(!al.length){ el.classList.add('hidden'); return; }
   const worst=Math.max(...al.map(a=>a.level));
-  const head=worst>=3?t('stock_head_critical'):worst===2?t('stock_head_high'):t('stock_head_low');
+  const head=worst>=3?t('stock_s_critical'):worst===2?t('stock_s_high'):t('stock_s_low');
   const col=worst>=3?'#d62839':worst===2?'#f08a24':'#e9b949';
-  const items=al.slice(0,8).map(a=>{
-    const left=a.stock<=0?t('stock_out'):tf('stock_left',{n:a.stock});
+  const left=a=>a.stock<=0?t('stock_out'):tf('stock_left',{n:a.stock});
+  const chips=al.slice(0,3).map(a=>'<span class="stkChip">'+stockLevelIcon(a.level)+' '+esc(a.name)+' <b>'+(a.stock<=0?'0':a.stock)+'</b></span>').join('')+(al.length>3?'<span class="stkChip more">+'+(al.length-3)+'</span>':'');
+  const details=al.slice(0,8).map(a=>{
     const rate=a.perDay>0?' · '+tf('stock_rate',{r:String(a.perDay).replace('.',',')})+(a.daysLeft!==null?' · '+(a.daysLeft<1?t('stock_less_day'):tf('stock_days',{d:String(Math.round(a.daysLeft*10)/10).replace('.',',')})):''):'';
-    return '<li>'+stockLevelIcon(a.level)+' <strong>'+esc(a.name)+'</strong> — '+left+rate+'</li>';
+    return '<li>'+stockLevelIcon(a.level)+' <strong>'+esc(a.name)+'</strong> — '+left(a)+rate+'</li>';
   }).join('');
-  el.innerHTML='<div class="panel" style="border:2px solid '+col+';margin:0"><div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><strong>'+head+'</strong><button class="btn primary" onclick="tab(\'products\')">'+t('stock_btn')+'</button></div><ul style="margin:8px 0 0;padding-left:18px">'+items+'</ul>'+(al.length>8?'<p class="muted" style="margin:6px 0 0">'+tf('stock_more',{n:al.length-8})+'</p>':'')+'</div>';
+  const open=el.dataset.open==='1';
+  el.innerHTML='<div class="stkBar" style="border-left-color:'+col+'"><div class="stkRow"><strong class="stkHead">'+head+'</strong><span class="stkChips">'+chips+'</span><span class="stkAct"><button type="button" class="stkLink" onclick="toggleStockDetails()">'+t(open?'stock_hide':'stock_details')+'</button><button type="button" class="btn primary stkBtn" onclick="tab(\'products\')">'+t('stock_btn_short')+'</button></span></div>'+(open?'<ul class="stkList">'+details+(al.length>8?'<li class="muted">'+tf('stock_more',{n:al.length-8})+'</li>':'')+'</ul>':'')+'</div>';
   el.classList.remove('hidden');
 }
+function toggleStockDetails(){ const el=$('stockBanner'); el.dataset.open=el.dataset.open==='1'?'0':'1'; renderStockBanner(); }
 // Invitation à passer au forfait supérieur quand un quota approche ou est atteint
 const NEXT_PLAN={Starter:'Business',Business:'Pro'};
 function renderUpgradeBanner(){

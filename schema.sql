@@ -474,3 +474,37 @@ CREATE TABLE IF NOT EXISTS vendia_campaigns (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Support intégré : demandes d'assistance des entreprises clientes
+CREATE TABLE IF NOT EXISTS support_tickets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  user_id UUID,
+  subject TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'autre',
+  priority TEXT NOT NULL DEFAULT 'normal',
+  status TEXT NOT NULL DEFAULT 'ai',
+  qualification TEXT,
+  satisfaction INT,
+  summary TEXT,
+  resolution_note TEXT,
+  escalate_reason TEXT,
+  unread_admin BOOLEAN NOT NULL DEFAULT false,
+  unread_user BOOLEAN NOT NULL DEFAULT false,
+  lang TEXT NOT NULL DEFAULT 'fr',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  escalated_at TIMESTAMPTZ,
+  resolved_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS support_tickets_company_idx ON support_tickets(company_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS support_tickets_status_idx ON support_tickets(status, updated_at DESC);
+CREATE TABLE IF NOT EXISTS support_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ticket_id UUID NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+  sender TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS support_messages_ticket_idx ON support_messages(ticket_id, created_at);
+

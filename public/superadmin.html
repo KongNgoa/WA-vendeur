@@ -27,6 +27,16 @@ input,select{width:100%;padding:10px;border:1px solid #d9deea;border-radius:10px
 .langSwitch{display:flex;border:1px solid #ffffff33;border-radius:8px;overflow:hidden}.langSwitch button{border:0;background:transparent;color:#fff;opacity:.6;padding:6px 10px;font-weight:700;font-size:12px;cursor:pointer;border-radius:0}.langSwitch button.active{opacity:1;background:#ffffff26}
 .tabs{display:flex;gap:8px;margin-bottom:16px}.tabbtn{border:0;border-radius:999px;padding:10px 18px;background:#e9edf5;color:#172033;font-weight:700;cursor:pointer;font-size:14px}.tabbtn.active{background:var(--gradient);color:#fff}
 .mkgrid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:22px}@media(max-width:900px){.mkgrid{grid-template-columns:1fr}}.formgrid label{display:block;margin-bottom:3px}
+.tabBadge{display:inline-block;margin-left:7px;min-width:20px;padding:1px 6px;border-radius:12px;background:#d62839;color:#fff;font-size:11px;font-weight:800;text-align:center}
+.spCounts{display:flex;gap:10px;flex-wrap:wrap}.spCount{background:#f3f6fc;border-radius:14px;padding:10px 16px;min-width:110px}.spCount b{font-size:24px;display:block}.spCount span{font-size:12px;color:#687386}.spCount.waiting{background:#fee4e2}.spCount.waiting b{color:#b42318}
+.spGrid{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.3fr);gap:16px;align-items:start}@media(max-width:900px){.spGrid{grid-template-columns:1fr}}
+.spListBox{max-height:640px;overflow:auto;display:flex;flex-direction:column;gap:8px}.spRow{border:1px solid #e3e8f2;border-radius:14px;padding:11px 13px;cursor:pointer;background:#fff}.spRow:hover{background:#f7f9fe}.spRow.sel{border-color:#17a2fe;background:#f0f8ff}
+.spTop{display:flex;align-items:center;gap:8px}.spSubj{font-size:13px;color:#44556f;margin:3px 0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.spDot{width:9px;height:9px;border-radius:50%;background:#d62839;display:inline-block}
+.spBadge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:700;margin:2px 4px 2px 0;background:#eef2f6;color:#536071}.spBadge.st_waiting{background:#fee4e2;color:#b42318}.spBadge.st_replied{background:#e8f0ff;color:#2a56c6}.spBadge.st_ai{background:#fff3d6;color:#9a5b00}.spBadge.st_resolved{background:#e7f7ee;color:#18794e}.spBadge.urgent{background:#d62839;color:#fff}.spBadge.qual{background:#e7f7ee;color:#18794e}
+.spThreadBox{border:1px solid #e3e8f2;border-radius:14px;padding:14px}.spHead{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.spMeta{display:flex;gap:12px;margin:10px 0}.spMeta label{font-size:12px;color:#687386;flex:1}.spMeta select{margin-top:3px}
+.spSummary{background:#f3f6fc;border-radius:10px;padding:9px 12px;font-size:13px;margin-bottom:8px}.spResolved{background:#e7f7ee;color:#18794e;border-radius:10px;padding:9px 12px;font-size:13px;margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.spMsgs{max-height:380px;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:6px 2px;margin-bottom:10px}.spMsg{max-width:88%;padding:9px 12px;border-radius:14px;font-size:13.5px;white-space:pre-wrap;word-break:break-word;background:#f3f6fc}.spMsg .who{display:block;font-size:11px;color:#687386;font-weight:700;margin-bottom:2px}
+.spMsg.user{align-self:flex-start;background:#d9fdd3}.spMsg.ai{align-self:flex-end;background:#fff;border:1px solid #e3e8f2}.spMsg.admin{align-self:flex-end;background:#e8f0ff;border:1px solid #c7d8ff}.spMsg.system{align-self:center;background:#fff6dc;color:#7a5200;font-size:12.5px}
 </style>
 </head>
 <body>
@@ -42,7 +52,7 @@ input,select{width:100%;padding:10px;border:1px solid #d9deea;border-radius:10px
 </section>
 
 <section id="app" class="hidden">
-<div class="tabs"><button class="tabbtn active" id="tabBtnManage" onclick="showArea('manage')" data-i18n="tab_manage">Gestion</button><button class="tabbtn" id="tabBtnMarket" onclick="showArea('market')" data-i18n="tab_market">📣 Marketing</button></div>
+<div class="tabs"><button class="tabbtn active" id="tabBtnManage" onclick="showArea('manage')" data-i18n="tab_manage">Gestion</button><button class="tabbtn" id="tabBtnSupport" onclick="showArea('support')"><span data-i18n="tab_support">🛟 Support</span><span id="spTabBadge" class="tabBadge hidden"></span></button><button class="tabbtn" id="tabBtnMarket" onclick="showArea('market')" data-i18n="tab_market">📣 Marketing</button></div>
 <div id="areaManage">
 <div class="panel"><h3 data-i18n="new_company_title">Nouvelle entreprise</h3>
 <form class="formgrid" onsubmit="createCompany(event)">
@@ -86,6 +96,14 @@ input,select{width:100%;padding:10px;border:1px solid #d9deea;border-radius:10px
 <div id="detailConversations"></div>
 </div>
 
+</div>
+<div id="areaSupport" class="hidden">
+<div class="panel"><h3 data-i18n="sp_title">Support — demandes des entreprises</h3>
+<p class="muted" data-i18n="sp_desc">Les clients posent leur question depuis la bulle d'aide. L'assistant IA répond d'abord ; quand il ne peut pas résoudre, la demande arrive ici « À traiter ». Chaque demande est classée par type et qualifiée à sa clôture.</p>
+<div class="spCounts" id="spCounts"></div>
+<div style="margin:12px 0;display:flex;gap:8px;align-items:center"><select id="spFilter" onchange="VSp.setFilter(this.value)" style="width:auto"><option value="open" data-i18n="sp_f_open">En cours</option><option value="waiting" data-i18n="sp_f_waiting">À traiter</option><option value="resolved" data-i18n="sp_f_resolved">Résolues</option><option value="all" data-i18n="sp_f_all">Toutes</option></select></div>
+<div class="spGrid"><div id="spList" class="spListBox"></div><div id="spThread" class="spThreadBox"><div class="empty" data-i18n="sp_pick">Sélectionnez une demande.</div></div></div>
+</div>
 </div>
 <div id="areaMarket" class="hidden">
 <div class="panel"><h3 data-i18n="mk_title">Campagnes de promotion de VENDIA</h3>
@@ -132,9 +150,17 @@ input,select{width:100%;padding:10px;border:1px solid #d9deea;border-radius:10px
 <script src="assets/qr.js"></script>
 <script src="assets/banner.js"></script>
 <script src="assets/marketing.js"></script>
+<script src="assets/support-admin.js"></script>
 <script>
 const I18N = {
 fr: {
+  tab_support:"🛟 Support", sp_title:"Support — demandes des entreprises", sp_desc:"Les clients posent leur question depuis la bulle d'aide. L'assistant IA répond d'abord ; quand il ne peut pas résoudre, la demande arrive ici « À traiter ». Chaque demande est classée par type et qualifiée à sa clôture.",
+  sp_f_open:"En cours", sp_f_waiting:"À traiter", sp_f_resolved:"Résolues", sp_f_all:"Toutes", sp_pick:"Sélectionnez une demande.", sp_empty:"Aucune demande.", sp_now:"à l'instant",
+  sp_st_ai:"IA en cours", sp_st_waiting:"À traiter", sp_st_replied:"Réponse envoyée", sp_st_resolved:"Résolu", sp_ai_rate:"résolus par l'IA", sp_urgent:"Urgent", sp_normal:"Normale", sp_category:"Type de demande", sp_priority:"Priorité", sp_summary:"Résumé :",
+  sp_cat_whatsapp:"Connexion WhatsApp", sp_cat_ia:"Assistant IA", sp_cat_produits:"Produits / stock", sp_cat_boutique:"Boutique en ligne", sp_cat_commandes:"Commandes", sp_cat_facturation:"Paiement / abonnement", sp_cat_compte:"Compte / accès", sp_cat_bug:"Bug", sp_cat_suggestion:"Suggestion", sp_cat_autre:"Autre",
+  sp_q_resolved_ai:"Résolu par l'IA", sp_q_resolved_team:"Résolu par l'équipe", sp_q_workaround:"Contournement fourni", sp_q_not_reproducible:"Non reproductible", sp_q_feature_request:"Évolution demandée", sp_q_no_response:"Sans réponse du client", sp_q_auto_closed:"Clôturé automatiquement", sp_q_duplicate:"Doublon",
+  sp_reason_ai_escalation:"transmis par l'IA", sp_reason_ai_unavailable:"IA indisponible", sp_reason_user_requested:"demandé par le client", sp_reason_user_not_resolved:"le client signale que ce n'est pas résolu",
+  sp_resolved_as:"Résolu :", sp_reopen:"Rouvrir", sp_from_user:"Client", sp_from_ai:"Assistant IA", sp_from_admin:"Équipe VENDIA", sp_from_system:"Système", sp_reply_ph:"Votre réponse au client…", sp_send:"Envoyer", sp_close:"Clôturer",
   tab_manage:"Gestion", tab_market:"📣 Marketing", mk_title:"Campagnes de promotion de VENDIA", mk_desc:"Choisissez un modèle, ajustez les textes, puis téléchargez les bannières pour tous les réseaux sociaux. Le code QR et le lien contiennent un suivi UTM pour mesurer vos campagnes.",
   mk_preset:"Modèle de campagne", mk_preset_reply:"Répond 24h/24", mk_preset_orders:"Ne perdez plus de commandes", mk_preset_shop:"Boutique en ligne", mk_lang:"Langue", mk_name:"Nom de la campagne", mk_style:"Style", mk_style_studio:"Studio", mk_style_luxe:"Luxe", mk_style_pop:"Pop", mk_style_minimal:"Minimal",
   mk_palette:"Couleurs", mk_pal_brand:"Bleu VENDIA", mk_pal_violet:"Violet", mk_pal_ocean:"Océan", mk_pal_gold:"Nuit et or", mk_pal_green:"Vert", mk_pal_sunset:"Coucher de soleil", mk_pal_red:"Rouge", mk_pal_noir:"Noir et jaune",
@@ -175,6 +201,13 @@ fr: {
   status_active:"Actif", status_trial:"Essai",
 },
 en: {
+  tab_support:"🛟 Support", sp_title:"Support — company requests", sp_desc:"Customers ask their question from the help bubble. The AI assistant answers first; when it cannot solve it, the request lands here as “To handle”. Each request is classified by type and qualified when closed.",
+  sp_f_open:"Open", sp_f_waiting:"To handle", sp_f_resolved:"Resolved", sp_f_all:"All", sp_pick:"Select a request.", sp_empty:"No requests.", sp_now:"just now",
+  sp_st_ai:"AI handling", sp_st_waiting:"To handle", sp_st_replied:"Reply sent", sp_st_resolved:"Resolved", sp_ai_rate:"solved by AI", sp_urgent:"Urgent", sp_normal:"Normal", sp_category:"Request type", sp_priority:"Priority", sp_summary:"Summary:",
+  sp_cat_whatsapp:"WhatsApp connection", sp_cat_ia:"AI assistant", sp_cat_produits:"Products / stock", sp_cat_boutique:"Online shop", sp_cat_commandes:"Orders", sp_cat_facturation:"Payment / subscription", sp_cat_compte:"Account / access", sp_cat_bug:"Bug", sp_cat_suggestion:"Suggestion", sp_cat_autre:"Other",
+  sp_q_resolved_ai:"Solved by AI", sp_q_resolved_team:"Solved by the team", sp_q_workaround:"Workaround provided", sp_q_not_reproducible:"Not reproducible", sp_q_feature_request:"Feature requested", sp_q_no_response:"No reply from customer", sp_q_auto_closed:"Closed automatically", sp_q_duplicate:"Duplicate",
+  sp_reason_ai_escalation:"passed on by the AI", sp_reason_ai_unavailable:"AI unavailable", sp_reason_user_requested:"requested by the customer", sp_reason_user_not_resolved:"customer says it is not solved",
+  sp_resolved_as:"Resolved:", sp_reopen:"Reopen", sp_from_user:"Customer", sp_from_ai:"AI assistant", sp_from_admin:"VENDIA team", sp_from_system:"System", sp_reply_ph:"Your reply to the customer…", sp_send:"Send", sp_close:"Close",
   tab_manage:"Management", tab_market:"📣 Marketing", mk_title:"VENDIA promotion campaigns", mk_desc:"Pick a template, tweak the texts, then download banners for every social network. The QR code and link carry UTM tracking so you can measure your campaigns.",
   mk_preset:"Campaign template", mk_preset_reply:"Answers 24/7", mk_preset_orders:"Never lose an order", mk_preset_shop:"Online shop", mk_lang:"Language", mk_name:"Campaign name", mk_style:"Style", mk_style_studio:"Studio", mk_style_luxe:"Luxe", mk_style_pop:"Pop", mk_style_minimal:"Minimal",
   mk_palette:"Colors", mk_pal_brand:"VENDIA blue", mk_pal_violet:"Violet", mk_pal_ocean:"Ocean", mk_pal_gold:"Night and gold", mk_pal_green:"Green", mk_pal_sunset:"Sunset", mk_pal_red:"Red", mk_pal_noir:"Black and yellow",
@@ -228,9 +261,9 @@ function setLang(l){
   if(lang===l) return;
   lang=l; localStorage.setItem('vendia_lang', l);
   applyI18n();
-  if(!$('app').classList.contains('hidden')){ if(window.VMk&&!$('areaMarket').classList.contains('hidden')){ VMk.loadList(); VMk.redraw(); } renderCompanies(); if(lastPending) renderPending(lastPending); if(currentDetailId){ loadDetailUsers(); loadDetailConversations(); } }
+  if(!$('app').classList.contains('hidden')){ if(window.VMk&&!$('areaMarket').classList.contains('hidden')){ VMk.loadList(); VMk.redraw(); } if(window.VSp&&!$('areaSupport').classList.contains('hidden')){ VSp.loadList(); } renderCompanies(); if(lastPending) renderPending(lastPending); if(currentDetailId){ loadDetailUsers(); loadDetailConversations(); } }
 }
-function showArea(a){ const m=a==='market'; $('areaManage').classList.toggle('hidden',m); $('areaMarket').classList.toggle('hidden',!m); $('tabBtnManage').classList.toggle('active',!m); $('tabBtnMarket').classList.toggle('active',m); if(m) VMk.init(); }
+function showArea(a){ ['manage','support','market'].forEach(k=>{ const cap=k[0].toUpperCase()+k.slice(1); $('area'+cap).classList.toggle('hidden',a!==k); const bt={manage:'tabBtnManage',support:'tabBtnSupport',market:'tabBtnMarket'}[k]; $(bt).classList.toggle('active',a===k); }); if(a==='market') VMk.init(); if(a==='support') VSp.init(); }
 const STATUS_KEY_MAP={ active:'status_active', trial:'status_trial' };
 function statusLabel(raw){ const key=STATUS_KEY_MAP[raw]; return key?t(key):(raw||'—'); }
 
@@ -261,7 +294,7 @@ async function login(){
     if(!r.ok) throw new Error(d.error||t('invalid_credentials'));
     token=d.token; localStorage.setItem('vendia_superadmin_token',token);
     $('login').classList.add('hidden'); $('app').classList.remove('hidden'); $('logoutBtn').style.display='';
-    await loadCompanies();
+    await loadCompanies(); if(window.VSp) VSp.badgeOnly();
   }catch(e){ msg.className='error'; msg.textContent=e.message; }
 }
 function logout(){
@@ -421,6 +454,6 @@ async function loadDetailConversations(){
 }
 
 applyI18n();
-if(token){ $('login').classList.add('hidden'); $('app').classList.remove('hidden'); $('logoutBtn').style.display=''; loadCompanies(); }
+if(token){ $('login').classList.add('hidden'); $('app').classList.remove('hidden'); $('logoutBtn').style.display=''; loadCompanies(); if(window.VSp) VSp.badgeOnly(); }
 </script>
 </body></html>

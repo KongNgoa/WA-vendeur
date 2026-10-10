@@ -139,6 +139,14 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - Le tableau du parrain montre ses filleuls (abonné actif ou en attente de paiement) et ce que chacun lui a rapporté.
 
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.
+## 1.10.38 — Support intégré, navigation latérale, barre de stock compacte
+
+- **Bulle d'aide** dans l'espace client (🔔 « Aide », en bas à droite, aussi quand l'abonnement est expiré) : l'assistant IA répond avec une base de connaissances VENDIA (`SUPPORT_KB` dans `server.js`) ; s'il ne peut pas résoudre (bug, paiement, accès, question hors base, client mécontent, demande d'humain, 2 tentatives sans succès) il **transmet à l'équipe** et prévient par email (`SUPERADMIN_EMAIL`). Le client peut aussi cliquer « Parler à l'équipe » ou « Problème résolu ».
+- **Super-admin → Support** : liste des demandes avec **statut** (IA en cours / À traiter / Réponse envoyée / Résolu), **type** (WhatsApp, IA, produits, boutique, commandes, paiement, compte, bug, suggestion, autre), priorité, résumé IA, fil de conversation, réponse (notification push au client) et **qualification à la clôture** (résolu par l'IA, par l'équipe, contournement, non reproductible, évolution demandée, sans réponse, clôture automatique, doublon) + satisfaction 👍/👎. Clôture automatique : IA sans activité 48 h, équipe sans réponse du client 7 jours. Indicateur du taux de demandes résolues par l'IA.
+- Tables `support_tickets` / `support_messages` ; routes `/api/support/*` (client) et `/api/superadmin/support*`. Sans `ANTHROPIC_API_KEY`, toute demande est transmise directement à l'équipe.
+- **Navigation latérale** groupée (Pilotage / Ventes / Développer / Configuration), tiroir sur mobile.
+- **Alerte de stock** réduite à une barre d'une ligne (chips des produits, « Détails » pour déplier).
+
 ## 1.10.37 — Bannières publicitaires, Marketing super-admin, vidéo de lancement
 
 - **Moteur de bannières** (`public/assets/banner.js`, canvas, partagé) : 4 modèles (Studio, Luxe, Pop, Minimal), 4 formats (story 9:16, portrait 4:5, carré, Facebook 1,91:1), couleurs automatiques tirées de la photo, **détourage automatique** quand le fond de la photo est uni (sinon cadre photo avec fond flou), ombre portée, gros bouton **COMMANDER**, **QR code** (lib MIT `qrcode-generator`, `public/assets/qr.js`) vers la page produit de la boutique (ou un lien wa.me si la boutique est désactivée).

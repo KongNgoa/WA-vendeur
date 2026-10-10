@@ -1231,6 +1231,65 @@ async function generateAiReply(company, prospect, products, history, opts = {}) 
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// Support intégré : bulle d'aide dans l'espace client, réponse de l'IA, puis
+// transmission à l'équipe VENDIA (super-admin) quand elle ne peut pas résoudre.
+// ---------------------------------------------------------------------------
+const SUPPORT_CATEGORIES = ['whatsapp','ia','produits','boutique','commandes','facturation','compte','bug','suggestion','autre'];
+const SUPPORT_QUALIFICATIONS = ['resolved_ai','resolved_team','workaround','not_reproducible','feature_request','no_response','auto_closed','duplicate'];
+const SUPPORT_KB = [
+  'VENDIA est un commercial IA pour WhatsApp (TPE/PME, Cameroun puis Afrique francophone). Menu de gauche de l\'application : Pilotage (Tableau de bord, Analytics), Ventes (Conversations, Commandes, Produits, CRM, Relances), Développer (Studio promo, Campagnes, Bases clients, Parrainage), Configuration (Assistant IA, Réglages WhatsApp, Équipe, Abonnement). Le « Guide » (en haut du menu) explique la mise en route pas à pas.',
+  'CONNEXION WHATSAPP : Réglages WhatsApp → renseigner l\'identifiant du numéro (Phone Number ID) et le jeton d\'accès PERMANENT (créé dans Meta Business → Utilisateurs système, jamais le jeton temporaire de 24 h). La page affiche l\'URL du webhook et le jeton de vérification à coller dans Meta (WhatsApp → Configuration → Webhook) et il faut s\'abonner au champ « messages ». Si l\'IA ne répond pas : vérifier le jeton (expiré ?), l\'abonnement « messages », que l\'IA est activée (Assistant IA) et que le numéro est bien celui de production.',
+  'ASSISTANT IA : onglet Assistant IA : nom, ton, consignes, activation. L\'IA répond aux clients, présente les produits, prend les commandes et relance. Elle ne passe la main à un humain que rarement (cas urgents, litiges, demande explicite) : ces conversations apparaissent dans Conversations → « À traiter » avec une alerte (et notification sur téléphone si activée dans Réglages).',
+  'PRODUITS : onglet Produits : nom, prix (FCFA), stock, catégorie, photo (lien d\'image). Une alerte « stock faible » apparaît en haut du tableau de bord quand le stock est bas. L\'IA ne propose que les produits du catalogue.',
+  'BOUTIQUE EN LIGNE : Réglages → Boutique : activer, choisir le nom de lien (adresse /boutique/nom), numéro WhatsApp de la boutique. Chaque produit a sa page avec un bouton Commander ; les commandes (paiement à la livraison) arrivent dans l\'onglet Commandes. Le Studio promo génère textes et affiches/bannières avec QR code vers la page produit.',
+  'COMMANDES : statuts En attente, Confirmée, En préparation, Livrée, Annulée. Notification du client par WhatsApp : Réglages → notification de commande, avec le nom du modèle Meta approuvé (ex. vendia_commande_statut, langue fr). Hors fenêtre de 24 h, WhatsApp n\'autorise que des modèles (templates) approuvés par Meta : création dans Meta → Gestionnaire WhatsApp → Modèles de message (délai d\'approbation de quelques minutes à quelques heures).',
+  'CAMPAGNES : diffusion WhatsApp vers une base clients ; les clients doivent avoir donné leur accord ; hors fenêtre de 24 h il faut un modèle Meta approuvé (ex. vendia_promo).',
+  'ABONNEMENT : forfaits Starter 10 000 FCFA/mois, Business 25 000, Pro 50 000. Onglet Abonnement : payer par Mobile Money puis saisir la référence de la transaction ; l\'équipe VENDIA valide le paiement manuellement (le délai peut aller jusqu\'à quelques heures). Un abonnement expiré bloque l\'espace jusqu\'au renouvellement.',
+  'ÉQUIPE : onglet Équipe : ajouter des membres (Administrateur, Responsable, Commercial). PARRAINAGE : lien à partager, commission sur les paiements des entreprises parrainées. LANGUE : boutons FR/EN en haut à droite.',
+].join('\n');
+async function supportAiReply(ticket, history, ctx) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return null;
+  const lang = ticket.lang === 'en' ? 'English' : 'français';
+  const system = [
+    'Tu es l\'assistant d\'aide intégré à l\'application VENDIA. Tu aides le propriétaire/utilisateur d\'une entreprise cliente à utiliser VENDIA. Réponds en ' + lang + ', ton chaleureux et professionnel, court (6 phrases maximum, étapes numérotées si c\'est un pas-à-pas), sans jargon.',
+    'Contexte : entreprise « ' + (ctx.company || '') + ' », forfait ' + (ctx.plan || 'inconnu') + (ctx.expired ? ', abonnement EXPIRÉ' : '') + ', page ouverte : ' + (ctx.tab || 'inconnue') + '.',
+    'BASE DE CONNAISSANCES (seule source autorisée — n\'invente aucune fonction, aucun prix, aucun délai) :\n' + SUPPORT_KB,
+    'RÈGLES : 1) Commence par comprendre le problème ; si c\'est flou, pose UNE question précise. 2) Si la base permet de résoudre, guide précisément. 3) Mets escalate=true quand tu ne peux pas résoudre : bug ou erreur technique persistante, accès/compte impossible, paiement ou facturation à vérifier, remboursement, donnée à corriger ou supprimer, question absente de la base, utilisateur mécontent ou qui demande un humain, ou deux tentatives sans succès. Dans ce cas dis clairement que tu transmets la demande à l\'équipe VENDIA qui répondra dans cette même fenêtre. 4) urgent=true seulement si l\'activité du client est bloquée (plus aucune réponse aux clients, paiement refusé alors que payé, compte bloqué).',
+    'Réponds UNIQUEMENT par un objet JSON : {"reply":"texte pour l\'utilisateur","category":"' + SUPPORT_CATEGORIES.join('|') + '","escalate":true|false,"urgent":true|false,"summary":"résumé en une phrase pour l\'équipe (en français)"}'
+  ].join('\n\n');
+  const raw = history.slice(-14).map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.body }));
+  const messages = [];
+  for (const m of raw) { if (messages.length && messages[messages.length-1].role === m.role) messages[messages.length-1].content += '\n' + m.content; else messages.push({ ...m }); }
+  while (messages.length && messages[0].role !== 'user') messages.shift();
+  if (!messages.length || messages[messages.length-1].role !== 'user') return null;
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }, body: JSON.stringify({ model: ANTHROPIC_MODEL, max_tokens: 700, system, messages }) });
+    if (!resp.ok) { console.error('[support-ai] API %s', resp.status); return null; }
+    const data = await resp.json();
+    const txt = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+    const m = txt.match(/\{[\s\S]*\}/);
+    if (!m) return txt.trim() ? { reply: txt.trim().slice(0, 1500), category: 'autre', escalate: false, urgent: false, summary: '' } : null;
+    const j = JSON.parse(m[0]);
+    const reply = String(j.reply || '').trim().slice(0, 1800);
+    if (!reply) return null;
+    return { reply, category: SUPPORT_CATEGORIES.includes(j.category) ? j.category : 'autre', escalate: !!j.escalate, urgent: !!j.urgent, summary: String(j.summary || '').slice(0, 300) };
+  } catch (e) { console.error('[support-ai] echec:', e.message); return null; }
+}
+async function supportEscalate(ticket, reason, urgent, summary) {
+  const r = await query("UPDATE support_tickets SET status='waiting', escalated_at=COALESCE(escalated_at,now()), escalate_reason=COALESCE($2,escalate_reason), priority=CASE WHEN $3 THEN 'urgent' ELSE priority END, summary=COALESCE(NULLIF($4,''),summary), unread_admin=true, updated_at=now() WHERE id=$1 AND status IN ('ai','replied','waiting') RETURNING (escalated_at IS NOT NULL) AS ok, (SELECT name FROM companies WHERE id=company_id) AS company", [ticket.id, reason || null, !!urgent, summary || '']);
+  if (r.rows[0]) {
+    sendEmail(process.env.SUPERADMIN_EMAIL || '', (urgent ? '🚨 URGENT — ' : '') + 'VENDIA — Demande d\'assistance : ' + (r.rows[0].company || ''), '<p><strong>' + escHtml(r.rows[0].company || '') + '</strong> a besoin de l\'équipe.</p><p>' + escHtml(summary || ticket.subject || '') + '</p><p>Ouvrez le super-admin → Support pour répondre.</p>').catch(() => {});
+  }
+}
+async function supportAutoClose() {
+  await query("UPDATE support_tickets SET status='resolved', qualification='auto_closed', resolved_at=now() WHERE status='ai' AND updated_at < now() - interval '48 hours'").catch(() => {});
+  await query("UPDATE support_tickets SET status='resolved', qualification='no_response', resolved_at=now() WHERE status='replied' AND updated_at < now() - interval '7 days'").catch(() => {});
+}
+const supportMsgOut = m => ({ id: m.id, sender: m.sender, body: m.body, at: m.created_at });
+
 // N'envoie réellement que si (a) l'entreprise a configuré ses identifiants
 // WhatsApp, (b) la conversation est un fil WhatsApp avec un numéro connu.
 // Sinon, renvoie null (aucun envoi, comportement inchangé).
@@ -1777,8 +1836,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.37',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.37'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.38',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.38'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -2220,6 +2279,54 @@ async function handler(req,res) {
     const saSession=await getSession(saAuth);
     if(!saSession||!saSession.superAdminId) return json(res,401,{error:'Authentification super-admin requise'});
 
+    // ---- Support : demandes d'assistance des entreprises ----
+    if(u.pathname==='/api/superadmin/support'&&req.method==='GET') {
+      await supportAutoClose();
+      const st=String(u.searchParams.get('status')||'open');
+      const where=st==='all'?'':st==='resolved'?"WHERE t.status='resolved'":st==='waiting'?"WHERE t.status='waiting'":"WHERE t.status<>'resolved'";
+      const rows=(await query(`SELECT t.id,t.subject,t.category,t.priority,t.status,t.qualification,t.satisfaction,t.summary,t.unread_admin AS "unreadAdmin",t.created_at AS "createdAt",t.updated_at AS "updatedAt",t.escalated_at AS "escalatedAt",t.resolved_at AS "resolvedAt",c.name AS company,
+        (SELECT body FROM support_messages WHERE ticket_id=t.id ORDER BY created_at DESC LIMIT 1) AS "lastMessage"
+        FROM support_tickets t JOIN companies c ON c.id=t.company_id ${where} ORDER BY (t.status='waiting') DESC,(t.priority='urgent') DESC,t.updated_at DESC LIMIT 200`)).rows;
+      const counts=(await query("SELECT COUNT(*) FILTER (WHERE status='waiting')::int AS waiting,COUNT(*) FILTER (WHERE status='replied')::int AS replied,COUNT(*) FILTER (WHERE status='ai')::int AS ai,COUNT(*) FILTER (WHERE status='resolved')::int AS resolved,COUNT(*) FILTER (WHERE status='resolved' AND qualification='resolved_ai')::int AS \"resolvedAi\" FROM support_tickets")).rows[0];
+      return json(res,200,{tickets:rows,counts});
+    }
+    const spm=u.pathname.match(/^\/api\/superadmin\/support\/([0-9a-f-]{36})(\/reply|\/resolve|\/reopen)?$/i);
+    if(spm) {
+      const tid=spm[1],act=spm[2]||'';
+      const tk=(await query('SELECT t.*,c.name AS company FROM support_tickets t JOIN companies c ON c.id=t.company_id WHERE t.id=$1',[tid])).rows[0];
+      if(!tk) return json(res,404,{error:'Demande introuvable'});
+      if(req.method==='GET'&&!act) {
+        await query('UPDATE support_tickets SET unread_admin=false WHERE id=$1',[tid]);
+        const msgs=(await query('SELECT id,sender,body,created_at FROM support_messages WHERE ticket_id=$1 ORDER BY created_at',[tid])).rows;
+        return json(res,200,{ticket:{id:tk.id,company:tk.company,companyId:tk.company_id,subject:tk.subject,category:tk.category,priority:tk.priority,status:tk.status,qualification:tk.qualification,satisfaction:tk.satisfaction,summary:tk.summary,escalateReason:tk.escalate_reason,resolutionNote:tk.resolution_note,createdAt:tk.created_at,escalatedAt:tk.escalated_at,resolvedAt:tk.resolved_at},messages:msgs.map(supportMsgOut)});
+      }
+      if(req.method==='PATCH'&&!act) {
+        const b=await body(req);
+        const cat=SUPPORT_CATEGORIES.includes(b.category)?b.category:tk.category,pr=b.priority==='urgent'?'urgent':'normal';
+        await query('UPDATE support_tickets SET category=$2,priority=$3 WHERE id=$1',[tid,cat,pr]);
+        return json(res,200,{ok:true});
+      }
+      if(req.method==='POST'&&act==='/reply') {
+        const b=await body(req); const text=String(b.body||'').trim().slice(0,3000);
+        if(!text) return json(res,400,{error:'Message vide.'});
+        await query("INSERT INTO support_messages(ticket_id,sender,body) VALUES($1,'admin',$2)",[tid,text]);
+        await query("UPDATE support_tickets SET status='replied', unread_user=true, unread_admin=false, escalated_at=COALESCE(escalated_at,now()), updated_at=now() WHERE id=$1",[tid]);
+        sendPushToCompany(tk.company_id,{title:'💬 Support VENDIA',body:text.length>110?text.slice(0,110)+'…':text,url:'/?support=1'}).catch(()=>{});
+        return json(res,200,{ok:true});
+      }
+      if(req.method==='POST'&&act==='/resolve') {
+        const b=await body(req);
+        const q=SUPPORT_QUALIFICATIONS.includes(b.qualification)?b.qualification:'resolved_team';
+        await query("UPDATE support_tickets SET status='resolved', qualification=$2, resolution_note=$3, resolved_at=now(), unread_admin=false, unread_user=true, updated_at=now() WHERE id=$1",[tid,q,String(b.note||'').slice(0,500)||null]);
+        await query("INSERT INTO support_messages(ticket_id,sender,body) VALUES($1,'system',$2)",[tid,tk.lang==='en'?'✅ Request closed by the VENDIA team.':'✅ Demande clôturée par l\'équipe VENDIA.']);
+        return json(res,200,{ok:true});
+      }
+      if(req.method==='POST'&&act==='/reopen') {
+        await query("UPDATE support_tickets SET status='waiting', qualification=NULL, resolved_at=NULL, unread_admin=true, updated_at=now() WHERE id=$1",[tid]);
+        return json(res,200,{ok:true});
+      }
+    }
+
     if(u.pathname==='/api/superadmin/marketing') {
       if(req.method==='GET') {
         const r=await query('SELECT id,name,spec,caption,hashtags,link,lang,created_at AS "createdAt",updated_at AS "updatedAt" FROM vendia_campaigns ORDER BY updated_at DESC LIMIT 200');
@@ -2437,8 +2544,71 @@ async function handler(req,res) {
   if(!susp.rows[0]?.approvedAt) return json(res,403,{error:"Votre compte est en attente de validation du paiement. Vous serez averti par email dès l'activation."});
   if(susp.rows[0]?.suspended) return json(res,403,{error:'Ce compte VENDIA est suspendu. Contactez le support.'});
   // Abonnement expiré au-delà de la période de grâce : seul le renouvellement reste accessible.
-  if(susp.rows[0]?.expired&&!(u.pathname==='/api/billing'&&req.method==='GET')&&!(u.pathname==='/api/billing/renew'&&req.method==='POST'))
+  if(susp.rows[0]?.expired&&!(u.pathname==='/api/billing'&&req.method==='GET')&&!(u.pathname==='/api/billing/renew'&&req.method==='POST')&&!u.pathname.startsWith('/api/support/'))
     return json(res,402,{error:'Abonnement expiré — renouvelez-le pour réactiver votre compte. / Subscription expired — renew it to reactivate your account.',code:'subscription_expired'});
+
+  // ---- Support intégré (espace client) ----
+  if(u.pathname.startsWith('/api/support/')) {
+    await supportAutoClose();
+    const cur=async()=>(await query("SELECT * FROM support_tickets WHERE company_id=$1 AND status<>'resolved' ORDER BY updated_at DESC LIMIT 1",[companyId])).rows[0];
+    const outTicket=t=>t?{id:t.id,status:t.status,category:t.category,subject:t.subject,priority:t.priority,escalated:!!t.escalated_at}:null;
+    if(req.method==='GET'&&u.pathname==='/api/support/current') {
+      const t=await cur();
+      if(!t) return json(res,200,{ticket:null,messages:[],unread:false});
+      const msgs=(await query('SELECT id,sender,body,created_at FROM support_messages WHERE ticket_id=$1 ORDER BY created_at LIMIT 200',[t.id])).rows;
+      const unread=!!t.unread_user;
+      if(u.searchParams.get('open')==='1'&&unread) await query('UPDATE support_tickets SET unread_user=false WHERE id=$1',[t.id]);
+      return json(res,200,{ticket:outTicket(t),messages:msgs.map(supportMsgOut),unread});
+    }
+    if(req.method==='POST'&&u.pathname==='/api/support/message') {
+      const b=await body(req);
+      const text=String(b.body||'').trim().slice(0,1500);
+      if(text.length<2) return json(res,400,{error:'Écrivez votre question.'});
+      const rl=await query("SELECT COUNT(*)::int AS n FROM support_messages m JOIN support_tickets t ON t.id=m.ticket_id WHERE t.company_id=$1 AND m.sender='user' AND m.created_at>now()-interval '1 hour'",[companyId]);
+      if(rl.rows[0].n>=40) return json(res,429,{error:'Trop de messages, réessayez dans un moment.'});
+      const lang=b.lang==='en'?'en':'fr';
+      let t=await cur();
+      if(!t) t=(await query("INSERT INTO support_tickets(company_id,user_id,subject,lang) VALUES($1,$2,$3,$4) RETURNING *",[companyId,session.userId,text.slice(0,90),lang])).rows[0];
+      const cnt=(await query('SELECT COUNT(*)::int AS n FROM support_messages WHERE ticket_id=$1',[t.id])).rows[0].n;
+      if(cnt>=120) return json(res,429,{error:'Cette demande est très longue : ouvrez-en une nouvelle après l\'avoir clôturée.'});
+      await query("INSERT INTO support_messages(ticket_id,sender,body) VALUES($1,'user',$2)",[t.id,text]);
+      const human=t.status==='waiting'||t.status==='replied';
+      if(human) {
+        await query("UPDATE support_tickets SET status='waiting', unread_admin=true, updated_at=now() WHERE id=$1",[t.id]);
+      } else {
+        await query('UPDATE support_tickets SET updated_at=now() WHERE id=$1',[t.id]);
+        const hist=(await query('SELECT sender,body FROM support_messages WHERE ticket_id=$1 ORDER BY created_at',[t.id])).rows;
+        const cx=(await query('SELECT c.name,s.plan,('+EXPIRED_SQL+') AS expired FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id WHERE c.id=$1',[companyId])).rows[0]||{};
+        const ai=await supportAiReply(t,hist,{company:cx.name,plan:cx.plan,expired:cx.expired,tab:String(b.tab||'').slice(0,30)});
+        if(ai) {
+          await query("INSERT INTO support_messages(ticket_id,sender,body) VALUES($1,'ai',$2)",[t.id,ai.reply]);
+          await query("UPDATE support_tickets SET category=$2,summary=COALESCE(NULLIF($3,''),summary),updated_at=now() WHERE id=$1",[t.id,ai.category,ai.summary]);
+          if(ai.escalate) { await query("INSERT INTO support_messages(ticket_id,sender,body) VALUES($1,'system',$2)",[t.id,lang==='en'?'👤 Your request has been passed to the VENDIA team. They will reply here.':'👤 Votre demande a été transmise à l\'équipe VENDIA. Elle vous répondra ici.']); await supportEscalate(t,'ai_escalation',ai.urgent,ai.summary||t.subject); }
+        } else {
+          await query("INSERT INTO support_messages(ticket_id,sender,body) VALUES($1,'system',$2)",[t.id,lang==='en'?'👤 Your request has been passed to the VENDIA team. They will reply here.':'👤 Votre demande a été transmise à l\'équipe VENDIA. Elle vous répondra ici.']);
+          await supportEscalate(t,'ai_unavailable',false,t.subject);
+        }
+      }
+      const t2=(await query('SELECT * FROM support_tickets WHERE id=$1',[t.id])).rows[0];
+      const msgs=(await query('SELECT id,sender,body,created_at FROM support_messages WHERE ticket_id=$1 ORDER BY created_at LIMIT 200',[t.id])).rows;
+      return json(res,200,{ticket:outTicket(t2),messages:msgs.map(supportMsgOut)});
+    }
+    if(req.method==='POST'&&(u.pathname==='/api/support/resolve'||u.pathname==='/api/support/escalate')) {
+      const b=await body(req); const t=await cur();
+      if(!t) return json(res,404,{error:'Aucune demande en cours.'});
+      if(u.pathname==='/api/support/escalate'||b.satisfied===false) {
+        const en=t.lang==='en';
+        await query("INSERT INTO support_messages(ticket_id,sender,body) VALUES($1,'system',$2)",[t.id,en?'👤 Your request has been passed to the VENDIA team. They will reply here.':'👤 Votre demande a été transmise à l\'équipe VENDIA. Elle vous répondra ici.']);
+        await supportEscalate(t,b.satisfied===false?'user_not_resolved':'user_requested',false,t.summary||t.subject);
+      } else {
+        const q=t.escalated_at?'resolved_team':'resolved_ai';
+        await query("UPDATE support_tickets SET status='resolved', qualification=$2, satisfaction=$3, resolved_at=now(), updated_at=now() WHERE id=$1",[t.id,q,b.rating===-1?-1:1]);
+        await query("INSERT INTO support_messages(ticket_id,sender,body) VALUES($1,'system',$2)",[t.id,t.lang==='en'?'✅ Request closed. Thank you!':'✅ Demande clôturée. Merci !']);
+      }
+      return json(res,200,{ok:true});
+    }
+    return json(res,404,{error:'Introuvable'});
+  }
 
   if(req.method==='GET'&&u.pathname==='/api/bootstrap') return json(res,200,await dashboard(companyId,session.userId));
   if(req.method==='GET'&&u.pathname==='/api/dashboard') return json(res,200,await dashboard(companyId,session.userId));
@@ -4221,6 +4391,11 @@ async function ensureMigrations() {
     "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS soft_asks INT NOT NULL DEFAULT 0",
     "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS soft_asks_at TIMESTAMPTZ",
     "CREATE TABLE IF NOT EXISTS vendia_campaigns (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT NOT NULL, spec JSONB NOT NULL DEFAULT '{}'::jsonb, caption TEXT, hashtags TEXT, link TEXT, lang TEXT NOT NULL DEFAULT 'fr', created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())",
+    "CREATE TABLE IF NOT EXISTS support_tickets (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE, user_id UUID, subject TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'autre', priority TEXT NOT NULL DEFAULT 'normal', status TEXT NOT NULL DEFAULT 'ai', qualification TEXT, satisfaction INT, summary TEXT, resolution_note TEXT, escalate_reason TEXT, unread_admin BOOLEAN NOT NULL DEFAULT false, unread_user BOOLEAN NOT NULL DEFAULT false, lang TEXT NOT NULL DEFAULT 'fr', created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), escalated_at TIMESTAMPTZ, resolved_at TIMESTAMPTZ)",
+    "CREATE INDEX IF NOT EXISTS support_tickets_company_idx ON support_tickets(company_id, updated_at DESC)",
+    "CREATE INDEX IF NOT EXISTS support_tickets_status_idx ON support_tickets(status, updated_at DESC)",
+    "CREATE TABLE IF NOT EXISTS support_messages (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), ticket_id UUID NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE, sender TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
+    "CREATE INDEX IF NOT EXISTS support_messages_ticket_idx ON support_messages(ticket_id, created_at)",
   ];
   for (const stmt of statements) {
     try { await query(stmt); } catch(e) { console.error('[migrations] echec:',stmt.split('\n')[0],e.message); }
@@ -4240,6 +4415,6 @@ ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>
   const renewalTick=()=>checkRenewalReminders().catch(e=>console.error('[renewal] echec:',e.message));
   setInterval(renewalTick, 10*60*1000); setTimeout(renewalTick, 20*1000); // + un passage peu après chaque démarrage
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.37 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.38 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});
