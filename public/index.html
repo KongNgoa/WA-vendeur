@@ -438,6 +438,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 </section>
 <section id="billingTab" class="hidden">
 <div class="panel"><h3 data-i18n="billing_title">Mon abonnement</h3>
+<div id="billTrialNote"></div>
 <div class="stats" id="billStats" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))"></div>
 <div id="billOwnerOnly" class="muted hidden" data-i18n="billing_owner_only">Seul l'administrateur de l'équipe peut gérer l'abonnement.</div>
 </div>
@@ -446,6 +447,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <p class="muted" id="billPendingNote"></p>
 <form class="formgrid" id="billForm" onsubmit="submitRenewal(event)">
 <div><label class="muted" data-i18n="billing_plan_label">Forfait</label><select id="billPlan" onchange="updateBillingInstructions()"></select></div>
+<div><label class="muted" data-i18n="period_label">Durée</label><select id="billPeriod" onchange="updateBillingInstructions()"><option value="monthly" data-i18n="period_monthly">Mensuel</option><option value="annual" data-i18n="period_annual">Annuel — 2 mois offerts</option></select></div>
 <div><label class="muted" data-i18n="billing_method_label">Payer avec</label><select id="billMethod" onchange="updateBillingInstructions()"><option value="orange_money">🟠 Orange Money</option><option value="mtn_momo">🟡 MTN Mobile Money</option></select></div>
 <div class="full panel" style="background:#f5f7fb;margin:0"><div id="billInstructions"></div><button type="button" class="btn" onclick="copyBillNumber()" data-i18n="billing_copy_number">Copier le numéro</button></div>
 <input id="billPayer" placeholder="Votre numéro (celui utilisé pour payer)" required data-i18n-placeholder="placeholder_payer_phone">
@@ -672,6 +674,7 @@ fr: {
   btn_create_order:"Créer la commande", btn_export_excel:"📊 Exporter en Excel", th_number:"N°", th_client:"Client", th_amount:"Montant", empty_orders:"Aucune commande.",
   followups_schedule_title:"Programmer une relance", placeholder_followup_message:"Message de relance", btn_schedule:"Programmer",
   shop_locked:"Vous avez atteint le nombre de boutiques inclus dans votre forfait. Passez au forfait supérieur pour en créer d'autres.",
+  product_locked:"Vous avez atteint le nombre de produits inclus dans votre forfait. Passez au forfait supérieur pour en ajouter.", trial_active:"Essai gratuit en cours : forfait Business débloqué, il reste {n} jour(s). Choisissez votre forfait ci-dessous pour continuer sans interruption.", period_label:"Durée", period_monthly:"Mensuel", period_annual:"Annuel — 2 mois offerts",
   fu_locked:"Les relances automatiques par WhatsApp sont disponibles à partir du forfait Business. Passez au forfait supérieur pour y accéder.",
   followups_auto_note:"Une relance auto (🤖) est envoyée automatiquement au client par WhatsApp dès son échéance — aucune action requise. « Envoyée » = relance déjà partie.",
   th_due:"Échéance", th_message:"Message", th_origin:"Origine", th_action:"Action", origin_auto:"🤖 Auto", origin_manual:"✍️ Manuel",
@@ -968,6 +971,7 @@ en: {
   btn_create_order:"Create order", btn_export_excel:"📊 Export to Excel", th_number:"No.", th_client:"Client", th_amount:"Amount", empty_orders:"No orders yet.",
   followups_schedule_title:"Schedule a follow-up", placeholder_followup_message:"Follow-up message", btn_schedule:"Schedule",
   shop_locked:"You have reached the number of shops included in your plan. Upgrade to create more.",
+  product_locked:"You have reached the number of products included in your plan. Upgrade to add more.", trial_active:"Free trial running: Business plan unlocked, {n} day(s) left. Pick your plan below to continue without interruption.", period_label:"Billing", period_monthly:"Monthly", period_annual:"Annual — 2 months free",
   fu_locked:"Automatic WhatsApp follow-ups are available from the Business plan. Upgrade to unlock them.",
   followups_auto_note:"An automatic follow-up (🤖) is sent to the client on WhatsApp as soon as it's due — no action needed. \"Sent\" = the follow-up already went out.",
   th_due:"Due", th_message:"Message", th_origin:"Origin", th_action:"Action", origin_auto:"🤖 Auto", origin_manual:"✍️ Manual",
@@ -1521,7 +1525,10 @@ async function setProductShop(id,shopId){
   catch(e){ alert(e.message); await load(); tab('products'); }
 }
 function renderProducts() {
-  $('productCount').textContent = '('+data.products.length+')';
+  const pl=data.usage&&data.usage.maxProducts;
+  $('productCount').textContent = '('+data.products.length+(pl!=null?' / '+pl:'')+')';
+  let pk=$('prodLock'); if(!pk){ pk=document.createElement('div'); pk.id='prodLock'; $('productCount').after(pk); }
+  pk.innerHTML=(pl!=null&&data.products.length>=pl&&NEXT_PLAN[data.subscription?.plan])?lockCta('product_locked',NEXT_PLAN[data.subscription.plan]):'';
   $('productTable').innerHTML = data.products.length ? '<table><thead><tr><th></th><th>'+t('th_product')+'</th><th>'+t('th_category')+'</th><th>'+t('th_price')+'</th><th>'+t('th_stock')+'</th><th>'+t('th_actions')+'</th></tr></thead><tbody>' +
     data.products.map(p => '<tr><td>'+(p.imageUrl?'<img src="'+esc(p.imageUrl)+'" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px" onerror="this.style.display=\'none\'">':'')+'</td><td><strong>'+esc(p.name)+'</strong>'+productShopSelect(p)+'</td><td>'+esc(p.category||'—')+'</td><td>'+money(p.price)+'</td><td>'+stockCell(p)+'</td><td><div class="actions">' +
     '<button class="btn" title="'+t('btn_product_link')+'" onclick="copyProductLink(\''+p.id+'\')">🔗</button>'+'<label class="btn" style="cursor:pointer" title="'+t('btn_change_photo')+'">📷<input type="file" accept="image/*" hidden onchange="changeProductPhoto(\''+p.id+'\',this)"></label>'+'<button class="btn" data-edit-product="'+p.id+'">'+t('btn_edit')+'</button><button class="btn danger" data-delete-product="'+p.id+'">'+t('btn_delete')+'</button></div></td></tr>').join('') +
@@ -2206,6 +2213,7 @@ async function loadBilling(){
   catch(e){ $('billStats').innerHTML=''; $('billOwnerOnly').classList.remove('hidden'); $('billRenewPanel').classList.add('hidden'); $('billHistory').innerHTML=''; return; }
   $('billRenewPanel').classList.remove('hidden');
   const d=billing.daysLeft;
+  $('billTrialNote').innerHTML=billing.trial?'<div class="panel" style="border:2px solid #1a9d5a;background:#f0fbf4;margin:0 0 10px">🎁 '+tf('trial_active',{n:Math.max(0,d)})+'</div>':'';
   const until=billing.nextBillingAt?billDate(billing.nextBillingAt):'—';
   const left=d===null?'':(d<=0?t('billing_expired'):tf('billing_days_left',{n:d}));
   $('billStats').innerHTML='<div class="stat"><div class="muted">'+t('billing_plan_label')+'</div><div class="num">'+esc(billing.plan||'—')+'</div></div>'+
@@ -2229,13 +2237,13 @@ function billNumber(){ return $('billMethod').value==='orange_money'?billing.pay
 function updateBillingInstructions(){
   if(!billing) return;
   const label=$('billMethod').value==='orange_money'?'Orange Money':'MTN Mobile Money';
-  $('billInstructions').innerHTML=tf('billing_instructions',{price:Number(billing.plans[$('billPlan').value]).toLocaleString('fr-FR'),label:label,number:'<strong>'+esc(billNumber())+'</strong>'});
+  $('billInstructions').innerHTML=tf('billing_instructions',{price:Number(($('billPeriod').value==='annual'?billing.annualPlans:billing.plans)[$('billPlan').value]).toLocaleString('fr-FR'),label:label,number:'<strong>'+esc(billNumber())+'</strong>'});
 }
 async function copyBillNumber(){ try{ await navigator.clipboard.writeText(billNumber()); $('billStatus').innerHTML='<span class="badge">'+t('shop_link_copied')+'</span>'; }catch(e){} }
 async function submitRenewal(e){
   e.preventDefault(); $('billStatus').innerHTML='';
   try{
-    await api('/api/billing/renew',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan:$('billPlan').value,paymentMethod:$('billMethod').value,payerPhone:$('billPayer').value.trim(),reference:$('billRef').value.trim(),lang})});
+    await api('/api/billing/renew',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan:$('billPlan').value,period:$('billPeriod').value,paymentMethod:$('billMethod').value,payerPhone:$('billPayer').value.trim(),reference:$('billRef').value.trim(),lang})});
     $('billRef').value=''; await loadBilling(); $('billStatus').innerHTML='<span class="badge">'+t('billing_sent')+'</span>';
   }catch(x){ $('billStatus').innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
 }

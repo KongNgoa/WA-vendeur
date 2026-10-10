@@ -22,6 +22,9 @@ const MTN_MOMO_NUMBER = process.env.MTN_MOMO_NUMBER || '+237672353499';
 // relances, campagnes, vitrine) jusqu'à la validation d'un renouvellement.
 // EXPIRED_SQL suppose que la table companies est aliasée 'c'.
 const GRACE_DAYS = 2;
+const TRIAL_DAYS = 7;          // essai gratuit : forfait Business débloqué
+const ANNUAL_MONTHS_PAID = 10; // paiement annuel = 10 mois payés pour 12 (2 mois offerts)
+const annualPrice = plan => planLimits(plan).monthlyPrice * ANNUAL_MONTHS_PAID;
 const EXPIRED_SQL = "EXISTS (SELECT 1 FROM subscriptions xs WHERE xs.company_id=c.id AND xs.next_billing_at IS NOT NULL AND xs.next_billing_at < now() - interval '"+GRACE_DAYS+" days')";
 // Programme de parrainage : chaque entreprise a un code ; quand un filleul voit
 // un paiement d'abonnement validé, le parrain gagne AFFILIATE_PERCENT % du
@@ -320,6 +323,8 @@ async function dashboard(companyId, userId) {
       prospectsThisMonth:prospectsThisMonth.rows[0].n,
       prospectsLimit:limits.maxProspectsPerMonth,
       autoFollowups:limits.autoFollowups,
+      maxProducts:limits.maxProducts,
+      trial:subscription.rows[0]?.status==='trial',
       maxUsers:limits.maxUsers,
       maxAdmins:limits.maxAdmins
     },
@@ -1131,9 +1136,9 @@ function extractSelectedProductId(msg) {
 // façon, Business impose un administrateur unique (transférable), Pro en
 // autorise jusqu'à 3 pour les équipes plus grandes.
 const PLAN_LIMITS = {
-  Starter:  { monthlyPrice: 10000, maxProspectsPerMonth: 100, maxUsers: 1,    maxAdmins: 1, aiAutoReply: true, aiMessagesLimit: 150, autoFollowups: false, prioritySupport: false, campaignsPerMonth: 0, bannersPerMonth: 10, maxShops: 1 },
-  Business: { monthlyPrice: 25000, maxProspectsPerMonth: 300, maxUsers: 3,    maxAdmins: 1, aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: false, campaignsPerMonth: 300, bannersPerMonth: 15, maxShops: 3 },
-  Pro:      { monthlyPrice: 50000, maxProspectsPerMonth: null, maxUsers: null, maxAdmins: 3, aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: true,  campaignsPerMonth: 3000, bannersPerMonth: null, maxShops: 10 },
+  Starter:  { monthlyPrice: 10000, maxProspectsPerMonth: 100, maxUsers: 1,    maxAdmins: 1, aiAutoReply: true, aiMessagesLimit: 150, autoFollowups: false, prioritySupport: false, campaignsPerMonth: 0, bannersPerMonth: 10, maxProducts: 50, maxShops: 1 },
+  Business: { monthlyPrice: 25000, maxProspectsPerMonth: 300, maxUsers: 3,    maxAdmins: 1, aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: false, campaignsPerMonth: 300, bannersPerMonth: 15, maxProducts: 300, maxShops: 3 },
+  Pro:      { monthlyPrice: 50000, maxProspectsPerMonth: null, maxUsers: null, maxAdmins: 3, aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: true,  campaignsPerMonth: 3000, bannersPerMonth: null, maxProducts: null, maxShops: 10 },
 };
 const planLimits = plan => PLAN_LIMITS[plan] || PLAN_LIMITS.Starter;
 
@@ -1848,8 +1853,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.42',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.42'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.43',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.43'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -2208,7 +2213,7 @@ async function handler(req,res) {
   if(req.method==='GET'&&u.pathname==='/api/plans') {
     const plans=Object.fromEntries(Object.entries(PLAN_LIMITS).map(([name,l])=>[name,{
       monthlyPrice:l.monthlyPrice, maxProspectsPerMonth:l.maxProspectsPerMonth, maxUsers:l.maxUsers,
-      aiMessagesLimit:l.aiMessagesLimit, bannersPerMonth:l.bannersPerMonth, campaignsPerMonth:l.campaignsPerMonth, autoFollowups:l.autoFollowups, prioritySupport:l.prioritySupport
+      aiMessagesLimit:l.aiMessagesLimit, bannersPerMonth:l.bannersPerMonth, maxProducts:l.maxProducts, annualPrice:l.monthlyPrice*ANNUAL_MONTHS_PAID, campaignsPerMonth:l.campaignsPerMonth, autoFollowups:l.autoFollowups, prioritySupport:l.prioritySupport
     }]));
     return json(res,200,{plans,payment:{orangeMoney:ORANGE_MONEY_NUMBER,mtnMomo:MTN_MOMO_NUMBER}});
   }
@@ -2230,14 +2235,20 @@ async function handler(req,res) {
     if(!b.companyName||!b.ownerName||!b.ownerEmail||!b.ownerPassword) return json(res,400,{error:SIGNUP_MSG.missing});
     if(String(b.ownerPassword).length<6) return json(res,400,{error:SIGNUP_MSG.shortPwd});
     const plan=['Starter','Business','Pro'].includes(b.plan) ? b.plan : 'Starter';
+    const trial=b.trial===true;
+    if(!trial){
     if(!['orange_money','mtn_momo'].includes(b.paymentMethod)) return json(res,400,{error:SIGNUP_MSG.method});
     if(!b.payerPhone||!b.reference) return json(res,400,{error:SIGNUP_MSG.payer});
+    }
     const email=String(b.ownerEmail).trim().toLowerCase();
     const existingUser=await query('SELECT id FROM users WHERE email=$1',[email]);
     if(existingUser.rows[0]) return json(res,409,{error:SIGNUP_MSG.emailUsed});
+    if(!trial){
     if(normPaymentRef(b.reference).length<6) return json(res,400,{error:lang==='en'?'The transaction reference looks too short (copy it from the confirmation SMS)':'La référence de transaction semble trop courte (recopiez-la depuis le SMS de confirmation)'});
     if(await paymentRefTaken(b.reference)) return json(res,409,{error:lang==='en'?'This transaction reference has already been used':'Cette référence de transaction a déjà été utilisée'});
-    const amount=planLimits(plan).monthlyPrice;
+    }
+    const period=b.period==='annual'?'annual':'monthly';
+    const amount=trial?0:(period==='annual'?annualPrice(plan):planLimits(plan).monthlyPrice);
     // Code de parrainage optionnel : un code inconnu ou d'une entreprise
     // suspendue est ignoré en silence (il ne doit jamais bloquer l'inscription).
     let referrer=null;
@@ -2249,12 +2260,21 @@ async function handler(req,res) {
     const result=await transaction(async client=>{
       const c=await client.query('INSERT INTO companies(name,sector,referred_by) VALUES($1,$2,$3) RETURNING id',[String(b.companyName).trim(),b.sector||null,referrer?referrer.id:null]);
       const newCompanyId=c.rows[0].id;
-      await client.query('INSERT INTO subscriptions(company_id,plan,status,monthly_price) VALUES($1,$2,$3,$4)',[newCompanyId,plan,'trial',amount]);
+      if(trial) {
+        await client.query("INSERT INTO subscriptions(company_id,plan,status,monthly_price,next_billing_at) VALUES($1,'Business','trial',$2,now()+($3||' days')::interval)",[newCompanyId,planLimits('Business').monthlyPrice,String(TRIAL_DAYS)]);
+        await client.query('UPDATE companies SET approved_at=now() WHERE id=$1',[newCompanyId]);
+      } else await client.query('INSERT INTO subscriptions(company_id,plan,status,monthly_price) VALUES($1,$2,$3,$4)',[newCompanyId,plan,'trial',planLimits(plan).monthlyPrice]);
       const h=hashPassword(String(b.ownerPassword));
       await client.query('INSERT INTO users(company_id,email,name,role,password_hash,password_salt) VALUES($1,$2,$3,\'owner\',$4,$5)',[newCompanyId,email,String(b.ownerName).trim(),h.hash,h.salt]);
-      const pr=await client.query('INSERT INTO payment_requests(company_id,plan,method,amount,payer_phone,reference,reference_norm) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id',[newCompanyId,plan,b.paymentMethod,amount,String(b.payerPhone).trim(),String(b.reference).trim(),normPaymentRef(b.reference)]);
+      if(trial) return {companyId:newCompanyId,paymentRequestId:null};
+      const pr=await client.query('INSERT INTO payment_requests(company_id,plan,method,amount,payer_phone,reference,reference_norm,period) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id',[newCompanyId,plan,b.paymentMethod,amount,String(b.payerPhone).trim(),String(b.reference).trim(),normPaymentRef(b.reference),period]);
       return {companyId:newCompanyId,paymentRequestId:pr.rows[0].id};
     });
+    if(trial) {
+      await sendEmail(process.env.SUPERADMIN_EMAIL||'', 'VENDIA — Nouvel essai gratuit '+TRIAL_DAYS+' jours',
+        '<p>Nouvel essai (Business, '+TRIAL_DAYS+' jours) : <strong>'+escHtml(b.companyName)+'</strong> — '+escHtml(b.ownerName)+' ('+escHtml(email)+')'+(referrer?' — parrainé par '+escHtml(referrer.name):'')+'</p>');
+      return json(res,201,{ok:true,trial:true,companyId:result.companyId,message:lang==='en'?'Your '+TRIAL_DAYS+'-day free trial is active — you can sign in now.':'Votre essai gratuit de '+TRIAL_DAYS+' jours est actif — vous pouvez vous connecter dès maintenant.'});
+    }
     await sendEmail(process.env.SUPERADMIN_EMAIL||'', 'VENDIA — Nouvelle demande d\'activation en attente',
       '<p>Nouvelle inscription à valider :</p><ul>'+
       '<li>Entreprise : '+escHtml(b.companyName)+'</li>'+
@@ -2478,13 +2498,13 @@ async function handler(req,res) {
     }
     const prApproveMatch=u.pathname.match(/^\/api\/superadmin\/payment-requests\/([0-9a-f-]+)\/approve$/i);
     if(prApproveMatch&&req.method==='POST') {
-      const pr=await query('SELECT id,company_id AS "companyId",plan,amount FROM payment_requests WHERE id=$1 AND status=\'pending\'',[prApproveMatch[1]]);
+      const pr=await query('SELECT id,company_id AS "companyId",plan,amount,period FROM payment_requests WHERE id=$1 AND status=\'pending\'',[prApproveMatch[1]]);
       if(!pr.rows[0]) return json(res,404,{error:'Demande introuvable ou déjà traitée'});
       const {companyId:pendingCompanyId,plan}=pr.rows[0];
       const commission=await transaction(async client=>{
         await client.query('UPDATE payment_requests SET status=\'approved\',decided_at=now() WHERE id=$1',[prApproveMatch[1]]);
         await client.query('UPDATE companies SET approved_at=COALESCE(approved_at,now()) WHERE id=$1',[pendingCompanyId]);
-        await client.query('UPDATE subscriptions SET plan=$1,status=\'active\',monthly_price=$2,next_billing_at=GREATEST(COALESCE(next_billing_at,now()),now())+interval \'30 days\' WHERE company_id=$3',[plan,planLimits(plan).monthlyPrice,pendingCompanyId]);
+        await client.query('UPDATE subscriptions SET plan=$1,status=\'active\',monthly_price=$2,next_billing_at=GREATEST(COALESCE(next_billing_at,now()),now())+($4||\' days\')::interval WHERE company_id=$3',[plan,planLimits(plan).monthlyPrice,pendingCompanyId,pr.rows[0].period==='annual'?'365':'30']);
         return recordReferralCommission(client,pendingCompanyId,prApproveMatch[1],pr.rows[0].amount);
       });
       if(commission) {
@@ -3149,6 +3169,7 @@ async function handler(req,res) {
     return json(res,200,{
       plan:sub.plan||null,status:sub.status||null,monthlyPrice:Number(sub.monthlyPrice||0),nextBillingAt:sub.nextBillingAt||null,daysLeft,
       plans:Object.fromEntries(Object.entries(PLAN_LIMITS).map(([n,l])=>[n,l.monthlyPrice])),
+      annualPlans:Object.fromEntries(Object.keys(PLAN_LIMITS).map(n=>[n,annualPrice(n)])),trial:sub.status==='trial',trialDays:TRIAL_DAYS,
       payment:{orangeMoney:ORANGE_MONEY_NUMBER,mtnMomo:MTN_MOMO_NUMBER},
       pending:hist.rows.some(x=>x.status==='pending'),
       history:hist.rows.map(x=>({...x,amount:Number(x.amount)}))
@@ -3165,8 +3186,9 @@ async function handler(req,res) {
     if(normPaymentRef(b.reference).length<6) return json(res,400,{error:M('La référence de transaction semble trop courte (recopiez-la depuis le SMS de confirmation)','The transaction reference looks too short (copy it from the confirmation SMS)')});
     if((await query("SELECT 1 FROM payment_requests WHERE company_id=$1 AND status='pending' LIMIT 1",[companyId])).rows[0]) return json(res,409,{error:M('Un paiement est déjà en attente de validation','A payment is already awaiting validation')});
     if(await paymentRefTaken(b.reference)) return json(res,409,{error:M('Cette référence de transaction a déjà été utilisée','This transaction reference has already been used')});
-    const amount=planLimits(b.plan).monthlyPrice;
-    await query('INSERT INTO payment_requests(company_id,plan,method,amount,payer_phone,reference,reference_norm) VALUES($1,$2,$3,$4,$5,$6,$7)',[companyId,b.plan,b.paymentMethod,amount,String(b.payerPhone).trim(),String(b.reference).trim(),normPaymentRef(b.reference)]);
+    const period=b.period==='annual'?'annual':'monthly';
+    const amount=period==='annual'?annualPrice(b.plan):planLimits(b.plan).monthlyPrice;
+    await query('INSERT INTO payment_requests(company_id,plan,method,amount,payer_phone,reference,reference_norm,period) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[companyId,b.plan,b.paymentMethod,amount,String(b.payerPhone).trim(),String(b.reference).trim(),normPaymentRef(b.reference),period]);
     const co=(await query('SELECT name FROM companies WHERE id=$1',[companyId])).rows[0];
     await sendEmail(process.env.SUPERADMIN_EMAIL||'','VENDIA — Demande de renouvellement en attente',
       '<p>Renouvellement à valider :</p><ul><li>Entreprise : '+escHtml(co?.name)+'</li><li>Forfait : '+escHtml(b.plan)+' ('+amount+' FCFA)</li><li>Moyen : '+(b.paymentMethod==='orange_money'?'Orange Money':'MTN Mobile Money')+'</li><li>Numéro payeur : '+escHtml(b.payerPhone)+'</li><li>Référence : '+escHtml(b.reference)+'</li></ul><p>Validez depuis /superadmin.html</p>');
@@ -3308,6 +3330,12 @@ async function handler(req,res) {
     if(!b.name||b.price===undefined||Number.isNaN(Number(b.price))) return json(res,400,{error:'Nom et prix valides requis'});
     const imageUrl=validImageUrl(b.imageUrl);
     if(b.imageUrl&&!imageUrl) return json(res,400,{error:'URL d\'image invalide (doit commencer par http:// ou https://)'});
+    {
+      const sb=await query('SELECT plan FROM subscriptions WHERE company_id=$1',[companyId]);
+      const pl=sb.rows[0]?.plan||'Starter', mp=planLimits(pl).maxProducts;
+      if(mp!=null&&(await query('SELECT COUNT(*)::int AS n FROM products WHERE company_id=$1',[companyId])).rows[0].n>=mp)
+        return json(res,403,{error:'Limite de '+mp+' produits atteinte avec le forfait '+pl+'. Passez au forfait supérieur pour en ajouter. / Product limit reached — upgrade your plan.',code:'product_quota'});
+    }
     let newShopId=null;
     if(b.shopId) {
       const sh=await query('SELECT id FROM shops WHERE id=$1 AND company_id=$2',[String(b.shopId),companyId]).catch(()=>({rows:[]}));
@@ -4419,6 +4447,7 @@ async function ensureMigrations() {
     "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS soft_asks INT NOT NULL DEFAULT 0",
     "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS soft_asks_at TIMESTAMPTZ",
     "CREATE TABLE IF NOT EXISTS vendia_campaigns (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT NOT NULL, spec JSONB NOT NULL DEFAULT '{}'::jsonb, caption TEXT, hashtags TEXT, link TEXT, lang TEXT NOT NULL DEFAULT 'fr', created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())",
+    "ALTER TABLE payment_requests ADD COLUMN IF NOT EXISTS period TEXT NOT NULL DEFAULT 'monthly'",
     "CREATE TABLE IF NOT EXISTS promo_banners (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE, user_id UUID, product_id UUID, format TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
     "CREATE INDEX IF NOT EXISTS promo_banners_company_idx ON promo_banners(company_id, created_at DESC)",
     "CREATE TABLE IF NOT EXISTS support_tickets (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE, user_id UUID, subject TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'autre', priority TEXT NOT NULL DEFAULT 'normal', status TEXT NOT NULL DEFAULT 'ai', qualification TEXT, satisfaction INT, summary TEXT, resolution_note TEXT, escalate_reason TEXT, unread_admin BOOLEAN NOT NULL DEFAULT false, unread_user BOOLEAN NOT NULL DEFAULT false, lang TEXT NOT NULL DEFAULT 'fr', created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), escalated_at TIMESTAMPTZ, resolved_at TIMESTAMPTZ)",
@@ -4445,6 +4474,6 @@ ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>
   const renewalTick=()=>checkRenewalReminders().catch(e=>console.error('[renewal] echec:',e.message));
   setInterval(renewalTick, 10*60*1000); setTimeout(renewalTick, 20*1000); // + un passage peu après chaque démarrage
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.42 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.43 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

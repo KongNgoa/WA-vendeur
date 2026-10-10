@@ -26,7 +26,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 .method{border:2px solid #e9edf5;border-radius:14px;padding:14px;cursor:pointer;text-align:center}
 .method.active{border-color:var(--blue);background:#f5f7fb}
 .instructions{background:#eef2ff;border-radius:12px;padding:14px;margin:12px 0;font-size:14px}
-.error{color:#b42318;margin-top:10px}.success{color:#18794e;margin-top:10px}.hidden{display:none}.muted{color:#687386;font-size:13px}
+.error{color:#b42318;margin-top:10px}.success{color:#18794e;margin-top:10px}.hidden{display:none!important}.muted{color:#687386;font-size:13px}
 .langSwitch{display:flex;border:1px solid #ffffff33;border-radius:8px;overflow:hidden;flex-shrink:0}.langSwitch button{border:0;background:transparent;color:#fff;opacity:.6;padding:6px 10px;font-weight:700;font-size:12px;cursor:pointer;border-radius:0}.langSwitch button.active{opacity:1;background:#ffffff26}
 @media(max-width:600px){.plans{grid-template-columns:1fr}.methods{grid-template-columns:1fr}form.formgrid{grid-template-columns:1fr}}
 </style>
@@ -50,15 +50,19 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <input id="ownerPassword" type="password" placeholder="Mot de passe (min. 6 caractères)" required class="full" data-i18n-placeholder="placeholder_password_min6">
 <input id="referralCode" class="full" maxlength="12" autocapitalize="characters" autocomplete="off" placeholder="Code de parrainage (optionnel)" data-i18n-placeholder="placeholder_referral_code">
 
-<div class="full"><h3 style="margin-bottom:4px" data-i18n="step3_title">3. Paiement</h3></div>
-<div class="full methods" id="methods"></div>
-<div class="full instructions" id="paymentInstructions"></div>
-<input id="payerPhone" placeholder="Votre numéro (celui utilisé pour payer)" required data-i18n-placeholder="placeholder_payer_phone">
-<input id="reference" placeholder="Référence de la transaction" required data-i18n-placeholder="placeholder_reference">
+<div class="full panel" style="background:#f0fbf4;border:2px solid #1a9d5a;margin:0">
+<label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer"><input type="checkbox" id="trialMode" onchange="toggleTrial()" style="width:auto;margin-top:4px"><span><strong data-i18n="trial_label">Commencer par l'essai gratuit de 7 jours</strong><br><span class="muted" data-i18n="trial_desc">Forfait Business entièrement débloqué, sans paiement. Au bout de 7 jours, choisissez votre forfait pour continuer.</span></span></label>
+</div>
+<div class="full" id="payBlockHead"><h3 style="margin-bottom:4px" data-i18n="step3_title">3. Paiement</h3>
+<div style="margin-top:6px"><label class="muted" data-i18n="period_label">Durée</label> <select id="period" onchange="renderInstructions()" style="width:auto"><option value="monthly" data-i18n="period_monthly">Mensuel</option><option value="annual" data-i18n="period_annual">Annuel — 2 mois offerts</option></select></div></div>
+<div class="full methods payf" id="methods"></div>
+<div class="full instructions payf" id="paymentInstructions"></div>
+<input id="payerPhone" class="payf" placeholder="Votre numéro (celui utilisé pour payer)" required data-i18n-placeholder="placeholder_payer_phone">
+<input id="reference" class="payf" placeholder="Référence de la transaction" required data-i18n-placeholder="placeholder_reference">
 
 <div class="full"><button class="btn" type="submit" data-i18n="btn_create_account">Créer mon compte</button></div>
 </form>
-<p class="muted" style="margin-top:10px" data-i18n="activation_note">Votre compte sera activé dès que le paiement sera validé (généralement sous quelques heures). Vous serez averti par email.</p>
+<p class="muted" id="activationNote" style="margin-top:10px" data-i18n="activation_note">Votre compte sera activé dès que le paiement sera validé (généralement sous quelques heures). Vous serez averti par email.</p>
 <div id="status" style="margin-top:10px"></div>
 <div style="margin-top:14px"><a href="/" data-i18n="already_account_link">Déjà un compte ? Se connecter</a></div>
 </section>
@@ -74,6 +78,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 const I18N = {
 fr: {
   header_tag:"Créer le compte de votre entreprise",
+  trial_label:"Commencer par l'essai gratuit de 7 jours", trial_desc:"Forfait Business entièrement débloqué, sans paiement. Au bout de 7 jours, choisissez votre forfait pour continuer.", period_label:"Durée", period_monthly:"Mensuel", period_annual:"Annuel — 2 mois offerts", btn_start_trial:"Démarrer mon essai gratuit",
   step1_title:"1. Votre forfait", step2_title:"2. Votre entreprise", step3_title:"3. Paiement",
   placeholder_company_name:"Nom de l'entreprise", placeholder_sector:"Secteur d'activité",
   placeholder_your_name:"Votre nom complet", placeholder_your_email:"Votre email",
@@ -91,6 +96,7 @@ fr: {
 },
 en: {
   header_tag:"Create your company's account",
+  trial_label:"Start with the 7-day free trial", trial_desc:"Business plan fully unlocked, no payment. After 7 days, pick your plan to continue.", period_label:"Billing", period_monthly:"Monthly", period_annual:"Annual — 2 months free", btn_start_trial:"Start my free trial",
   step1_title:"1. Your plan", step2_title:"2. Your company", step3_title:"3. Payment",
   placeholder_company_name:"Company name", placeholder_sector:"Business sector",
   placeholder_your_name:"Your full name", placeholder_your_email:"Your email",
@@ -140,6 +146,13 @@ function renderPlans(){
       '<div class="muted">'+(p.maxUsers==null?t('unlimited_members'):tf('members_count',{n:p.maxUsers}))+'</div></div>';
   }).join('');
 }
+function toggleTrial(){
+  const on=$('trialMode').checked;
+  document.querySelectorAll('.payf,#payBlockHead').forEach(e=>e.classList.toggle('hidden',on));
+  $('payerPhone').required=!on; $('reference').required=!on;
+  document.querySelector('#signupForm button[type=submit]').textContent=on?t('btn_start_trial'):t('btn_create_account');
+  $('activationNote').classList.toggle('hidden',on);
+}
 function selectPlan(n){ selectedPlan=n; renderPlans(); renderInstructions(); }
 function renderMethods(){
   $('methods').innerHTML=''+
@@ -148,7 +161,7 @@ function renderMethods(){
 }
 function selectMethod(m){ selectedMethod=m; renderMethods(); renderInstructions(); }
 function renderInstructions(){
-  const price=Number(plansData.plans[selectedPlan].monthlyPrice).toLocaleString('fr-FR');
+  const price=Number($('period').value==='annual'?plansData.plans[selectedPlan].annualPrice:plansData.plans[selectedPlan].monthlyPrice).toLocaleString('fr-FR');
   const number=selectedMethod==='orange_money'?plansData.payment.orangeMoney:plansData.payment.mtnMomo;
   const label=selectedMethod==='orange_money'?t('orange_money').replace(/^\S+\s/,''):t('mtn_momo').replace(/^\S+\s/,'');
   $('paymentInstructions').innerHTML=tf('instructions_text',{price,label,number:esc(number)});
@@ -161,6 +174,7 @@ async function submitSignup(e){
     const r=await fetch('/api/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       companyName:$('companyName').value.trim(), sector:$('sector').value.trim(),
       ownerName:$('ownerName').value.trim(), ownerEmail:$('ownerEmail').value.trim(), ownerPassword:$('ownerPassword').value,
+      trial:$('trialMode').checked, period:$('period').value,
       plan:selectedPlan, paymentMethod:selectedMethod, payerPhone:$('payerPhone').value.trim(), reference:$('reference').value.trim(),
       referralCode:$('referralCode').value.trim(),
       lang

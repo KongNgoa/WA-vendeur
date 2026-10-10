@@ -139,6 +139,13 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - Le tableau du parrain montre ses filleuls (abonné actif ou en attente de paiement) et ce que chacun lui a rapporté.
 
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.
+## 1.10.43 — Essai gratuit 7 jours, paiement annuel, limite de produits
+
+- **Essai gratuit 7 jours** (signup.html, case « Commencer par l'essai gratuit ») : aucun paiement, compte activé immédiatement avec le forfait **Business** débloqué (`subscriptions.status='trial'`, `next_billing_at = +7 jours`). À l'échéance, le garde d'abonnement expiré existant bloque le compte (+2 jours de grâce) jusqu'à un renouvellement ; l'onglet Abonnement affiche « il reste N jour(s) » pendant l'essai. Constante `TRIAL_DAYS`.
+- **Paiement annuel** : 10 mois payés pour 12 (`ANNUAL_MONTHS_PAID`) — Starter 100 000, Business 250 000, Pro 500 000 FCFA. Sélecteur Mensuel/Annuel à l'inscription et au renouvellement ; `payment_requests.period` ; la validation super-admin ajoute 365 jours au lieu de 30.
+- **Limite de produits** : Starter 50, Business 300, Pro illimité (`maxProducts`) ; création refusée (403 `product_quota`) au-delà, compteur « n / max » et cadenas 🔒 dans le catalogue.
+- Messages IA inchangés : Starter 150/mois, Business et Pro illimités.
+
 ## 1.10.42 — Cadenas partout où le forfait limite
 
 - Équipe (membres) et boutiques : quand la limite du forfait est atteinte, bloc 🔒 + bouton « Passer à <forfait supérieur> » (helper `lockCta`), comme pour les campagnes et les relances automatiques.
