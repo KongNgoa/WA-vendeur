@@ -718,15 +718,22 @@ function classifyLead(text, products=[], prospect={}) {
 // Ponctuation tolérante : sur WhatsApp, les apostrophes sont très souvent
 // omises ou remplacées par une espace (« quelqu un » au lieu de « quelqu'un »).
 const HANDOFF_PHRASES = /parler\s+(?:à|a)\s+(?:un|quelqu['’]?\s?un|une\s+personne)|passez[\s-]?moi|je\s+veux\s+(?:un\s+)?(?:humain|conseiller|responsable)|(?:humain|conseiller|responsable)\s+svp|besoin\s+d['’]?\s?un\s+humain|appelez[\s-]?moi\s+quelqu['’]?\s?un|(?:talk|speak)\s+to\s+(?:a\s+)?(?:human|person|someone|agent|representative)|(?:connect|transfer)\s+me\s+to\s+(?:a\s+)?(?:human|agent|someone)|i\s+(?:want|need)\s+(?:a\s+)?(?:human|agent|representative)|(?:human|agent|representative)[,\s]+please/i;
+const HANDOFF_URGENT = /avocat|juridique|litige|plainte|arnaque|escroqu|\bdispute\b|chargeback|\bscam\b|fraud(?:ulent)?|\blawyer\b|legal action|\bpolice\b|this is a scam/i;
 const HANDOFF_SENSITIVE = /r[ée]clamation|remboursement|rembours(?:er|é)|litige|plainte|arnaque|escroqu|avocat|juridique|paiement\s+(?:bloqu[ée]|refus[ée]|non\s+pass[ée])|erreur\s+de\s+paiement|m[ée]content|insatisfait|d[ée]ç[ue]|\brefund\b|\bcomplaint\b|\bdispute\b|chargeback|\bscam\b|fraud(?:ulent)?|\blawyer\b|legal action|payment\s+(?:failed|blocked|declined|not\s+going\s+through)|this\s+is\s+a\s+scam|\bunhappy\b|dissatisfied|disappointed|not\s+happy/i;
 
 function determineNextAction(text, qualification) {
   const q = String(text || '');
+  // L'IA reste prioritaire : seule une situation grave (litige, menace, arnaque…) passe tout de suite à l'humain
+  // (urgent). Une demande d'humain ou une réclamation « normale » est d'abord traitée par l'IA (kind), qui
+  // clarifie et essaie de résoudre ; la main n'est passée que si le client insiste ou si l'IA ne peut vraiment pas.
+  if (HANDOFF_URGENT.test(q)) {
+    return { action: 'handoff', priority: 'high', urgent: true, kind: 'urgent', reason: 'Situation grave : litige, plainte ou accusation de fraude' };
+  }
   if (HANDOFF_PHRASES.test(q)) {
-    return { action: 'handoff', priority: 'high', reason: "Demande explicite d'un interlocuteur humain" };
+    return { action: 'handoff', priority: 'high', urgent: false, kind: 'human_request', reason: "Demande explicite d'un interlocuteur humain" };
   }
   if (HANDOFF_SENSITIVE.test(q)) {
-    return { action: 'handoff', priority: 'high', reason: 'Réclamation, litige ou paiement bloqué — situation sensible' };
+    return { action: 'handoff', priority: 'high', urgent: false, kind: 'complaint', reason: 'Réclamation ou paiement bloqué — situation sensible' };
   }
   if (qualification.orderIntent) {
     return { action: 'propose_order', priority: 'high', reason: "Intention d'achat forte" };
@@ -969,12 +976,12 @@ async function handleTelegramUpdate(co, update) {
     return;
   }
   const ing = await ingestMessage(co.id, conv.id, conv, { body: text, direction: 'in', name, prospectId, providerMessageId: null });
-  const gate = await handoffGate(co.id, { ...conv, phone: conv.phone || chatId }, ing, text);
   const limits = planLimits(co.plan);
+  const gate = await handoffGate(co.id, { ...conv, phone: conv.phone || chatId }, ing, text, co.aiAutoReplyEnabled !== false && !!limits.aiAutoReply);
   if (gate.skipAi || co.aiAutoReplyEnabled === false || !limits.aiAutoReply) return;
   let reply;
-  if (ing.nextAction?.action === 'handoff') {
-    reply = 'Merci pour votre message 🙏 Je transmets tout de suite à un membre de notre équipe qui revient vers vous rapidement.';
+  if (gate.forceReply) {
+    reply = gate.forceReply;
   } else {
     const products = (await query('SELECT name,category,price,stock FROM products WHERE company_id=$1 ORDER BY created_at', [co.id])).rows;
     if (CATALOG_INTENT.test(text) && products.length) {
@@ -984,10 +991,12 @@ async function handleTelegramUpdate(co, update) {
       if (usage.remaining !== null && usage.remaining <= 0) return;
       const prospectRow = ing.prospectId ? (await query('SELECT status,need FROM prospects WHERE id=$1', [ing.prospectId])).rows[0] : null;
       const history = (await query('SELECT direction,body FROM messages WHERE conversation_id=$1 ORDER BY created_at DESC LIMIT 12', [conv.id])).rows.reverse();
-      const ai = await generateAiReply(co, prospectRow, products, history);
+      const ai = await generateAiReply(co, prospectRow, products, history, { situation: gate.situation });
       reply = ai ? ai.text : null;
       if (reply) await incrementAiUsage(co.id);
-      if (ai && ai.escalate) await flagHandoff(co.id, { ...conv, phone: conv.phone || chatId }, 'Question hors catalogue / consignes — l\'IA ne peut pas répondre', text);
+      const cv2 = { ...conv, phone: conv.phone || chatId };
+      if (ai && ai.escalate) await flagHandoff(co.id, cv2, ai.urgent ? 'Urgence détectée par l\'IA' : 'Demande que l\'IA ne peut pas traiter (hors catalogue / consignes)', text, ai.urgent);
+      else if (!ai && gate.situation) await flagHandoff(co.id, cv2, 'Demande d\'un humain (IA indisponible)', text);
     }
   }
   if (reply) await ingestMessage(co.id, conv.id, { ...conv, prospectId: ing.prospectId || prospectId }, { body: reply, direction: 'out' });
@@ -1151,7 +1160,7 @@ async function incrementAiUsage(companyId) {
 // l'appelant : renvoie null si la clé API est absente ou si l'appel échoue
 // (l'appelant journalise et laisse simplement la conversation sans réponse
 // automatique pour ce message — comportement dégradé, jamais bloquant).
-async function generateAiReply(company, prospect, products, history) {
+async function generateAiReply(company, prospect, products, history, opts = {}) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) { console.warn('[ai-reply] ANTHROPIC_API_KEY non configuré — réponse automatique désactivée'); return null; }
 
@@ -1161,6 +1170,12 @@ async function generateAiReply(company, prospect, products, history) {
 
   const paymentMethods=[company.paymentOrangeMoney?('Orange Money : '+company.paymentOrangeMoney):null,company.paymentMtnMomo?('MTN Mobile Money : '+company.paymentMtnMomo):null].filter(Boolean);
 
+  const canEscalate = (history||[]).some(m => m.direction === 'out');
+  const SITUATIONS = {
+    human_request: 'SITUATION : le client vient de demander à parler à un humain. Ne transmets PAS tout de suite : réponds avec bienveillance, dis que tu peux sûrement l\'aider immédiatement, et demande-lui de préciser ce dont il a besoin. N\'écris aucun marqueur dans cette réponse.',
+    complaint: 'SITUATION : le client exprime un mécontentement ou un problème. Montre de l\'empathie, demande le détail précis du problème (numéro de commande, ce qui s\'est passé) et propose une solution concrète que tu peux apporter toi-même. N\'écris aucun marqueur dans cette réponse.',
+    insist: 'SITUATION : le client insiste pour parler à un humain et sa demande est déjà enregistrée pour l\'équipe. Confirme honnêtement et chaleureusement que sa demande est transmise à l\'équipe, qui répondra dès que possible (sans promettre d\'heure). N\'écris aucun marqueur dans cette réponse.'
+  };
   const systemPrompt = [
     'Tu es '+(company.aiName||'l\'assistant commercial')+' de l\'entreprise "'+company.name+'"'+(company.sector?' (secteur : '+company.sector+')':'')+', et tu réponds aux clients sur WhatsApp.',
     'Ton de voix : '+(company.aiTone||'professionnel et chaleureux')+'.',
@@ -1170,11 +1185,16 @@ async function generateAiReply(company, prospect, products, history) {
     prospect ? 'Fiche du client en cours — statut commercial : '+(prospect.status||'inconnu')+', besoin exprimé jusqu\'ici : '+(prospect.need||'non précisé')+'.' : null,
     paymentMethods.length ? 'Moyens de paiement disponibles pour ce client :\n'+paymentMethods.join('\n')+'\nQuand le client confirme vouloir commander/payer, indique-lui clairement comment payer (numéro et moyen ci-dessus). Ne mentionne aucun autre moyen de paiement.' : null,
     'Si le client propose ou confirme une date/heure pour un rendez-vous, une livraison, une démonstration ou un appel, confirme-le clairement et brièvement dans ta réponse (le système enregistre ce rendez-vous automatiquement). Si son intention de rendez-vous est claire mais qu\'il ne précise ni jour ni heure, demande-lui de proposer un jour et une heure.',
+    'Ton rôle : tu es l\'interlocuteur principal du client et tu gères seul la quasi-totalité des conversations (questions, prix, disponibilité, commande, paiement, livraison, rendez-vous, petits soucis). Un humain n\'intervient que très rarement, en cas d\'urgence : tu es responsable d\'aller au bout de chaque demande.',
+    'Avant de transmettre quoi que ce soit à un humain, suis toujours cet ordre : (1) assure-toi d\'avoir bien compris la demande — si elle est floue ou incomplète, pose UNE question précise et courte ; (2) essaie de la traiter avec le catalogue, les moyens de paiement et les consignes ci-dessus, en proposant une alternative si besoin ; (3) ne transmets que si, après cela, la demande dépasse vraiment ce que tu peux faire.',
+    opts.situation && SITUATIONS[opts.situation] ? SITUATIONS[opts.situation] : null,
     'Règles impératives :',
     '- Réponds de façon brève et naturelle, comme un vrai message WhatsApp (1 à 3 phrases courtes, pas de markdown, pas de listes à puces, pas de formule d\'email).',
     '- N\'invente jamais un prix, un produit ou une disponibilité qui n\'est pas dans le catalogue ci-dessus.',
     '- Réponds toi-même à tout ce que le catalogue, les moyens de paiement et les consignes ci-dessus permettent de traiter : tu es là pour gérer la conversation de bout en bout.',
-    '- Si une demande dépasse vraiment ce que tu peux traiter (information absente du catalogue et des consignes, cas particulier, demande sur mesure), n\'invente rien et ne promets pas de « vérifier » ni de « revenir plus tard » : dis honnêtement et simplement que la demande est transmise à l\'équipe, qui répondra dès que possible, puis termine ta réponse par le marqueur exact [[HUMAIN]] (le client ne le verra pas). N\'utilise ce marqueur que dans ce cas.',
+    (opts.situation ? '- Dans cette réponse, n\'écris aucun marqueur de transmission.' : canEscalate
+      ? '- Transmission à l\'équipe (rare) : seulement si, après avoir compris et essayé, la demande dépasse vraiment ce que tu peux traiter (information absente du catalogue et des consignes, cas particulier, demande sur mesure). N\'invente rien et ne promets pas de « vérifier » ni de « revenir plus tard » : dis honnêtement que la demande est transmise à l\'équipe, qui répondra dès que possible, puis termine par le marqueur exact [[HUMAIN]] (le client ne le verra pas). Pour une urgence réelle (menace, litige, paiement débité sans commande, client très en colère), termine plutôt par [[URGENT]]. N\'utilise un marqueur que dans ces cas.'
+      : '- Tu ne peux PAS encore transmettre à un humain : comprends et traite la demande toi-même, pose une question si nécessaire. N\'écris jamais de marqueur ni « je transmets à l\'équipe » dans cette réponse.'),
     '- Ne révèle jamais que tu es une intelligence artificielle, sauf si le client le demande explicitement.',
   ].filter(Boolean).join('\n\n');
 
@@ -1200,9 +1220,9 @@ async function generateAiReply(company, prospect, products, history) {
     }
     const data = await resp.json();
     const raw0 = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('').trim();
-    const escalate = /\[\[\s*HUMAIN\s*\]\]/i.test(raw0);
+    const mk = raw0.match(/\[\[\s*(HUMAIN|URGENT)\s*\]\]/i);
     const text = raw0.replace(HUMAN_MARK_RE, ' ').replace(/\s+$/,'').trim();
-    return text ? { text, escalate } : null;
+    return text ? { text, escalate: !!mk, urgent: !!mk && /urgent/i.test(mk[1]) } : null;
   } catch(e) {
     console.error('[ai-reply] echec appel API Anthropic:', e.message);
     return null;
@@ -1643,15 +1663,20 @@ async function sendPushToCompany(companyId, payload) {
 // demande un humain, signale un problème sensible, ou pose une question à laquelle l'IA ne peut pas
 // répondre. Le responsable est alerté (push) une seule fois par demande, puis rappelé à 30 min et 2 h
 // si personne n'a répondu. Dès qu'un humain répond, l'IA se met en pause sur cette conversation.
-const HUMAN_MARK_RE = /\s*\[\[\s*HUMAIN\s*\]\]\s*/gi;
+const HUMAN_MARK_RE = /\s*\[\[\s*(?:HUMAIN|URGENT)\s*\]\]\s*/gi;
 const HUMAN_PAUSE_HOURS = 12;
-async function flagHandoff(companyId, conv, reason, preview) {
+async function flagHandoff(companyId, conv, reason, preview, urgent = false) {
   try {
-    const r = await query("UPDATE conversations SET needs_human=true,needs_human_at=now(),needs_human_reason=$1,handoff_reminders=0 WHERE id=$2 AND company_id=$3 AND needs_human=false RETURNING id", [String(reason).slice(0, 200), conv.id, companyId]);
-    if (!r.rows[0]) return false; // déjà signalée : pas de nouvelle alerte
+    const r = await query("UPDATE conversations SET needs_human=true,needs_human_urgent=$4,needs_human_at=now(),needs_human_reason=$1,handoff_reminders=0 WHERE id=$2 AND company_id=$3 AND needs_human=false RETURNING id", [String(reason).slice(0, 200), conv.id, companyId, !!urgent]);
+    let notify = !!r.rows[0];
+    if (!notify && urgent) { // déjà signalée sans urgence : on la passe en urgent et on réalerte
+      const up = await query("UPDATE conversations SET needs_human_urgent=true,needs_human_reason=$1,handoff_reminders=0 WHERE id=$2 AND company_id=$3 AND needs_human AND NOT needs_human_urgent RETURNING id", [String(reason).slice(0, 200), conv.id, companyId]);
+      notify = !!up.rows[0];
+    }
+    if (!notify) return false; // déjà signalée : pas de nouvelle alerte
     const nm = (await query('SELECT p.name FROM conversations c LEFT JOIN prospects p ON p.id=c.prospect_id WHERE c.id=$1', [conv.id])).rows[0]?.name || conv.phone || 'Client';
     const pv = String(preview || '').replace(/\s+/g, ' ').trim();
-    sendPushToCompany(companyId, { title: '🔔 Client à traiter — ' + nm, body: String(reason) + (pv ? ' : « ' + (pv.length > 90 ? pv.slice(0, 90) + '…' : pv) + ' »' : ''), url: '/?conv=' + conv.id, tag: 'handoff-' + conv.id, urgent: true, kind: 'handoff' });
+    sendPushToCompany(companyId, { title: (urgent ? '🚨 URGENT — ' : '🔔 Client à traiter — ') + nm, body: String(reason) + (pv ? ' : « ' + (pv.length > 90 ? pv.slice(0, 90) + '…' : pv) + ' »' : ''), url: '/?conv=' + conv.id, tag: 'handoff-' + conv.id, urgent: !!urgent, kind: 'handoff' });
     return true;
   } catch (e) { console.error('[handoff] echec:', e.message); return false; }
 }
@@ -1661,35 +1686,49 @@ async function aiPausedFor(conversationId) {
 }
 async function handoffReminderTick() {
   try {
-    const rows = (await query(`SELECT cv.id,cv.company_id AS "companyId",cv.handoff_reminders AS n,cv.needs_human_at AS at,p.name,cv.external_contact AS phone
+    const rows = (await query(`SELECT cv.id,cv.company_id AS "companyId",cv.handoff_reminders AS n,cv.needs_human_urgent AS urgent,cv.needs_human_at AS at,p.name,cv.external_contact AS phone
       FROM conversations cv JOIN companies c ON c.id=cv.company_id LEFT JOIN prospects p ON p.id=cv.prospect_id
-      WHERE cv.needs_human AND cv.handoff_reminders<2 AND c.approved_at IS NOT NULL AND NOT c.suspended AND NOT (${EXPIRED_SQL})
-        AND cv.needs_human_at < now() - (CASE WHEN cv.handoff_reminders=0 THEN interval '30 minutes' ELSE interval '2 hours' END) LIMIT 50`)).rows;
+      WHERE cv.needs_human AND c.approved_at IS NOT NULL AND NOT c.suspended AND NOT (${EXPIRED_SQL})
+        AND ((cv.needs_human_urgent AND cv.handoff_reminders<2 AND cv.needs_human_at < now() - (CASE WHEN cv.handoff_reminders=0 THEN interval '30 minutes' ELSE interval '2 hours' END))
+          OR (NOT cv.needs_human_urgent AND cv.handoff_reminders<1 AND cv.needs_human_at < now() - interval '2 hours')) LIMIT 50`)).rows;
     for (const r of rows) {
       const upd = await query('UPDATE conversations SET handoff_reminders=handoff_reminders+1 WHERE id=$1 AND needs_human AND handoff_reminders=$2 RETURNING id', [r.id, r.n]);
       if (!upd.rows[0]) continue;
       const mins = Math.round((Date.now() - new Date(r.at).getTime()) / 60000);
-      sendPushToCompany(r.companyId, { title: '⏰ Toujours en attente — ' + (r.name || r.phone || 'Client'), body: 'Ce client attend une réponse depuis ' + (mins >= 120 ? Math.round(mins / 60) + ' h' : mins + ' min') + '.', url: '/?conv=' + r.id, tag: 'handoff-' + r.id, urgent: true, kind: 'reminder' });
+      sendPushToCompany(r.companyId, { title: '⏰ Toujours en attente — ' + (r.name || r.phone || 'Client'), body: 'Ce client attend une réponse depuis ' + (mins >= 120 ? Math.round(mins / 60) + ' h' : mins + ' min') + '.', url: '/?conv=' + r.id, tag: 'handoff-' + r.id, urgent: !!r.urgent, kind: 'reminder' });
     }
   } catch (e) { console.error('[handoff] rappels:', e.message); }
 }
 
-// Appelée à chaque message entrant : décide si l'IA doit répondre et signale au responsable
-// les passages à l'humain explicites. Retourne { skipAi }.
-async function handoffGate(companyId, conv, ing, text) {
+// Appelée à chaque message entrant : décide si l'IA doit répondre et ce qu'elle doit faire d'une demande d'humain.
+// L'IA reste prioritaire : seule une situation grave passe tout de suite à l'humain. Une demande d'humain ou une
+// réclamation « normale » est d'abord traitée par l'IA (situation), qui clarifie et résout ; au 2e message dans
+// les 24 h (le client insiste), la demande est transmise. Si l'IA est désactivée, tout est signalé immédiatement.
+// Retourne { skipAi, forceReply, situation }.
+const URGENT_ACK = "Je comprends, et je prends votre message très au sérieux 🙏 Je le transmets immédiatement à un responsable qui vous répondra au plus vite.";
+async function handoffGate(companyId, conv, ing, text, aiActive = true) {
+  const out = { skipAi: false, forceReply: null, situation: null };
   try {
     const st = await aiPausedFor(conv.id);
     if (st.paused) {
-      // Un humain a pris la main : l'IA se tait. On ne dérange le responsable que si le client
-      // écrit alors que la dernière réponse humaine date de plus de 5 minutes.
+      // Un humain a pris la main : l'IA se tait. On ne dérange le responsable que si le client écrit alors que
+      // la dernière réponse humaine date de plus de 5 minutes.
       if (st.quiet) await flagHandoff(companyId, conv, 'Le client a écrit alors que l\'IA est en pause', text);
-      return { skipAi: true };
+      out.skipAi = true; return out;
     }
-    if (ing && ing.nextAction && ing.nextAction.action === 'handoff') await flagHandoff(companyId, conv, ing.nextAction.reason, text);
+    const na = ing && ing.nextAction;
+    if (na && na.action === 'handoff') {
+      if (na.urgent) { await flagHandoff(companyId, conv, na.reason, text, true); if (aiActive) out.forceReply = URGENT_ACK; }
+      else if (!aiActive) await flagHandoff(companyId, conv, na.reason, text, false);
+      else {
+        const r = await query("UPDATE conversations SET soft_asks=CASE WHEN soft_asks_at IS NOT NULL AND soft_asks_at>now()-interval '24 hours' THEN soft_asks+1 ELSE 1 END,soft_asks_at=now() WHERE id=$1 RETURNING soft_asks", [conv.id]);
+        if ((r.rows[0]?.soft_asks || 1) >= 2) { await flagHandoff(companyId, conv, na.reason + ' (le client insiste)', text, na.kind === 'complaint'); out.situation = 'insist'; }
+        else out.situation = na.kind;
+      }
+    }
   } catch (e) { console.error('[handoff] gate:', e.message); }
-  return { skipAi: false };
+  return out;
 }
-
 async function ingestMessage(companyId, conversationId, conv, b) {
   const direction=b.direction||'out';
   const text=String(b.body).trim();
@@ -1736,8 +1775,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.35',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.35'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.36',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.36'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -1992,13 +2031,13 @@ async function handler(req,res) {
             // reste chez l'humain (l'action recommandée reste visible dans
             // l'onglet Relances, comme avant).
             const limits=planLimits(companyRow.plan);
-            const waGate=await handoffGate(targetCompanyId,{...conversationRow,phone:conversationRow.phone||from},ingestResult,text);
+            const waGate=await handoffGate(targetCompanyId,{...conversationRow,phone:conversationRow.phone||from},ingestResult,text,companyRow.aiAutoReplyEnabled!==false && !!limits.aiAutoReply);
             if(!waGate.skipAi && companyRow.aiAutoReplyEnabled!==false && limits.aiAutoReply) {
               try {
                 let replyText;
                 let handledByCatalog=false;
-                if(ingestResult.nextAction?.action==='handoff') {
-                  replyText="Merci pour votre message 🙏 Je transmets tout de suite à un membre de notre équipe qui revient vers vous rapidement.";
+                if(waGate.forceReply) {
+                  replyText=waGate.forceReply;
                 } else if (CATALOG_INTENT.test(text) && companyRow.whatsappPhoneNumberId && companyRow.whatsappAccessToken) {
                   const catalogProducts=(await query('SELECT id,name,price,stock FROM products WHERE company_id=$1 ORDER BY created_at',[targetCompanyId])).rows;
                   if (catalogProducts.length) {
@@ -2019,10 +2058,12 @@ async function handler(req,res) {
                     const prospectRow=ingestResult.prospectId ? (await query('SELECT status,need FROM prospects WHERE id=$1',[ingestResult.prospectId])).rows[0] : null;
                     const productsRows=(await query('SELECT name,category,price,stock FROM products WHERE company_id=$1 ORDER BY created_at',[targetCompanyId])).rows;
                     const historyRows=(await query('SELECT direction,body FROM messages WHERE conversation_id=$1 ORDER BY created_at DESC LIMIT 12',[conversationRow.id])).rows.reverse();
-                    const aiOut=await generateAiReply(companyRow,prospectRow,productsRows,historyRows);
+                    const aiOut=await generateAiReply(companyRow,prospectRow,productsRows,historyRows,{situation:waGate.situation});
                     replyText=aiOut?aiOut.text:null;
                     if(replyText) await incrementAiUsage(targetCompanyId);
-                    if(aiOut && aiOut.escalate) await flagHandoff(targetCompanyId,{...conversationRow,phone:conversationRow.phone||from},'Question hors catalogue / consignes — l\'IA ne peut pas répondre',text);
+                    const cv2={...conversationRow,phone:conversationRow.phone||from};
+                    if(aiOut && aiOut.escalate) await flagHandoff(targetCompanyId,cv2,aiOut.urgent?'Urgence détectée par l\'IA':'Demande que l\'IA ne peut pas traiter (hors catalogue / consignes)',text,aiOut.urgent);
+                    else if(!aiOut && waGate.situation) await flagHandoff(targetCompanyId,cv2,'Demande d\'un humain (IA indisponible)',text);
                   }
                 }
                 if(replyText) await ingestMessage(targetCompanyId,conversationRow.id,conversationRow,{body:replyText,direction:'out'});
@@ -3350,7 +3391,7 @@ async function handler(req,res) {
     // dashboard pour toutes les entreprises (voir audit). Les 500
     // conversations les plus récentes par entreprise, dans le même esprit.
     const r=await query(`SELECT c.id,c.channel,c.external_contact AS phone,c.prospect_id AS "prospectId",p.name AS prospect, c.created_at AS "createdAt",
-      c.needs_human AS "needsHuman",c.needs_human_reason AS "needsHumanReason",c.needs_human_at AS "needsHumanAt",
+      c.needs_human AS "needsHuman",c.needs_human_urgent AS "needsHumanUrgent",c.needs_human_reason AS "needsHumanReason",c.needs_human_at AS "needsHumanAt",
       (c.ai_paused_until IS NOT NULL AND c.ai_paused_until>now()) AS "aiPaused",c.ai_paused_until AS "aiPausedUntil",
       COALESCE((SELECT json_agg(x ORDER BY x."createdAt") FROM (
         SELECT m.id,m.direction,m.body,m.created_at AS "createdAt",m.provider_error AS "providerError"
@@ -3375,9 +3416,9 @@ async function handler(req,res) {
     if((b.direction||'out')==='out') {
       // Un humain répond depuis l'application : l'IA se met en pause sur cette conversation
       // (reprise manuelle ou automatique après HUMAN_PAUSE_HOURS) et la demande est considérée comme prise en charge.
-      await query("UPDATE conversations SET needs_human=false,human_handled_at=now(),ai_paused_until=now()+($1||' hours')::interval WHERE id=$2 AND company_id=$3",[String(HUMAN_PAUSE_HOURS),convMatch[1],companyId]);
+      await query("UPDATE conversations SET needs_human=false,needs_human_urgent=false,soft_asks=0,human_handled_at=now(),ai_paused_until=now()+($1||' hours')::interval WHERE id=$2 AND company_id=$3",[String(HUMAN_PAUSE_HOURS),convMatch[1],companyId]);
     } else if(result && result.nextAction && result.nextAction.action==='handoff') {
-      await flagHandoff(companyId,own.rows[0],result.nextAction.reason,b.body);
+      await flagHandoff(companyId,own.rows[0],result.nextAction.reason,b.body,!!result.nextAction.urgent);
     }
     return json(res,201,result);
   }
@@ -3385,14 +3426,14 @@ async function handler(req,res) {
   if(convAct && req.method==='POST') {
     const own=await query('SELECT id FROM conversations WHERE id=$1 AND company_id=$2',[convAct[1],companyId]);
     if(!own.rows[0]) return json(res,404,{error:'Conversation introuvable'});
-    if(convAct[2]==='handled') await query('UPDATE conversations SET needs_human=false,human_handled_at=now() WHERE id=$1',[convAct[1]]);
-    else await query('UPDATE conversations SET needs_human=false,ai_paused_until=NULL WHERE id=$1',[convAct[1]]);
+    if(convAct[2]==='handled') await query('UPDATE conversations SET needs_human=false,needs_human_urgent=false,soft_asks=0,human_handled_at=now() WHERE id=$1',[convAct[1]]);
+    else await query('UPDATE conversations SET needs_human=false,needs_human_urgent=false,soft_asks=0,ai_paused_until=NULL WHERE id=$1',[convAct[1]]);
     return json(res,200,{ok:true});
   }
 
   // Résumé léger (interrogé toutes les 30 s par l'application ouverte) : badge + bip.
   if(req.method==='GET'&&u.pathname==='/api/handoff/summary') {
-    const r=await query(`SELECT c.id,c.needs_human_reason AS reason,c.needs_human_at AS at,COALESCE(p.name,c.external_contact) AS name
+    const r=await query(`SELECT c.id,c.needs_human_urgent AS urgent,c.needs_human_reason AS reason,c.needs_human_at AS at,COALESCE(p.name,c.external_contact) AS name
       FROM conversations c LEFT JOIN prospects p ON p.id=c.prospect_id WHERE c.company_id=$1 AND c.needs_human ORDER BY c.needs_human_at DESC LIMIT 50`,[companyId]);
     return json(res,200,{count:r.rows.length,items:r.rows});
   }
@@ -4146,6 +4187,9 @@ async function ensureMigrations() {
     "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS ai_paused_until TIMESTAMPTZ",
     "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS handoff_reminders INT NOT NULL DEFAULT 0",
     "ALTER TABLE companies ADD COLUMN IF NOT EXISTS onboarding_dismissed_at TIMESTAMPTZ",
+    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS needs_human_urgent BOOLEAN NOT NULL DEFAULT false",
+    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS soft_asks INT NOT NULL DEFAULT 0",
+    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS soft_asks_at TIMESTAMPTZ",
   ];
   for (const stmt of statements) {
     try { await query(stmt); } catch(e) { console.error('[migrations] echec:',stmt.split('\n')[0],e.message); }
@@ -4165,6 +4209,6 @@ ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>
   const renewalTick=()=>checkRenewalReminders().catch(e=>console.error('[renewal] echec:',e.message));
   setInterval(renewalTick, 10*60*1000); setTimeout(renewalTick, 20*1000); // + un passage peu après chaque démarrage
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.35 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.36 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

@@ -54,7 +54,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 @media(max-width:800px){.stats{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}form.formgrid{grid-template-columns:1fr}.hero h2{font-size:25px}header{padding:15px 18px}}
 
 .navBadge{display:inline-block;min-width:20px;padding:1px 6px;margin-left:6px;border-radius:12px;background:#d62839;color:#fff;font-size:11px;font-weight:800;text-align:center;line-height:18px}.navBadge.soft{background:#17A2FE}
-.pill{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;margin-left:6px;white-space:nowrap}.pill.todo{background:#fee4e2;color:#b42318}.pill.paused{background:#eef2f6;color:#536071}
+.pill{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;margin-left:6px;white-space:nowrap}.pill.todo{background:#fff1d6;color:#9a5b00}.pill.urgent{background:#d62839;color:#fff}.pill.paused{background:#eef2f6;color:#536071}
 .convRow.needs{background:#fff5f4;border-left:4px solid #d62839}
 #convFilter{display:flex;gap:8px;margin:0 0 12px;flex-wrap:wrap}
 .convBanner{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:10px 22px;font-size:14px}.convBanner.todo{background:#fee4e2;color:#7a271a}.convBanner.paused{background:#f2f4f7;color:#344054}
@@ -648,6 +648,8 @@ fr: {
   forgot_password_sent_default:"Si un compte existe avec cet email, un lien a été envoyé.",
   invalid_or_expired_link:"Lien invalide ou expiré", invalid_credentials:"Identifiants incorrects",
   qualification_hot:"Chaud", qualification_warm:"Tiède", qualification_cold:"Froid",
+  conv_pill_urgent:"🚨 Urgent",
+  conv_banner_urgent:"🚨 Urgent — cette conversation a besoin d'un humain : {r}",
   nav_guide:"Guide",
   gd_title:"Guide de démarrage",
   gd_sub:"{done} étape(s) sur {total} terminées",
@@ -728,7 +730,7 @@ fr: {
   gd_subscription_s2:"Payez par Mobile Money en suivant les instructions affichées ; votre compte est activé après validation.",
   gd_subscription_s3:"Un rappel s'affiche avant l'échéance. Après l'échéance, 2 jours de grâce vous sont laissés avant le blocage.",
   pn_title:"🔔 Alertes sur votre téléphone",
-  pn_desc:"Recevez une notification à l'écran (avec vibration) chaque fois qu'un client demande un humain ou pose une question que l'IA ne peut pas traiter. L'IA reste prioritaire : elle gère seule tout le reste.",
+  pn_desc:"Vous êtes alerté à l'écran (avec vibration) uniquement quand l'IA ne peut vraiment pas s'en sortir seule : elle gère presque tout, comprend d'abord la demande, et ne passe la main que si le client insiste, si la demande dépasse ce qu'elle sait, ou en cas d'urgence (litige, paiement problématique, client très en colère).",
   pn_state_on:"✅ Alertes actives sur cet appareil",
   pn_state_off:"Alertes non activées sur cet appareil",
   pn_state_denied:"🚫 Les notifications sont bloquées dans ce navigateur : autorisez-les dans les réglages du site, puis réessayez.",
@@ -931,6 +933,8 @@ en: {
   forgot_password_sent_default:"If an account exists with this email, a link has been sent.",
   invalid_or_expired_link:"Invalid or expired link", invalid_credentials:"Incorrect credentials",
   qualification_hot:"Hot", qualification_warm:"Warm", qualification_cold:"Cold",
+  conv_pill_urgent:"🚨 Urgent",
+  conv_banner_urgent:"🚨 Urgent — this conversation needs a human: {r}",
   nav_guide:"Guide",
   gd_title:"Getting started guide",
   gd_sub:"{done} of {total} steps completed",
@@ -1011,7 +1015,7 @@ en: {
   gd_subscription_s2:"Pay by Mobile Money following the instructions shown; your account is activated after validation.",
   gd_subscription_s3:"A reminder appears before the due date. After it, you get 2 grace days before the account is blocked.",
   pn_title:"🔔 Alerts on your phone",
-  pn_desc:"Get an on-screen notification (with vibration) whenever a customer asks for a human or asks something the AI cannot handle. The AI stays first in line: it handles everything else on its own.",
+  pn_desc:"You are alerted on screen (with vibration) only when the AI really cannot manage on its own: it handles almost everything, first makes sure it understood the request, and only hands over if the customer insists, if the request goes beyond what it knows, or in an emergency (dispute, payment problem, very angry customer).",
   pn_state_on:"✅ Alerts are on for this device",
   pn_state_off:"Alerts are not enabled on this device",
   pn_state_denied:"🚫 Notifications are blocked in this browser: allow them in the site settings, then try again.",
@@ -1601,7 +1605,7 @@ function renderConversations(){
     const name=c.prospect||t('label_client');
     const rawPreview=last?String(last.body||''):'';
     const preview=last?esc(rawPreview.length>60?rawPreview.slice(0,60)+'…':rawPreview):t('conv_no_messages');
-    const pill=c.needsHuman?'<span class="pill todo" title="'+esc(c.needsHumanReason||'')+'">'+t('conv_pill_todo')+'</span>':(c.aiPaused?'<span class="pill paused">'+t('conv_pill_paused')+'</span>':'');
+    const pill=c.needsHuman?'<span class="pill '+(c.needsHumanUrgent?'urgent':'todo')+'" title="'+esc(c.needsHumanReason||'')+'">'+t(c.needsHumanUrgent?'conv_pill_urgent':'conv_pill_todo')+'</span>':(c.aiPaused?'<span class="pill paused">'+t('conv_pill_paused')+'</span>':'');
     return '<div class="convRow'+(c.needsHuman?' needs':'')+'" onclick="openConversationModal(\''+c.id+'\')">'+
       '<div class="convAvatar">'+esc(convInitials(name))+'</div>'+
       '<div class="convInfo"><div class="convTop"><strong>'+esc(name)+'</strong>'+pill+(last?'<span class="convTime">'+esc(timeFmt(last.createdAt))+'</span>':'')+'</div>'+
@@ -2749,7 +2753,7 @@ async function pollHandoff(){
     const fresh=r.items.filter(i=>!handoffKnown.has(i.id));
     handoffKnown=new Set(r.items.map(i=>i.id));
     setHandoffBadge(r.count);
-    if(handoffInit && fresh.length){ beepAlert(); showHandoffToast(fresh[0],fresh.length); }
+    if(handoffInit && fresh.length){ if(fresh.some(i=>i.urgent)) beepAlert(); showHandoffToast(fresh.find(i=>i.urgent)||fresh[0],fresh.length); }
     if(handoffInit && (fresh.length||currentTab==='conversations')) refreshConvQuiet();
     handoffInit=true;
   }catch(e){}
@@ -2786,7 +2790,7 @@ function renderConvBanner(c){
   const el=$('modalConvBanner'); if(!el) return;
   if(c.needsHuman){
     el.className='convBanner todo';
-    el.innerHTML='<div>'+esc(tf('conv_banner_todo',{r:c.needsHumanReason||''}))+'</div><button class="btn" onclick="markHandled()">'+esc(t('conv_btn_handled'))+'</button>';
+    el.innerHTML='<div>'+esc(tf(c.needsHumanUrgent?'conv_banner_urgent':'conv_banner_todo',{r:c.needsHumanReason||''}))+'</div><button class="btn" onclick="markHandled()">'+esc(t('conv_btn_handled'))+'</button>';
   } else if(c.aiPaused){
     el.className='convBanner paused';
     el.innerHTML='<div>'+esc(t('conv_banner_paused'))+'</div><button class="btn" onclick="resumeAi()">'+esc(t('conv_btn_resume'))+'</button>';

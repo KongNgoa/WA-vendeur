@@ -139,6 +139,15 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - Le tableau du parrain montre ses filleuls (abonné actif ou en attente de paiement) et ce que chacun lui a rapporté.
 
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.
+## 1.10.36 — L'IA va au bout avant de passer la main
+
+- **L'IA est l'interlocuteur principal** : consigne renforcée dans son prompt. Avant toute transmission : (1) comprendre la demande (une question précise si elle est floue), (2) essayer de la traiter avec le catalogue, les paiements et les consignes, (3) ne transmettre que si elle dépasse vraiment ses capacités. Tant qu'elle n'a pas encore répondu dans la conversation, elle n'a pas le droit de transmettre.
+- **Demande d'humain ou réclamation « normale »** : l'IA répond d'abord (bienveillance, clarification, solution). Si le client insiste (2e demande en 24 h), la demande est transmise (non urgente, ou urgente pour une réclamation).
+- **Urgence immédiate** seulement pour les cas graves (litige, plainte, avocat, arnaque/fraude, police) ou quand l'IA détecte une vraie urgence (marqueur interne `[[URGENT]]`). Message d'accusé de réception et alerte immédiate.
+- **Alertes graduées** : urgent = notification persistante + vibration longue + bip, rappel à 30 min puis 2 h ; non urgent = notification simple, un seul rappel à 2 h, pas de bip. Pastille « 🚨 Urgent » dans la liste.
+- Si l'IA est désactivée, indisponible ou sans clé, toute demande d'humain est signalée tout de suite (jamais de demande perdue).
+- Colonnes : `conversations.needs_human_urgent`, `soft_asks`, `soft_asks_at` (remises à zéro quand la conversation est traitée).
+
 ## 1.10.35 — Alertes téléphone, passage à l'humain et guide de démarrage
 
 **Passage à l'humain (l'IA reste prioritaire)**

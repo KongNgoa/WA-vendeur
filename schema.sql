@@ -458,3 +458,6 @@ ALTER TABLE conversations ADD COLUMN IF NOT EXISTS ai_paused_until TIMESTAMPTZ;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS handoff_reminders INT NOT NULL DEFAULT 0;
 -- Guide de démarrage : masqué par l'entreprise
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS onboarding_dismissed_at TIMESTAMPTZ;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS needs_human_urgent BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS soft_asks INT NOT NULL DEFAULT 0;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS soft_asks_at TIMESTAMPTZ;
