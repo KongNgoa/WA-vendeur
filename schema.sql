@@ -227,6 +227,8 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 -- ajout sur la base de production existante, utiliser scripts/migrate-add-plan-limits.js.
 ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS ai_messages_used INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS ai_usage_reset_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS reminder_for TIMESTAMPTZ;
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS reminder_stage INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS webhook_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

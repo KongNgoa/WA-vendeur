@@ -1487,8 +1487,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.28',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.28'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.29',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.29'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -3104,6 +3104,52 @@ async function checkDailyReportSchedule() {
   } catch(e) { console.error('[daily-report] echec:',e.message); }
 }
 
+// --- Rappels d'échéance d'abonnement (paiement manuel) ---------------------
+// Aucun prélèvement automatique : sans rappel, un client oublie de renouveler.
+// Quatre paliers par échéance (≤5 j, ≤1 j, expiré, expiré depuis 3 j), chacun
+// envoyé une seule fois par e-mail à l'administrateur. Le palier atteint est
+// mémorisé avec l'échéance concernée (reminder_for) : dès qu'un renouvellement
+// repousse next_billing_at, le cycle repart de zéro. Aucun rappel si un
+// paiement est déjà en attente de validation. Un e-mail non envoyé (Resend non
+// configuré) n'est pas marqué comme envoyé et sera retenté. L'expiration
+// n'entraîne volontairement aucun blocage du compte (décision produit à part).
+function renewalStage(days) { return days<=-3?4 : days<=0?3 : days<=1?2 : days<=5?1 : 0; }
+function renewalEmail(name, plan, days, stage, until) {
+  const price=planLimits(plan).monthlyPrice;
+  const how='<p>Pour renouveler : envoyez <strong>'+money(price)+'</strong> par Orange Money au <strong>'+escHtml(ORANGE_MONEY_NUMBER)+'</strong> ou MTN MoMo au <strong>'+escHtml(MTN_MOMO_NUMBER)+'</strong>, puis saisissez la référence reçue par SMS dans l\'onglet <em>Abonnement</em> de votre espace VENDIA. Votre paiement est validé rapidement.</p>';
+  const hello='<p>Bonjour '+escHtml(name)+',</p>';
+  if(stage===1) return ['VENDIA — Votre abonnement expire dans '+Math.max(1,Math.ceil(days))+' jour(s)', hello+'<p>Votre forfait <strong>'+escHtml(plan)+'</strong> arrive à échéance le <strong>'+until+'</strong>.</p>'+how];
+  if(stage===2) return ['VENDIA — Votre abonnement expire demain', hello+'<p>Votre forfait <strong>'+escHtml(plan)+'</strong> expire le <strong>'+until+'</strong>.</p>'+how];
+  if(stage===3) return ['VENDIA — Votre abonnement a expiré', hello+'<p>L\'échéance de votre forfait <strong>'+escHtml(plan)+'</strong> était le <strong>'+until+'</strong>. Renouvelez dès maintenant pour éviter toute interruption.</p>'+how];
+  return ['VENDIA — Dernier rappel : abonnement expiré', hello+'<p>Votre forfait <strong>'+escHtml(plan)+'</strong> est expiré depuis le <strong>'+until+'</strong>. Si vous souhaitez continuer à utiliser VENDIA, renouvelez-le maintenant.</p>'+how];
+}
+async function checkRenewalReminders() {
+  const h=cameroonNow().getUTCHours();
+  if(h<8||h>18) return; // heures ouvrables du Cameroun uniquement
+  const rows=(await query(`SELECT s.company_id AS "companyId",s.plan,s.next_billing_at AS "nextBillingAt",
+      CASE WHEN s.reminder_for IS NOT DISTINCT FROM s.next_billing_at THEN s.reminder_stage ELSE 0 END AS "sentStage"
+    FROM subscriptions s JOIN companies c ON c.id=s.company_id
+    WHERE s.status='active' AND s.next_billing_at IS NOT NULL AND c.approved_at IS NOT NULL AND c.suspended=false
+      AND s.next_billing_at < now() + interval '5 days 1 hour'
+      AND NOT EXISTS (SELECT 1 FROM payment_requests p WHERE p.company_id=s.company_id AND p.status='pending')`)).rows;
+  for(const r of rows) {
+    const days=(new Date(r.nextBillingAt)-Date.now())/86400000;
+    const stage=renewalStage(days);
+    if(stage<=Number(r.sentStage)) continue;
+    const until=new Date(r.nextBillingAt).toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric',timeZone:'Africa/Douala'});
+    const owners=(await query("SELECT email,name FROM users WHERE company_id=$1 AND role='owner'",[r.companyId])).rows;
+    let sent=false;
+    for(const o of owners) {
+      const [subject,html]=renewalEmail(o.name,r.plan,days,stage,until);
+      if(await sendEmail(o.email,subject,html)) sent=true;
+    }
+    if(sent) {
+      await query('UPDATE subscriptions SET reminder_for=next_billing_at,reminder_stage=$1 WHERE company_id=$2',[stage,r.companyId]); // SQL et non la valeur JS : Date tronque les microsecondes
+      console.log('[renewal] rappel palier %d envoyé (entreprise %s)',stage,r.companyId);
+    }
+  }
+}
+
 // --- Relance automatique des prospects hésitants (envoi réel) --------------
 // Le moteur de relance (syncAutoFollowup, plus haut) planifie déjà une ligne
 // dans 'followups' (source='auto') — jusqu'ici, elle restait affichée dans
@@ -3194,6 +3240,8 @@ async function ensureMigrations() {
     'CREATE INDEX IF NOT EXISTS sessions_expires_idx ON sessions(expires_at)',
     'ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS ai_messages_used INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS ai_usage_reset_at TIMESTAMPTZ NOT NULL DEFAULT now()',
+    'ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS reminder_for TIMESTAMPTZ',
+    'ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS reminder_stage INTEGER NOT NULL DEFAULT 0',
     // Lot "administration d'équipe, réinitialisation de mot de passe et
     // super-admin" — idempotent. Le super_admin_id est ajouté à 'sessions'
     // (avec user_id/company_id rendus nullables) plutôt que d'utiliser une
@@ -3412,7 +3460,9 @@ const server=http.createServer((req,res)=>handler(req,res).catch(e=>{ if(e&&e.st
 ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>console.error('[demarrage] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>runCampaignTick(), 20*1000);
+  const renewalTick=()=>checkRenewalReminders().catch(e=>console.error('[renewal] echec:',e.message));
+  setInterval(renewalTick, 10*60*1000); setTimeout(renewalTick, 20*1000); // + un passage peu après chaque démarrage
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.28 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.29 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

@@ -139,6 +139,10 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - Le tableau du parrain montre ses filleuls (abonné actif ou en attente de paiement) et ce que chacun lui a rapporté.
 
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.
+## 1.10.29 — Rappels d'échéance (paiement manuel)
+Comme les paiements sont manuels, VENDIA envoie maintenant à l'administrateur de chaque entreprise un e-mail de rappel avec les numéros Orange Money / MTN MoMo et le montant du forfait : à 5 jours de l'échéance, la veille, le jour de l'expiration, puis 3 jours après. Chaque palier n'est envoyé qu'une fois ; un renouvellement validé remet le cycle à zéro. Aucun rappel si un paiement est déjà en attente de validation. Nécessite `RESEND_API_KEY` (sans clé, rien n'est envoyé et l'envoi sera retenté dès qu'elle est ajoutée). L'expiration ne bloque pas le compte.
+Déjà en place avant cette version : e-mail au super-admin à chaque demande de paiement (`SUPERADMIN_EMAIL`), e-mail d'activation à la validation, e-mail en cas de rejet.
+
 ## 1.10.28 — Retrait de Campay
 Le paiement automatique Campay (1.10.26 et 1.10.27) est retiré : la vérification d'entreprise (RCCM, ACF, NIU) n'est pas possible pour le moment. Le paiement manuel (référence de transaction validée par le super-admin) reste la seule méthode. Les variables `CAMPAY_*` ne sont plus utilisées et peuvent être supprimées de Railway. Les colonnes `payment_requests.provider` / `provider_ref` éventuellement créées sont ignorées sans risque.
 
