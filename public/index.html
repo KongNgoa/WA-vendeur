@@ -433,7 +433,7 @@ fr: {
   billing_copy_number:"Copier le numéro", billing_submit:"J'ai payé — envoyer pour validation", billing_sent:"Envoyé ! Nous validons votre paiement sous peu.",
   billing_pending_note:"Votre paiement est en cours de validation : vous serez prévenu dès qu'il sera confirmé.", billing_renew_hint:"Chaque paiement validé prolonge votre abonnement de 30 jours à partir de l'échéance actuelle.",
   billing_history_title:"Historique des paiements", billing_no_history:"Aucun paiement enregistré.", billing_st_pending:"⏳ En attente", billing_st_approved:"✅ Validé", billing_st_rejected:"❌ Refusé",
-  billing_banner_late:"Votre abonnement est arrivé à échéance. Renouvelez-le pour ne pas être interrompu.", billing_banner_soon:"Votre abonnement expire dans {n} jour(s).", billing_banner_btn:"Renouveler",
+  billing_banner_late:"Votre abonnement est arrivé à échéance : votre compte sera bloqué dans {n} jour(s) si vous ne le renouvelez pas.", billing_blocked_title:"Abonnement expiré — compte bloqué", billing_blocked_msg:"Votre abonnement n'a pas été renouvelé : l'application, les réponses automatiques et les relances sont suspendus. Vos données sont conservées. Renouvelez ci-dessous : tout est rétabli dès que votre paiement est validé.", billing_blocked_member:"Si vous n'êtes pas l'administrateur de l'équipe, contactez-le : seul lui peut renouveler l'abonnement.", billing_blocked_reload:"J'ai été validé — actualiser", billing_banner_soon:"Votre abonnement expire dans {n} jour(s).", billing_banner_btn:"Renouveler",
   upgrade_prospects_full:"Vous avez atteint la limite de {n} nouveaux prospects ce mois-ci : les nouveaux contacts ne sont plus enregistrés dans votre CRM.",
   upgrade_ai_full:"Vous avez utilisé vos {n} réponses IA du mois : l'assistant répond désormais avec un message de secours.",
   upgrade_prospects_near:"Vous approchez de votre limite de prospects ({u}/{n} ce mois-ci).", upgrade_ai_near:"Vous approchez de votre limite de réponses IA ({u}/{n} ce mois-ci).",
@@ -595,7 +595,7 @@ en: {
   billing_copy_number:"Copy number", billing_submit:"I paid — send for validation", billing_sent:"Sent! We will confirm your payment shortly.",
   billing_pending_note:"Your payment is being validated: you will be notified once it is confirmed.", billing_renew_hint:"Each confirmed payment extends your subscription by 30 days from the current due date.",
   billing_history_title:"Payment history", billing_no_history:"No payments recorded.", billing_st_pending:"⏳ Pending", billing_st_approved:"✅ Confirmed", billing_st_rejected:"❌ Rejected",
-  billing_banner_late:"Your subscription is past due. Renew it to avoid interruption.", billing_banner_soon:"Your subscription expires in {n} day(s).", billing_banner_btn:"Renew",
+  billing_banner_late:"Your subscription is past due: your account will be blocked in {n} day(s) unless you renew.", billing_blocked_title:"Subscription expired — account blocked", billing_blocked_msg:"Your subscription was not renewed: the app, automatic replies and follow-ups are suspended. Your data is kept. Renew below: everything is restored as soon as your payment is confirmed.", billing_blocked_member:"If you are not the team administrator, contact them: only they can renew the subscription.", billing_blocked_reload:"I was approved — refresh", billing_banner_soon:"Your subscription expires in {n} day(s).", billing_banner_btn:"Renew",
   upgrade_prospects_full:"You have reached the limit of {n} new leads this month: new contacts are no longer saved to your CRM.",
   upgrade_ai_full:"You have used your {n} AI replies for the month: the assistant now answers with a fallback message.",
   upgrade_prospects_near:"You are close to your lead limit ({u}/{n} this month).", upgrade_ai_near:"You are close to your AI reply limit ({u}/{n} this month).",
@@ -821,8 +821,25 @@ async function api(path, options = {}) {
     showLogin(t('session_expired'));
     throw new Error(t('session_expired'));
   }
+  if (r.status === 402) { enterBlockedMode(); throw new Error(d.error || t('generic_error')); }
   if (!r.ok) throw new Error(d.error || t('generic_error'));
   return d;
+}
+
+// Abonnement expiré au-delà de la période de grâce : le serveur répond 402 à
+// tout sauf à l'onglet Abonnement. On n'affiche donc que celui-ci.
+let blockedMode = false;
+function enterBlockedMode() {
+  if (blockedMode) return;
+  blockedMode = true;
+  $('login').classList.add('hidden');
+  $('app').classList.remove('hidden');
+  document.querySelectorAll('button[data-tab]').forEach(b => { if (b.dataset.tab !== 'billing') b.classList.add('hidden'); });
+  ['upgradeBanner','stockBanner'].forEach(id => { const e=$(id); if (e) e.classList.add('hidden'); });
+  const el = $('billingBanner');
+  el.innerHTML = '<div class="panel" style="border:2px solid #d62839;margin:0"><strong>⛔ '+t('billing_blocked_title')+'</strong><p style="margin:6px 0">'+t('billing_blocked_msg')+'</p><p class="muted" style="margin:0 0 8px">'+t('billing_blocked_member')+'</p><button class="btn" onclick="location.reload()">'+t('billing_blocked_reload')+'</button></div>';
+  el.classList.remove('hidden');
+  tab('billing');
 }
 
 function showLogin(msg='') {
@@ -1727,8 +1744,8 @@ function renderBillingBanner(){
   if(!nb||data.role!=='owner'){ el.classList.add('hidden'); return; }
   const days=Math.ceil((new Date(nb)-Date.now())/86400000);
   if(days>5){ el.classList.add('hidden'); return; }
-  const late=days<=0;
-  el.innerHTML='<div class="panel" style="border:2px solid '+(late?'#d62839':'#e9b949')+';margin:0;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>'+(late?'⚠️ '+t('billing_banner_late'):'⏳ '+tf('billing_banner_soon',{n:days}))+'</span><span class="actions">'+(NEXT_PLAN[data.subscription?.plan]?'<button class="btn primary" onclick="goUpgrade(\''+NEXT_PLAN[data.subscription.plan]+'\')">⭐ '+tf('upgrade_btn',{plan:NEXT_PLAN[data.subscription.plan]})+'</button><button class="btn" onclick="goRenew()">'+t('billing_banner_btn')+'</button>':'<button class="btn primary" onclick="goRenew()">'+t('billing_banner_btn')+'</button>')+'</span></div>';
+  const late=days<=0, graceLeft=Math.max(1,Math.ceil((new Date(nb).getTime()+2*86400000-Date.now())/86400000));
+  el.innerHTML='<div class="panel" style="border:2px solid '+(late?'#d62839':'#e9b949')+';margin:0;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>'+(late?'⚠️ '+tf('billing_banner_late',{n:graceLeft}):'⏳ '+tf('billing_banner_soon',{n:days}))+'</span><span class="actions">'+(NEXT_PLAN[data.subscription?.plan]?'<button class="btn primary" onclick="goUpgrade(\''+NEXT_PLAN[data.subscription.plan]+'\')">⭐ '+tf('upgrade_btn',{plan:NEXT_PLAN[data.subscription.plan]})+'</button><button class="btn" onclick="goRenew()">'+t('billing_banner_btn')+'</button>':'<button class="btn primary" onclick="goRenew()">'+t('billing_banner_btn')+'</button>')+'</span></div>';
   el.classList.remove('hidden');
 }
 async function loadBilling(){

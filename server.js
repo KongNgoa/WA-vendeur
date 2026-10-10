@@ -16,6 +16,12 @@ const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-2025100
 // d'environnement pour pouvoir les changer sans redéploiement de code.
 const ORANGE_MONEY_NUMBER = process.env.ORANGE_MONEY_NUMBER || '+237691965012';
 const MTN_MOMO_NUMBER = process.env.MTN_MOMO_NUMBER || '+237672353499';
+// Blocage faute de paiement : l'accès est maintenu GRACE_DAYS jours après
+// l'échéance (next_billing_at), puis tout est bloqué (API, webhooks, IA,
+// relances, campagnes, vitrine) jusqu'à la validation d'un renouvellement.
+// EXPIRED_SQL suppose que la table companies est aliasée 'c'.
+const GRACE_DAYS = 2;
+const EXPIRED_SQL = "EXISTS (SELECT 1 FROM subscriptions xs WHERE xs.company_id=c.id AND xs.next_billing_at IS NOT NULL AND xs.next_billing_at < now() - interval '"+GRACE_DAYS+" days')";
 // Programme de parrainage : chaque entreprise a un code ; quand un filleul voit
 // un paiement d'abonnement validé, le parrain gagne AFFILIATE_PERCENT % du
 // montant, sur au plus AFFILIATE_MAX_PAYMENTS paiements par filleul. Les deux
@@ -1325,12 +1331,12 @@ async function runCampaignTick() {
   try {
     const camps = (await query("SELECT id,company_id AS \"companyId\",message,template_name AS tpl,template_lang AS lang FROM campaigns WHERE status='En cours' ORDER BY started_at LIMIT 20")).rows;
     for (const c of camps) {
-      const co = (await query('SELECT c.name,c.suspended,c.approved_at AS "approvedAt",c.whatsapp_phone_number_id AS "whatsappPhoneNumberId",c.whatsapp_access_token AS "whatsappAccessToken" FROM companies c WHERE c.id=$1', [c.companyId])).rows[0];
+      const co = (await query('SELECT c.name,c.suspended,('+EXPIRED_SQL+') AS expired,c.approved_at AS "approvedAt",c.whatsapp_phone_number_id AS "whatsappPhoneNumberId",c.whatsapp_access_token AS "whatsappAccessToken" FROM companies c WHERE c.id=$1', [c.companyId])).rows[0];
       const stop = async note => {
         await query("UPDATE campaigns SET status='Annulée',note=$1,finished_at=now() WHERE id=$2", [note, c.id]);
         await query("UPDATE campaign_recipients SET status='skipped',error=$1 WHERE campaign_id=$2 AND status='pending'", [note, c.id]);
       };
-      if (!co || co.suspended || !co.approvedAt) { await stop('Entreprise suspendue ou non validée'); continue; }
+      if (!co || co.suspended || co.expired || !co.approvedAt) { await stop(co&&co.expired?'Abonnement expiré':'Entreprise suspendue ou non validée'); continue; }
       const company = { whatsappPhoneNumberId: co.whatsappPhoneNumberId, whatsappAccessToken: co.whatsappAccessToken ? decryptSecret(co.whatsappAccessToken) : null };
       if (!company.whatsappPhoneNumberId || !company.whatsappAccessToken) { await stop('WhatsApp non configuré'); continue; }
       const batch = (await query(`UPDATE campaign_recipients SET status='sending' WHERE id IN (SELECT id FROM campaign_recipients WHERE campaign_id=$1 AND status='pending' ORDER BY id LIMIT 10 FOR UPDATE SKIP LOCKED) RETURNING id,prospect_id AS "prospectId",phone,first_name AS "firstName"`, [c.id])).rows;
@@ -1487,8 +1493,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.29',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.29'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.30',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.30'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -1526,7 +1532,7 @@ async function handler(req,res) {
     if(rateLimited('shoporder:'+clientIp(req),8,10*60*1000)) return tooManyRequests(res);
     const b=await body(req,20000);
     if(b.website) return json(res,201,{ok:true,number:'VND-0',total:''}); // piège anti-robot : succès factice
-    const co=await query('SELECT c.id,c.name,s.id AS "shopId" FROM shops s JOIN companies c ON c.id=s.company_id WHERE s.slug=$1 AND s.enabled=true AND c.suspended=false AND c.approved_at IS NOT NULL AND s.whatsapp IS NOT NULL',[shopOrderMatch[1]]);
+    const co=await query('SELECT c.id,c.name,s.id AS "shopId" FROM shops s JOIN companies c ON c.id=s.company_id WHERE s.slug=$1 AND s.enabled=true AND c.suspended=false AND NOT '+EXPIRED_SQL+' AND c.approved_at IS NOT NULL AND s.whatsapp IS NOT NULL',[shopOrderMatch[1]]);
     if(!co.rows[0]) return json(res,404,{error:'Boutique introuvable'});
     const companyId=co.rows[0].id, shopId=co.rows[0].shopId;
     if(rateLimited('shoporder-co:'+companyId,60,60*60*1000)) return json(res,429,{error:'Trop de commandes pour le moment. Contactez la boutique sur WhatsApp.'});
@@ -1589,7 +1595,7 @@ async function handler(req,res) {
   if(productPageMatch) {
     const htmlHeaders={'Content-Type':'text/html; charset=utf-8','X-Content-Type-Options':'nosniff','X-Frame-Options':'SAMEORIGIN','Referrer-Policy':'strict-origin-when-cross-origin'};
     if(rateLimited('shop:'+clientIp(req),120,60*1000)) { res.writeHead(429,{...htmlHeaders,'Cache-Control':'no-store'}); return res.end('Trop de requêtes. Réessayez dans une minute.'); }
-    const c=await query('SELECT c.id,s.id AS "shopId",s.name,c.sector,s.slug AS "shopSlug",s.tagline,s.whatsapp AS "shopWhatsapp",s.fb_pixel AS "fbPixel",s.tiktok_pixel AS "tiktokPixel" FROM shops s JOIN companies c ON c.id=s.company_id WHERE s.slug=$1 AND s.enabled=true AND c.suspended=false AND c.approved_at IS NOT NULL AND s.whatsapp IS NOT NULL',[productPageMatch[1].toLowerCase()]);
+    const c=await query('SELECT c.id,s.id AS "shopId",s.name,c.sector,s.slug AS "shopSlug",s.tagline,s.whatsapp AS "shopWhatsapp",s.fb_pixel AS "fbPixel",s.tiktok_pixel AS "tiktokPixel" FROM shops s JOIN companies c ON c.id=s.company_id WHERE s.slug=$1 AND s.enabled=true AND c.suspended=false AND NOT '+EXPIRED_SQL+' AND c.approved_at IS NOT NULL AND s.whatsapp IS NOT NULL',[productPageMatch[1].toLowerCase()]);
     const pr=c.rows[0]?await query('SELECT id,name,category,price,stock,image_url AS "imageUrl" FROM products WHERE id=$1 AND company_id=$2 AND (shop_id IS NULL OR shop_id=$3)',[productPageMatch[2].toLowerCase(),c.rows[0].id,c.rows[0].shopId]):{rows:[]};
     if(!pr.rows[0]) { res.writeHead(404,{...htmlHeaders,'Cache-Control':'no-store'}); return res.end(renderShopNotFound()); }
     res.writeHead(200,{...htmlHeaders,'Cache-Control':'public, max-age=60'});
@@ -1601,7 +1607,7 @@ async function handler(req,res) {
     const htmlHeaders={'Content-Type':'text/html; charset=utf-8','X-Content-Type-Options':'nosniff','X-Frame-Options':'SAMEORIGIN','Referrer-Policy':'strict-origin-when-cross-origin'};
     if(rateLimited('shop:'+clientIp(req),120,60*1000)) { res.writeHead(429,{...htmlHeaders,'Cache-Control':'no-store'}); return res.end('Trop de requêtes. Réessayez dans une minute.'); }
     if(!/^[a-z0-9-]{3,40}$/.test(shopMatch[1])) { res.writeHead(404,{...htmlHeaders,'Cache-Control':'no-store'}); return res.end(renderShopNotFound()); }
-    const c=await query('SELECT c.id,s.id AS "shopId",s.name,c.sector,s.slug AS "shopSlug",s.tagline,s.whatsapp AS "shopWhatsapp",s.fb_pixel AS "fbPixel",s.tiktok_pixel AS "tiktokPixel" FROM shops s JOIN companies c ON c.id=s.company_id WHERE s.slug=$1 AND s.enabled=true AND c.suspended=false AND c.approved_at IS NOT NULL AND s.whatsapp IS NOT NULL',[shopMatch[1]]);
+    const c=await query('SELECT c.id,s.id AS "shopId",s.name,c.sector,s.slug AS "shopSlug",s.tagline,s.whatsapp AS "shopWhatsapp",s.fb_pixel AS "fbPixel",s.tiktok_pixel AS "tiktokPixel" FROM shops s JOIN companies c ON c.id=s.company_id WHERE s.slug=$1 AND s.enabled=true AND c.suspended=false AND NOT '+EXPIRED_SQL+' AND c.approved_at IS NOT NULL AND s.whatsapp IS NOT NULL',[shopMatch[1]]);
     if(!c.rows[0]) { res.writeHead(404,{...htmlHeaders,'Cache-Control':'no-store'}); return res.end(renderShopNotFound()); }
     const prods=await query('SELECT id,name,category,price,stock,image_url AS "imageUrl" FROM products WHERE company_id=$1 AND (shop_id IS NULL OR shop_id=$2) ORDER BY category NULLS LAST,name LIMIT 300',[c.rows[0].id,c.rows[0].shopId]);
     const proto=String(req.headers['x-forwarded-proto']||'https').split(',')[0].trim()==='http'?'http':'https';
@@ -1619,9 +1625,9 @@ async function handler(req,res) {
   if(tgHook) {
     try {
       const raw=await rawBody(req);
-      const co=(await query('SELECT c.id,c.name,c.sector,c.ai_name AS "aiName",c.ai_tone AS "aiTone",c.ai_language AS "aiLanguage",c.ai_rules AS "aiRules",c.ai_auto_reply_enabled AS "aiAutoReplyEnabled",c.suspended,c.approved_at AS "approvedAt",c.telegram_bot_token AS "telegramBotToken",s.plan AS "plan" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id WHERE c.telegram_webhook_secret=$1',[tgHook[1]])).rows[0];
+      const co=(await query('SELECT c.id,c.name,c.sector,c.ai_name AS "aiName",c.ai_tone AS "aiTone",c.ai_language AS "aiLanguage",c.ai_rules AS "aiRules",c.ai_auto_reply_enabled AS "aiAutoReplyEnabled",c.suspended,('+EXPIRED_SQL+') AS expired,c.approved_at AS "approvedAt",c.telegram_bot_token AS "telegramBotToken",s.plan AS "plan" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id WHERE c.telegram_webhook_secret=$1',[tgHook[1]])).rows[0];
       if(!co || req.headers['x-telegram-bot-api-secret-token']!==tgHook[1]) { res.writeHead(403,{'Content-Type':'text/plain'}); return res.end('Forbidden'); }
-      if(!co.suspended && co.approvedAt) await handleTelegramUpdate(co, raw?JSON.parse(raw):{});
+      if(!co.suspended && !co.expired && co.approvedAt) await handleTelegramUpdate(co, raw?JSON.parse(raw):{});
     } catch(e) { console.error('[telegram] erreur de traitement:',e.message); }
     return json(res,200,{ok:true});
   }
@@ -1658,11 +1664,11 @@ async function handler(req,res) {
           const messages=Array.isArray(value.messages)?value.messages:[];
           console.log('[webhook] change field=%s phoneNumberId=%s messages=%d',change.field,phoneNumberId,messages.length);
           if(!phoneNumberId||!messages.length) continue; // accusés de statut (lu/livré) ou métadonnées seules : rien à faire
-          const c=await query('SELECT c.id,c.name,c.sector,c.ai_name AS "aiName",c.ai_tone AS "aiTone",c.ai_language AS "aiLanguage",c.ai_rules AS "aiRules",c.ai_auto_reply_enabled AS "aiAutoReplyEnabled",c.suspended,c.approved_at AS "approvedAt",c.whatsapp_phone_number_id AS "whatsappPhoneNumberId",c.whatsapp_access_token AS "whatsappAccessToken",c.payment_orange_money AS "paymentOrangeMoney",c.payment_mtn_momo AS "paymentMtnMomo",s.plan AS "plan" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id WHERE c.whatsapp_phone_number_id=$1',[phoneNumberId]);
+          const c=await query('SELECT c.id,c.name,c.sector,c.ai_name AS "aiName",c.ai_tone AS "aiTone",c.ai_language AS "aiLanguage",c.ai_rules AS "aiRules",c.ai_auto_reply_enabled AS "aiAutoReplyEnabled",c.suspended,('+EXPIRED_SQL+') AS expired,c.approved_at AS "approvedAt",c.whatsapp_phone_number_id AS "whatsappPhoneNumberId",c.whatsapp_access_token AS "whatsappAccessToken",c.payment_orange_money AS "paymentOrangeMoney",c.payment_mtn_momo AS "paymentMtnMomo",s.plan AS "plan" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id WHERE c.whatsapp_phone_number_id=$1',[phoneNumberId]);
           const companyRow=c.rows[0];
           const targetCompanyId=companyRow?.id;
           if(!targetCompanyId) { console.error('Webhook WhatsApp: aucune entreprise pour phone_number_id',phoneNumberId); continue; }
-          if(companyRow.suspended||!companyRow.approvedAt) { console.warn('[webhook] entreprise suspendue ou non validée companyId=%s — message ignoré',targetCompanyId); continue; }
+          if(companyRow.suspended||companyRow.expired||!companyRow.approvedAt) { console.warn('[webhook] entreprise suspendue ou non validée companyId=%s — message ignoré',targetCompanyId); continue; }
           companyRow.whatsappAccessToken=decryptSecret(companyRow.whatsappAccessToken);
           console.log('[webhook] routing %d message(s) to companyId=%s',messages.length,targetCompanyId);
           const contact=(value.contacts||[])[0];
@@ -1781,7 +1787,7 @@ async function handler(req,res) {
   if(req.method==='POST'&&u.pathname==='/api/login') {
     if(rateLimited('login:'+clientIp(req),10,5*60*1000)) return tooManyRequests(res);
     const b=await body(req);
-    const r=await query('SELECT u.id,u.name,u.email,u.company_id,u.password_hash,u.password_salt,c.name AS company_name,c.suspended,c.approved_at AS "approvedAt" FROM users u JOIN companies c ON c.id=u.company_id WHERE u.email=$1',[b.email]);
+    const r=await query('SELECT u.id,u.name,u.email,u.company_id,u.password_hash,u.password_salt,c.name AS company_name,c.suspended,('+EXPIRED_SQL+') AS expired,c.approved_at AS "approvedAt" FROM users u JOIN companies c ON c.id=u.company_id WHERE u.email=$1',[b.email]);
     const user=r.rows[0];
     if(!user||!verifyPassword(String(b.password||''),user.password_salt,user.password_hash)) return json(res,401,{error:'Identifiants incorrects'});
     if(!user.approvedAt) return json(res,403,{error:"Votre compte est en attente de validation du paiement. Vous serez averti par email dès l'activation."});
@@ -1917,7 +1923,7 @@ async function handler(req,res) {
     if(!saSession||!saSession.superAdminId) return json(res,401,{error:'Authentification super-admin requise'});
 
     if(req.method==='GET'&&u.pathname==='/api/superadmin/companies') {
-      const rows=(await query(`SELECT c.id,c.name,c.sector,c.suspended,c.approved_at AS "approvedAt",c.created_at AS "createdAt",s.plan,s.status,s.monthly_price AS "monthlyPrice" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id ORDER BY c.created_at DESC`)).rows;
+      const rows=(await query(`SELECT c.id,c.name,c.sector,c.suspended,(${EXPIRED_SQL}) AS expired,c.approved_at AS "approvedAt",c.created_at AS "createdAt",s.plan,s.status,s.monthly_price AS "monthlyPrice",s.next_billing_at AS "nextBillingAt" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id ORDER BY c.created_at DESC`)).rows;
       const withUsage=await Promise.all(rows.map(async c=>{
         const [usage,userCount,prospectsCount]=await Promise.all([
           getAiUsage(c.id,c.plan),
@@ -1959,6 +1965,12 @@ async function handler(req,res) {
       if(b.suspended!==undefined) {
         await query('UPDATE companies SET suspended=$1 WHERE id=$2',[Boolean(b.suspended),scMatch[1]]);
         if(b.suspended) await query('DELETE FROM sessions WHERE company_id=$1',[scMatch[1]]).catch(()=>{}); // déconnecte immédiatement l'entreprise suspendue
+      }
+      if(b.extendDays!==undefined) {
+        // Geste commercial / déblocage manuel : prolonge à partir de la date la plus tardive entre l'échéance et maintenant.
+        const n=Math.floor(Number(b.extendDays));
+        if(!(n>=1&&n<=365)) return json(res,400,{error:'Nombre de jours invalide (1 à 365)'});
+        await query("UPDATE subscriptions SET next_billing_at=GREATEST(COALESCE(next_billing_at,now()),now())+($1::int * interval '1 day') WHERE company_id=$2",[n,scMatch[1]]);
       }
       if(b.status!==undefined&&['trial','active','cancelled','past_due'].includes(b.status)) {
         await query('UPDATE subscriptions SET status=$1 WHERE company_id=$2',[b.status,scMatch[1]]);
@@ -2048,6 +2060,11 @@ async function handler(req,res) {
       }
       return json(res,200,{ok:true});
     }
+    // Envoi immédiat des rapports (mêmes e-mails qu'à 20h) : sert à vérifier la configuration e-mail et le contenu.
+    if(u.pathname==='/api/superadmin/reports/send'&&req.method==='POST') {
+      if(rateLimited('sendreports',3,10*60*1000)) return tooManyRequests(res);
+      return json(res,200,{ok:true,...await sendDailyReports()});
+    }
     const prRejectMatch=u.pathname.match(/^\/api\/superadmin\/payment-requests\/([0-9a-f-]+)\/reject$/i);
     if(prRejectMatch&&req.method==='POST') {
       const r=await query('UPDATE payment_requests SET status=\'rejected\',decided_at=now() WHERE id=$1 AND status=\'pending\' RETURNING id',[prRejectMatch[1]]);
@@ -2090,9 +2107,12 @@ async function handler(req,res) {
   const session=await getSession(auth);
   if(!session||!session.companyId) return json(res,401,{error:'Authentification requise'});
   const companyId=session.companyId;
-  const susp=await query('SELECT suspended,approved_at AS "approvedAt" FROM companies WHERE id=$1',[companyId]);
+  const susp=await query('SELECT c.suspended,('+EXPIRED_SQL+') AS expired,c.approved_at AS "approvedAt" FROM companies c WHERE c.id=$1',[companyId]);
   if(!susp.rows[0]?.approvedAt) return json(res,403,{error:"Votre compte est en attente de validation du paiement. Vous serez averti par email dès l'activation."});
   if(susp.rows[0]?.suspended) return json(res,403,{error:'Ce compte VENDIA est suspendu. Contactez le support.'});
+  // Abonnement expiré au-delà de la période de grâce : seul le renouvellement reste accessible.
+  if(susp.rows[0]?.expired&&!(u.pathname==='/api/billing'&&req.method==='GET')&&!(u.pathname==='/api/billing/renew'&&req.method==='POST'))
+    return json(res,402,{error:'Abonnement expiré — renouvelez-le pour réactiver votre compte. / Subscription expired — renew it to reactivate your account.',code:'subscription_expired'});
 
   if(req.method==='GET'&&u.pathname==='/api/bootstrap') return json(res,200,await dashboard(companyId,session.userId));
   if(req.method==='GET'&&u.pathname==='/api/dashboard') return json(res,200,await dashboard(companyId,session.userId));
@@ -3040,53 +3060,178 @@ async function handler(req,res) {
 const money = n => Number(n||0).toLocaleString('fr-FR')+' FCFA';
 function cameroonNow() { return new Date(Date.now() + 60*60*1000); }
 
-async function buildCompanyReport(companyId) {
-  const [company,closedOrders,pendingDeliveries,dueFollowups,hesitant,newProspects,sub] = await Promise.all([
-    query('SELECT name FROM companies WHERE id=$1',[companyId]),
-    query(`SELECT id,order_number AS number,amount FROM orders WHERE company_id=$1 AND (created_at AT TIME ZONE 'Africa/Douala')::date = (now() AT TIME ZONE 'Africa/Douala')::date`,[companyId]),
-    query(`SELECT o.id,o.order_number AS number,p.name AS client,o.status FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 AND o.status IN ('En attente','Confirmée','En préparation') ORDER BY o.created_at`,[companyId]),
-    query(`SELECT f.id,f.text,p.name AS prospect FROM followups f LEFT JOIN prospects p ON p.id=f.prospect_id WHERE f.company_id=$1 AND f.status='Programmée' AND f.due_at IS NOT NULL AND (f.due_at AT TIME ZONE 'Africa/Douala')::date = (now() AT TIME ZONE 'Africa/Douala')::date ORDER BY f.due_at`,[companyId]),
-    query(`SELECT id,name,phone,score FROM prospects WHERE company_id=$1 AND stage NOT IN ('Gagné','Perdu') AND score BETWEEN 40 AND 69 ORDER BY score DESC`,[companyId]),
-    query(`SELECT COUNT(*)::int AS n FROM prospects WHERE company_id=$1 AND (created_at AT TIME ZONE 'Africa/Douala')::date = (now() AT TIME ZONE 'Africa/Douala')::date`,[companyId]),
-    query('SELECT plan FROM subscriptions WHERE company_id=$1',[companyId])
+// --- Métriques par jour civil (heure du Cameroun) ---------------------------
+// Index 0 = aujourd'hui, 1 = hier … 7 = il y a 7 jours. Calculées à la volée
+// depuis les tables d'activité (commandes, prospects, messages) : pas de table
+// d'historique à maintenir, et l'évolution reste exacte même après un redéploiement.
+const REPORT_DAYS = 8;
+const emptyDays = () => Array.from({length:REPORT_DAYS}, () => ({orders:0, revenue:0, newProspects:0, inbound:0, outbound:0}));
+function reportDayKeys() { const base=cameroonNow().getTime(); return Array.from({length:REPORT_DAYS}, (_,i)=>new Date(base-i*86400000).toISOString().slice(0,10)); }
+async function dailyMetrics(companyId) { // companyId null => toutes les entreprises (Map companyId → 8 jours)
+  const keys=reportDayKeys(), idx=Object.fromEntries(keys.map((k,i)=>[k,i]));
+  const args=companyId?[companyId]:[];
+  const D="to_char(%s AT TIME ZONE 'Africa/Douala','YYYY-MM-DD')";
+  const [o,p,m] = await Promise.all([
+    query(`SELECT company_id AS cid, ${D.replace('%s','created_at')} AS d,
+        COUNT(*) FILTER (WHERE status NOT IN ('Annulée','Bloquée'))::int AS orders,
+        COALESCE(SUM(amount) FILTER (WHERE status NOT IN ('Annulée','Bloquée')),0)::float AS revenue
+      FROM orders WHERE created_at >= now() - interval '9 days' ${companyId?'AND company_id=$1':''} GROUP BY 1,2`, args),
+    query(`SELECT company_id AS cid, ${D.replace('%s','created_at')} AS d, COUNT(*)::int AS n
+      FROM prospects WHERE created_at >= now() - interval '9 days' ${companyId?'AND company_id=$1':''} GROUP BY 1,2`, args),
+    query(`SELECT cv.company_id AS cid, ${D.replace('%s','m.created_at')} AS d,
+        COUNT(*) FILTER (WHERE m.direction='in')::int AS inb, COUNT(*) FILTER (WHERE m.direction='out')::int AS outb
+      FROM messages m JOIN conversations cv ON cv.id=m.conversation_id
+      WHERE m.created_at >= now() - interval '9 days' ${companyId?'AND cv.company_id=$1':''} GROUP BY 1,2`, args)
   ]);
-  const revenueToday = closedOrders.rows.reduce((s,o)=>s+Number(o.amount||0),0);
+  const out=new Map();
+  const slot=(cid,d)=>{ if(!(d in idx)) return null; if(!out.has(cid)) out.set(cid,emptyDays()); return out.get(cid)[idx[d]]; };
+  for (const r of o.rows) { const s=slot(r.cid,r.d); if(s){ s.orders=r.orders; s.revenue=r.revenue; } }
+  for (const r of p.rows) { const s=slot(r.cid,r.d); if(s) s.newProspects=r.n; }
+  for (const r of m.rows) { const s=slot(r.cid,r.d); if(s){ s.inbound=r.inb; s.outbound=r.outb; } }
+  return out;
+}
+const sumDays = (days, from, to, k) => days.slice(from, to+1).reduce((s,d)=>s+d[k],0);
+const avgPast = (days, k) => sumDays(days,1,7,k)/7; // moyenne par jour sur les 7 jours précédents (hors aujourd'hui)
+function deltaHtml(cur, ref) {
+  if (!(ref>0)) return cur>0 ? '<span style="color:#1b7f3b">🆕</span>' : '<span style="color:#888">—</span>';
+  const p=Math.round((cur-ref)/ref*100);
+  return p>0 ? '<span style="color:#1b7f3b">▲ +'+p+' %</span>' : p<0 ? '<span style="color:#d62839">▼ '+p+' %</span>' : '<span style="color:#888">= stable</span>';
+}
+function sparkline(days, k) { // du plus ancien (il y a 6 j) à aujourd'hui
+  const v=days.slice(0,7).map(d=>d[k]).reverse(), mx=Math.max(...v,0), bars='▁▂▃▄▅▆▇█';
+  return v.map(x=>mx>0?bars[Math.min(7,Math.round(x/mx*7))]:'▁').join('');
+}
+const dayFr = d => new Date(d).toLocaleString('fr-FR',{day:'numeric',month:'long',year:'numeric',timeZone:'Africa/Douala'});
+const hourFr = d => new Date(d).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',timeZone:'Africa/Douala'});
+const TODAY_SQL = "(now() AT TIME ZONE 'Africa/Douala')::date";
+const kpi = (label, value, sub) => '<td style="padding:10px 12px;background:#f5f7fb;border-radius:8px;text-align:center;min-width:110px"><div style="font-size:12px;color:#667">'+label+'</div><div style="font-size:20px;font-weight:700">'+value+'</div><div style="font-size:12px">'+(sub||'&nbsp;')+'</div></td>';
+
+async function buildCompanyReport(companyId) {
+  const [company,todayOrders,pendingDeliveries,dueFollowups,hesitant,hot,sentFollowups,sentCampaign,agenda,sub,metrics] = await Promise.all([
+    query('SELECT name FROM companies WHERE id=$1',[companyId]),
+    query(`SELECT o.order_number AS number,o.amount,o.status,COALESCE(p.name,o.customer_name) AS client,o.product_name AS product FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 AND (o.created_at AT TIME ZONE 'Africa/Douala')::date = ${TODAY_SQL} ORDER BY o.created_at`,[companyId]),
+    query(`SELECT o.id,o.order_number AS number,COALESCE(p.name,o.customer_name) AS client,o.status FROM orders o LEFT JOIN prospects p ON p.id=o.prospect_id WHERE o.company_id=$1 AND o.status IN ('En attente','Confirmée','En préparation') ORDER BY o.created_at`,[companyId]),
+    query(`SELECT f.id,f.text,p.name AS prospect FROM followups f LEFT JOIN prospects p ON p.id=f.prospect_id WHERE f.company_id=$1 AND f.status='Programmée' AND f.due_at IS NOT NULL AND (f.due_at AT TIME ZONE 'Africa/Douala')::date = ${TODAY_SQL} ORDER BY f.due_at`,[companyId]),
+    query(`SELECT id,name,phone,score FROM prospects WHERE company_id=$1 AND stage NOT IN ('Gagné','Perdu') AND score BETWEEN 40 AND 69 ORDER BY score DESC LIMIT 15`,[companyId]),
+    query(`SELECT name,phone,score,need FROM prospects WHERE company_id=$1 AND stage NOT IN ('Gagné','Perdu') AND score>=70 ORDER BY score DESC LIMIT 10`,[companyId]),
+    query(`SELECT COUNT(*)::int AS n FROM followups WHERE company_id=$1 AND sent_at IS NOT NULL AND (sent_at AT TIME ZONE 'Africa/Douala')::date = ${TODAY_SQL}`,[companyId]),
+    query(`SELECT COUNT(*)::int AS n FROM campaign_recipients WHERE company_id=$1 AND status='sent' AND (sent_at AT TIME ZONE 'Africa/Douala')::date = ${TODAY_SQL}`,[companyId]),
+    query(`SELECT a.type,a.status,a.scheduled_at AS "at",p.name AS prospect,((a.scheduled_at AT TIME ZONE 'Africa/Douala')::date = ${TODAY_SQL}) AS today FROM appointments a LEFT JOIN prospects p ON p.id=a.prospect_id WHERE a.company_id=$1 AND a.scheduled_at IS NOT NULL AND (a.scheduled_at AT TIME ZONE 'Africa/Douala')::date BETWEEN ${TODAY_SQL} AND ${TODAY_SQL}+1 ORDER BY a.scheduled_at`,[companyId]),
+    query('SELECT plan,next_billing_at AS "nextBillingAt" FROM subscriptions WHERE company_id=$1',[companyId]),
+    dailyMetrics(companyId)
+  ]);
+  const days=metrics.get(companyId)||emptyDays();
   const aiUsage = await getAiUsage(companyId, sub.rows[0]?.plan);
   const stockAlerts = await computeStockAlerts(companyId), blockedOrders = await blockedOrdersSummary(companyId);
-  return { stockAlerts, blockedOrders, companyName: company.rows[0]?.name || 'Entreprise', closedOrders: closedOrders.rows, revenueToday, pendingDeliveries: pendingDeliveries.rows, dueFollowups: dueFollowups.rows, hesitant: hesitant.rows, newProspectsCount: newProspects.rows[0].n, aiUsage };
+  const nb=sub.rows[0]?.nextBillingAt;
+  return { stockAlerts, blockedOrders, companyName: company.rows[0]?.name || 'Entreprise', todayOrders: todayOrders.rows, days, pendingDeliveries: pendingDeliveries.rows, dueFollowups: dueFollowups.rows, hesitant: hesitant.rows, hot: hot.rows,
+    sentFollowups: sentFollowups.rows[0].n, sentCampaign: sentCampaign.rows[0].n, agenda: agenda.rows, aiUsage, plan: sub.rows[0]?.plan||null, nextBillingAt: nb||null, daysLeft: nb?Math.ceil((new Date(nb)-Date.now())/86400000):null };
 }
 
 function reportToHtml(r) {
+  const t0=r.days[0], y=r.days[1];
+  const orderLine = o => '<li>'+escHtml(o.number)+' — '+escHtml(o.client||'Client')+(o.product?' — '+escHtml(o.product):'')+' — <strong>'+money(o.amount)+'</strong> — '+escHtml(o.status)+'</li>';
+  const sec = (title, count, items) => '<p style="margin:14px 0 4px"><strong>'+title+' :</strong> '+count+'</p>'+(items?'<ul style="margin:0 0 6px 18px;padding:0">'+items+'</ul>':'');
   return ''+
     (r.blockedOrders&&r.blockedOrders.count ? '<p style="color:#d62839"><strong>🚨 URGENT — '+r.blockedOrders.count+' commande(s) bloquée(s) ('+money(r.blockedOrders.total)+') :</strong> votre quota de prospects est atteint. Passez au forfait supérieur pour les débloquer.</p>' : '')+
-    (r.stockAlerts&&r.stockAlerts.length ? '<p><strong>📦 Stock à renouveler :</strong></p><ul>'+r.stockAlerts.map(a=>'<li>'+(a.level>=3?'🔴 <strong>URGENT</strong> ':a.level===2?'🟠 ':'⚠️ ')+escHtml(a.name)+' — reste '+a.stock+(a.perDay>0?' (≈'+a.perDay+'/jour'+(a.daysLeft!==null?', environ '+a.daysLeft+' jour(s) de stock':'')+')':'')+'</li>').join('')+'</ul>' : '')+
-    '<p><strong>🏆 Prospects closés aujourd\'hui :</strong> '+r.closedOrders.length+' commande(s) — '+money(r.revenueToday)+'</p>'+
-    (r.closedOrders.length ? '<ul>'+r.closedOrders.map(o=>'<li>'+escHtml(o.number)+' — '+money(o.amount)+'</li>').join('')+'</ul>' : '')+
-    '<p><strong>🚚 Livraisons prévues / en attente :</strong> '+r.pendingDeliveries.length+'</p>'+
-    (r.pendingDeliveries.length ? '<ul>'+r.pendingDeliveries.map(o=>'<li>'+escHtml(o.number)+' — '+escHtml(o.client||'Client')+' — '+escHtml(o.status)+'</li>').join('')+'</ul>' : '')+
-    '<p><strong>🔁 Relances prévues aujourd\'hui :</strong> '+r.dueFollowups.length+'</p>'+
-    (r.dueFollowups.length ? '<ul>'+r.dueFollowups.map(f=>'<li>'+escHtml(f.prospect||'Prospect')+' — '+escHtml(f.text||'')+'</li>').join('')+'</ul>' : '')+
-    '<p><strong>🤔 Prospects hésitants :</strong> '+r.hesitant.length+'</p>'+
-    (r.hesitant.length ? '<ul>'+r.hesitant.map(p=>'<li>'+escHtml(p.name||p.phone||'Prospect')+' (score '+p.score+'/100)</li>').join('')+'</ul>' : '')+
-    '<p><strong>🆕 Nouveaux prospects aujourd\'hui :</strong> '+r.newProspectsCount+'</p>'+
-    '<p><strong>🤖 Réponses IA utilisées ce mois :</strong> '+(r.aiUsage.limit==null ? 'illimité' : (r.aiUsage.used+' / '+r.aiUsage.limit))+'</p>';
+    (r.daysLeft!==null&&r.daysLeft<=5 ? '<p style="color:#b45309"><strong>⏳ Abonnement '+escHtml(r.plan||'')+' :</strong> '+(r.daysLeft>0?'expire dans '+r.daysLeft+' jour(s)':'expiré — votre compte sera bloqué '+GRACE_DAYS+' jours après l\'échéance')+' ('+dayFr(r.nextBillingAt)+'). Renouvelez depuis l\'onglet Abonnement.</p>' : '')+
+    '<table role="presentation" cellspacing="8" style="border-collapse:separate"><tr>'+
+      kpi('Chiffre d\'affaires', money(t0.revenue), 'vs hier '+deltaHtml(t0.revenue,y.revenue))+
+      kpi('Commandes', t0.orders, 'vs hier '+deltaHtml(t0.orders,y.orders))+
+      kpi('Nouveaux prospects', t0.newProspects, 'vs hier '+deltaHtml(t0.newProspects,y.newProspects))+
+      kpi('Messages', t0.inbound+' reçus', t0.outbound+' envoyés')+
+    '</tr></table>'+
+    '<p style="color:#667;font-size:13px;margin:4px 0 0">Hier (journée entière) : '+money(y.revenue)+' · '+y.orders+' commande(s). Moyenne des 7 jours précédents : '+money(Math.round(avgPast(r.days,'revenue')))+' / jour · '+(Math.round(avgPast(r.days,'orders')*10)/10).toString().replace('.',',')+' commande(s) / jour. Tendance du CA sur 7 jours : <span style="font-size:16px;letter-spacing:1px">'+sparkline(r.days,'revenue')+'</span></p>'+
+    sec('🛒 Commandes du jour', r.todayOrders.length+(r.todayOrders.length?' — '+money(r.todayOrders.reduce((s,o)=>(['Annulée','Bloquée'].includes(o.status)?s:s+Number(o.amount||0)),0))+' (hors annulées/bloquées)':''), r.todayOrders.map(orderLine).join(''))+
+    sec('🚚 Livraisons prévues / en attente', r.pendingDeliveries.length, r.pendingDeliveries.map(o=>'<li>'+escHtml(o.number)+' — '+escHtml(o.client||'Client')+' — '+escHtml(o.status)+'</li>').join(''))+
+    sec('🔥 Prospects chauds à appeler en priorité (score ≥ 70)', r.hot.length, r.hot.map(p=>'<li>'+escHtml(p.name||p.phone||'Prospect')+' (score '+p.score+'/100)'+(p.phone?' — '+escHtml(p.phone):'')+(p.need?' — '+escHtml(p.need):'')+'</li>').join(''))+
+    sec('🤔 Prospects hésitants', r.hesitant.length, r.hesitant.map(p=>'<li>'+escHtml(p.name||p.phone||'Prospect')+' (score '+p.score+'/100)</li>').join(''))+
+    sec('📅 Rendez-vous aujourd\'hui et demain', r.agenda.length, r.agenda.map(a=>'<li>'+(a.today?'Aujourd\'hui':'Demain')+' '+hourFr(a.at)+' — '+escHtml(a.type||'Rendez-vous')+' — '+escHtml(a.prospect||'Prospect')+' ('+escHtml(a.status||'')+')</li>').join(''))+
+    sec('🔁 Relances prévues aujourd\'hui', r.dueFollowups.length, r.dueFollowups.map(f=>'<li>'+escHtml(f.prospect||'Prospect')+' — '+escHtml(f.text||'')+'</li>').join(''))+
+    '<p style="margin:14px 0 4px"><strong>📨 Envois automatiques aujourd\'hui :</strong> '+r.sentFollowups+' relance(s) envoyée(s) · '+r.sentCampaign+' message(s) de campagne</p>'+
+    (r.stockAlerts&&r.stockAlerts.length ? '<p style="margin:14px 0 4px"><strong>📦 Stock à renouveler :</strong></p><ul style="margin:0 0 6px 18px;padding:0">'+r.stockAlerts.map(a=>'<li>'+(a.level>=3?'🔴 <strong>URGENT</strong> ':a.level===2?'🟠 ':'⚠️ ')+escHtml(a.name)+' — reste '+a.stock+(a.perDay>0?' (≈'+a.perDay+'/jour'+(a.daysLeft!==null?', environ '+a.daysLeft+' jour(s) de stock':'')+')':'')+'</li>').join('')+'</ul>' : '')+
+    '<p style="margin:14px 0 4px"><strong>🤖 Réponses IA utilisées ce mois :</strong> '+(r.aiUsage.limit==null ? 'illimité' : (r.aiUsage.used+' / '+r.aiUsage.limit))+(r.plan?' · forfait '+escHtml(r.plan)+(r.nextBillingAt?' jusqu\'au '+dayFr(r.nextBillingAt):''):'')+'</p>';
+}
+
+// Rapport général pour le super-admin : une ligne par entreprise (activité du
+// jour comparée à la moyenne des 7 jours précédents, tendance du CA sur 7 jours),
+// des alertes à traiter et les totaux de la plateforme.
+async function buildSuperReport() {
+  const [cos, metrics, pend, signups] = await Promise.all([
+    query(`SELECT c.id,c.name,c.suspended,c.approved_at AS "approvedAt",(${EXPIRED_SQL}) AS expired,(c.whatsapp_phone_number_id IS NOT NULL) AS wa,
+        s.plan,s.status,s.monthly_price AS price,s.next_billing_at AS nb
+      FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id ORDER BY c.created_at`),
+    dailyMetrics(null),
+    query("SELECT COUNT(*)::int AS n FROM payment_requests WHERE status='pending'"),
+    query(`SELECT COUNT(*)::int AS n FROM companies WHERE (created_at AT TIME ZONE 'Africa/Douala')::date = ${TODAY_SQL}`)
+  ]);
+  const rows=[], alerts=[], tot={days:emptyDays(),active:0,blocked:0,mrr:0,waiting:0};
+  for (const c of cos.rows) {
+    if (!c.approvedAt) { tot.waiting++; continue; }
+    const days=metrics.get(c.id)||emptyDays();
+    const daysLeft=c.nb?Math.ceil((new Date(c.nb)-Date.now())/86400000):null;
+    const live=!c.suspended&&!c.expired;
+    if (live) { tot.active++; if (c.status==='active') tot.mrr+=Number(c.price||0); }
+    if (c.expired) { tot.blocked++; alerts.push('⛔ <strong>'+escHtml(c.name)+'</strong> est bloquée (abonnement expiré depuis le '+dayFr(c.nb)+')'); }
+    else if (c.suspended) alerts.push('🚫 <strong>'+escHtml(c.name)+'</strong> est suspendue');
+    else {
+      if (daysLeft!==null&&daysLeft<=5) alerts.push('⏳ <strong>'+escHtml(c.name)+'</strong> : abonnement '+(daysLeft>0?'expire dans '+daysLeft+' jour(s)':'expiré, blocage dans '+Math.max(0,GRACE_DAYS+daysLeft)+' jour(s)')+' ('+dayFr(c.nb)+')');
+      if (sumDays(days,0,2,'inbound')+sumDays(days,0,2,'orders')+sumDays(days,0,2,'newProspects')===0) alerts.push('💤 <strong>'+escHtml(c.name)+'</strong> : aucune activité depuis 3 jours (risque de départ)');
+      if (!c.wa) alerts.push('📵 <strong>'+escHtml(c.name)+'</strong> : WhatsApp non connecté');
+    }
+    let ai=null; try { ai=await getAiUsage(c.id,c.plan); } catch {}
+    if (live&&ai&&ai.limit!=null&&ai.used/ai.limit>=0.9) alerts.push('🤖 <strong>'+escHtml(c.name)+'</strong> : '+ai.used+' / '+ai.limit+' réponses IA utilisées ce mois (opportunité de montée en gamme)');
+    if (live) for (let i=0;i<REPORT_DAYS;i++) for (const k of Object.keys(tot.days[i])) tot.days[i][k]+=days[i][k];
+    rows.push({c,days,daysLeft,ai,live});
+  }
+  rows.sort((a,b)=>b.days[0].revenue-a.days[0].revenue||b.days[0].orders-a.days[0].orders);
+  return { rows, alerts, tot, pending: pend.rows[0].n, signupsToday: signups.rows[0].n };
+}
+
+function superReportToHtml(r) {
+  const t0=r.tot.days[0], y=r.tot.days[1];
+  const state = x => x.c.suspended?'🚫 Suspendue' : x.c.expired?'⛔ Bloquée' : x.daysLeft!==null&&x.daysLeft<=5 ? '⏳ '+(x.daysLeft>0?x.daysLeft+' j':'expirée') : '✅ Active';
+  const th = s => '<th style="text-align:left;padding:6px 8px;border-bottom:2px solid #ccd;font-size:12px;white-space:nowrap">'+s+'</th>';
+  const td = (s, extra) => '<td style="padding:6px 8px;border-bottom:1px solid #eef;font-size:13px;'+(extra||'')+'">'+s+'</td>';
+  return ''+
+    '<table role="presentation" cellspacing="8" style="border-collapse:separate"><tr>'+
+      kpi('CA du jour (toutes entreprises)', money(t0.revenue), 'vs hier '+deltaHtml(t0.revenue,y.revenue))+
+      kpi('Commandes', t0.orders, 'vs hier '+deltaHtml(t0.orders,y.orders))+
+      kpi('Nouveaux prospects', t0.newProspects, 'vs hier '+deltaHtml(t0.newProspects,y.newProspects))+
+      kpi('Messages reçus', t0.inbound, t0.outbound+' envoyés')+
+    '</tr><tr>'+
+      kpi('Entreprises actives', r.tot.active, r.tot.blocked+' bloquée(s)')+
+      kpi('Revenu mensuel récurrent', money(r.tot.mrr), 'abonnements actifs')+
+      kpi('Inscriptions du jour', r.signupsToday, r.tot.waiting+' en attente de validation')+
+      kpi('Paiements à valider', r.pending, r.pending?'<strong style="color:#d62839">à traiter</strong>':'&nbsp;')+
+    '</tr></table>'+
+    '<p style="color:#667;font-size:13px">Hier : '+money(y.revenue)+' · moyenne des 7 jours précédents : '+money(Math.round(avgPast(r.tot.days,'revenue')))+' / jour · tendance du CA (7 j) : <span style="font-size:16px;letter-spacing:1px">'+sparkline(r.tot.days,'revenue')+'</span></p>'+
+    (r.alerts.length ? '<p style="margin:14px 0 4px"><strong>⚠️ À surveiller ('+r.alerts.length+') :</strong></p><ul style="margin:0 0 8px 18px;padding:0">'+r.alerts.map(a=>'<li>'+a+'</li>').join('')+'</ul>' : '<p>✅ Rien à signaler.</p>')+
+    '<p style="margin:14px 0 6px"><strong>📊 Performance par entreprise</strong> <span style="color:#667;font-size:12px">(évolution = aujourd\'hui comparé à la moyenne des 7 jours précédents)</span></p>'+
+    '<table style="border-collapse:collapse;width:100%"><thead><tr>'+th('Entreprise')+th('Forfait')+th('Abonnement')+th('CA du jour')+th('Évolution')+th('Cmd.')+th('Prospects')+th('Msgs reçus')+th('CA 7 j')+'</tr></thead><tbody>'+
+    r.rows.map(x=>{ const d=x.days[0]; return '<tr>'+td('<strong>'+escHtml(x.c.name)+'</strong>')+td(escHtml(x.c.plan||'—'))+td(state(x))+td(money(d.revenue))+td(deltaHtml(d.revenue,avgPast(x.days,'revenue')))+td(d.orders+' '+deltaHtml(d.orders,avgPast(x.days,'orders')))+td(String(d.newProspects))+td(String(d.inbound))+td('<span style="font-size:15px;letter-spacing:1px">'+sparkline(x.days,'revenue')+'</span>')+'</tr>'; }).join('')+'</tbody></table>';
 }
 
 async function sendDailyReports() {
-  const companies=(await query('SELECT id,name FROM companies WHERE approved_at IS NOT NULL AND suspended=false')).rows;
-  let combined='', totals={orders:0,revenue:0,newProspects:0};
+  const companies=(await query('SELECT c.id,c.name FROM companies c WHERE c.approved_at IS NOT NULL AND c.suspended=false AND NOT '+EXPIRED_SQL)).rows;
+  const dateLabel=dayFr(new Date());
+  let sentCompanies=0;
   for (const c of companies) {
-    const report=await buildCompanyReport(c.id);
-    const html=reportToHtml(report);
-    totals.orders+=report.closedOrders.length; totals.revenue+=report.revenueToday; totals.newProspects+=report.newProspectsCount;
-    const owners=(await query("SELECT email,name FROM users WHERE company_id=$1 AND role='owner'",[c.id])).rows;
-    for (const o of owners) {
-      await sendEmail(o.email, 'VENDIA — Votre rapport du jour', '<p>Bonjour '+escHtml(o.name)+',</p><p>Voici le rapport de <strong>'+escHtml(report.companyName)+'</strong> pour aujourd\'hui :</p>'+html);
-    }
-    combined += '<h3>'+escHtml(report.companyName)+'</h3>'+html+'<hr>';
+    try {
+      const report=await buildCompanyReport(c.id);
+      const html=reportToHtml(report);
+      const owners=(await query("SELECT email,name FROM users WHERE company_id=$1 AND role='owner'",[c.id])).rows;
+      for (const o of owners) {
+        if (await sendEmail(o.email, 'VENDIA — Votre rapport du jour ('+dateLabel+')', '<p>Bonjour '+escHtml(o.name)+',</p><p>Voici le rapport de <strong>'+escHtml(report.companyName)+'</strong> pour aujourd\'hui, '+dateLabel+' :</p>'+html)) sentCompanies++;
+      }
+    } catch(e) { console.error('[daily-report] entreprise %s:',c.id,e.message); }
   }
-  const summary='<p><strong>Entreprises actives :</strong> '+companies.length+' · <strong>Commandes closes :</strong> '+totals.orders+' · <strong>CA du jour :</strong> '+money(totals.revenue)+' · <strong>Nouveaux prospects :</strong> '+totals.newProspects+'</p><hr>';
-  await sendEmail(process.env.SUPERADMIN_EMAIL||'', 'VENDIA — Rapport quotidien de toutes les entreprises', summary+combined);
+  let superSent=false;
+  try {
+    const sr=await buildSuperReport();
+    superSent=await sendEmail(process.env.SUPERADMIN_EMAIL||'', 'VENDIA — Rapport général du '+dateLabel+' ('+sr.rows.length+' entreprise(s))', '<p>Bonjour,</p><p>Voici la performance de chaque entreprise sur VENDIA, '+dateLabel+' :</p>'+superReportToHtml(sr));
+  } catch(e) { console.error('[daily-report] rapport général:',e.message); }
+  return { companies: companies.length, companyEmailsSent: sentCompanies, superAdminSent: superSent };
 }
 
 async function checkDailyReportSchedule() {
@@ -3106,22 +3251,23 @@ async function checkDailyReportSchedule() {
 
 // --- Rappels d'échéance d'abonnement (paiement manuel) ---------------------
 // Aucun prélèvement automatique : sans rappel, un client oublie de renouveler.
-// Quatre paliers par échéance (≤5 j, ≤1 j, expiré, expiré depuis 3 j), chacun
+// Cinq paliers par échéance (≤5 j, ≤1 j, expiré, dernier jour de grâce, bloqué), chacun
 // envoyé une seule fois par e-mail à l'administrateur. Le palier atteint est
 // mémorisé avec l'échéance concernée (reminder_for) : dès qu'un renouvellement
 // repousse next_billing_at, le cycle repart de zéro. Aucun rappel si un
 // paiement est déjà en attente de validation. Un e-mail non envoyé (Resend non
-// configuré) n'est pas marqué comme envoyé et sera retenté. L'expiration
-// n'entraîne volontairement aucun blocage du compte (décision produit à part).
-function renewalStage(days) { return days<=-3?4 : days<=0?3 : days<=1?2 : days<=5?1 : 0; }
-function renewalEmail(name, plan, days, stage, until) {
+// configuré) n'est pas marqué comme envoyé et sera retenté. Le blocage
+// effectif intervient GRACE_DAYS jours après l'échéance (voir EXPIRED_SQL).
+function renewalStage(days) { return days<=-GRACE_DAYS?5 : days<=-1?4 : days<=0?3 : days<=1?2 : days<=5?1 : 0; }
+function renewalEmail(name, plan, days, stage, until, graceEnd) {
   const price=planLimits(plan).monthlyPrice;
   const how='<p>Pour renouveler : envoyez <strong>'+money(price)+'</strong> par Orange Money au <strong>'+escHtml(ORANGE_MONEY_NUMBER)+'</strong> ou MTN MoMo au <strong>'+escHtml(MTN_MOMO_NUMBER)+'</strong>, puis saisissez la référence reçue par SMS dans l\'onglet <em>Abonnement</em> de votre espace VENDIA. Votre paiement est validé rapidement.</p>';
   const hello='<p>Bonjour '+escHtml(name)+',</p>';
   if(stage===1) return ['VENDIA — Votre abonnement expire dans '+Math.max(1,Math.ceil(days))+' jour(s)', hello+'<p>Votre forfait <strong>'+escHtml(plan)+'</strong> arrive à échéance le <strong>'+until+'</strong>.</p>'+how];
   if(stage===2) return ['VENDIA — Votre abonnement expire demain', hello+'<p>Votre forfait <strong>'+escHtml(plan)+'</strong> expire le <strong>'+until+'</strong>.</p>'+how];
-  if(stage===3) return ['VENDIA — Votre abonnement a expiré', hello+'<p>L\'échéance de votre forfait <strong>'+escHtml(plan)+'</strong> était le <strong>'+until+'</strong>. Renouvelez dès maintenant pour éviter toute interruption.</p>'+how];
-  return ['VENDIA — Dernier rappel : abonnement expiré', hello+'<p>Votre forfait <strong>'+escHtml(plan)+'</strong> est expiré depuis le <strong>'+until+'</strong>. Si vous souhaitez continuer à utiliser VENDIA, renouvelez-le maintenant.</p>'+how];
+  if(stage===3) return ['VENDIA — Votre abonnement a expiré', hello+'<p>L\'échéance de votre forfait <strong>'+escHtml(plan)+'</strong> était le <strong>'+until+'</strong>. Votre accès est maintenu jusqu\'au <strong>'+graceEnd+'</strong>, puis votre compte sera bloqué (plus de réponses automatiques, de relances ni d\'accès à l\'application).</p>'+how];
+  if(stage===4) return ['VENDIA — Dernier jour avant le blocage de votre compte', hello+'<p>Votre forfait <strong>'+escHtml(plan)+'</strong> a expiré le <strong>'+until+'</strong>. <strong>Votre compte sera bloqué le '+graceEnd+'</strong> si le renouvellement n\'est pas reçu.</p>'+how];
+  return ['VENDIA — Votre compte est bloqué', hello+'<p>Faute de renouvellement de votre forfait <strong>'+escHtml(plan)+'</strong> (échéance du <strong>'+until+'</strong>), votre compte VENDIA est bloqué : les réponses automatiques, relances et campagnes sont arrêtés. Vos données sont conservées. Connectez-vous à VENDIA : l\'onglet Abonnement reste accessible pour renouveler, et tout est rétabli dès que votre paiement est validé.</p>'+how];
 }
 async function checkRenewalReminders() {
   const h=cameroonNow().getUTCHours();
@@ -3137,10 +3283,11 @@ async function checkRenewalReminders() {
     const stage=renewalStage(days);
     if(stage<=Number(r.sentStage)) continue;
     const until=new Date(r.nextBillingAt).toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric',timeZone:'Africa/Douala'});
+    const graceEnd=new Date(new Date(r.nextBillingAt).getTime()+GRACE_DAYS*86400000).toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric',timeZone:'Africa/Douala'});
     const owners=(await query("SELECT email,name FROM users WHERE company_id=$1 AND role='owner'",[r.companyId])).rows;
     let sent=false;
     for(const o of owners) {
-      const [subject,html]=renewalEmail(o.name,r.plan,days,stage,until);
+      const [subject,html]=renewalEmail(o.name,r.plan,days,stage,until,graceEnd);
       if(await sendEmail(o.email,subject,html)) sent=true;
     }
     if(sent) {
@@ -3194,10 +3341,10 @@ async function checkDueFollowups() {
 
   for (const f of due) {
     try {
-      const c=await query('SELECT c.id,c.name,c.sector,c.ai_name AS "aiName",c.ai_tone AS "aiTone",c.ai_language AS "aiLanguage",c.ai_auto_reply_enabled AS "aiAutoReplyEnabled",c.suspended,c.approved_at AS "approvedAt",c.whatsapp_phone_number_id AS "whatsappPhoneNumberId",c.whatsapp_access_token AS "whatsappAccessToken",s.plan AS "plan" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id WHERE c.id=$1',[f.companyId]);
+      const c=await query('SELECT c.id,c.name,c.sector,c.ai_name AS "aiName",c.ai_tone AS "aiTone",c.ai_language AS "aiLanguage",c.ai_auto_reply_enabled AS "aiAutoReplyEnabled",c.suspended,('+EXPIRED_SQL+') AS expired,c.approved_at AS "approvedAt",c.whatsapp_phone_number_id AS "whatsappPhoneNumberId",c.whatsapp_access_token AS "whatsappAccessToken",s.plan AS "plan" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id WHERE c.id=$1',[f.companyId]);
       const company=c.rows[0];
       const cancel = async reason => query("UPDATE followups SET status='Annulée',cancelled_reason=$1 WHERE id=$2",[reason,f.id]);
-      if (!company || company.suspended || !company.approvedAt) { await cancel('Entreprise suspendue ou non validée'); continue; }
+      if (!company || company.suspended || company.expired || !company.approvedAt) { await cancel(company&&company.expired?'Abonnement expiré':'Entreprise suspendue ou non validée'); continue; }
       const limits=planLimits(company.plan);
       if (!limits.autoFollowups || company.aiAutoReplyEnabled===false || !limits.aiAutoReply) { await cancel('Relances automatiques désactivées ou non incluses dans le forfait'); continue; }
       if (!company.whatsappPhoneNumberId || !company.whatsappAccessToken) { await cancel('WhatsApp non configuré'); continue; }
@@ -3463,6 +3610,6 @@ ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>
   const renewalTick=()=>checkRenewalReminders().catch(e=>console.error('[renewal] echec:',e.message));
   setInterval(renewalTick, 10*60*1000); setTimeout(renewalTick, 20*1000); // + un passage peu après chaque démarrage
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.29 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.30 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

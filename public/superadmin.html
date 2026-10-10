@@ -63,6 +63,7 @@ input,select{width:100%;padding:10px;border:1px solid #d9deea;border-radius:10px
 </div>
 
 <div class="panel"><h3 data-i18n="companies_title">Entreprises</h3> <span class="muted" id="companyCount"></span>
+<div style="margin:8px 0"><button class="btn" onclick="sendReportsNow()" data-i18n="btn_send_reports">📧 Envoyer les rapports du jour maintenant</button> <span class="muted" id="reportMsg"></span></div>
 <div id="companyTable"></div>
 </div>
 
@@ -105,7 +106,7 @@ fr: {
   confirm_reject_payment:"Rejeter cette demande ? Le compte restera bloqué.",
   th_status:"Statut", th_members:"Membres", th_ai_replies:"Réponses IA", th_prospects_month:"Prospects ce mois",
   ai_unlimited:"illimité", ai_remaining:"restantes", prospects_unlimited:"(illimité)",
-  badge_suspended:"🚫 Suspendue", badge_pending_payment:"⏳ En attente de paiement", badge_active:"✅ Active",
+  badge_suspended:"🚫 Suspendue", badge_blocked:"⛔ Bloquée (abonnement expiré)", billing_until_label:"Échéance :", btn_extend:"Offrir des jours", btn_send_reports:"📧 Envoyer les rapports du jour maintenant", report_sent:"Rapports envoyés : {c} e-mail(s) aux entreprises, rapport général {s}.", report_yes:"envoyé", report_no:"non envoyé (vérifiez RESEND_API_KEY et SUPERADMIN_EMAIL)", confirm_send_reports:"Envoyer maintenant les rapports du jour à toutes les entreprises et le rapport général ?", prompt_extend:"Combien de jours offrir à cette entreprise ? (1 à 365)", badge_pending_payment:"⏳ En attente de paiement", badge_active:"✅ Active",
   btn_details:"Détails", btn_reactivate:"Réactiver", btn_suspend:"Suspendre", empty_companies:"Aucune entreprise.",
   confirm_suspend:"Suspendre cette entreprise ? Ses utilisateurs seront déconnectés et ne pourront plus se reconnecter, et le webhook WhatsApp ignorera ses messages.",
   loading_creating:"Création en cours…", company_created:"✅ Entreprise créée.",
@@ -136,7 +137,7 @@ en: {
   confirm_reject_payment:"Reject this request? The account will stay blocked.",
   th_status:"Status", th_members:"Members", th_ai_replies:"AI replies", th_prospects_month:"Leads this month",
   ai_unlimited:"unlimited", ai_remaining:"left", prospects_unlimited:"(unlimited)",
-  badge_suspended:"🚫 Suspended", badge_pending_payment:"⏳ Awaiting payment", badge_active:"✅ Active",
+  badge_suspended:"🚫 Suspended", badge_blocked:"⛔ Blocked (subscription expired)", billing_until_label:"Due:", btn_extend:"Offer days", btn_send_reports:"📧 Send today's reports now", report_sent:"Reports sent: {c} email(s) to companies, general report {s}.", report_yes:"sent", report_no:"not sent (check RESEND_API_KEY and SUPERADMIN_EMAIL)", confirm_send_reports:"Send today's reports to all companies and the general report now?", prompt_extend:"How many days to give this company? (1 to 365)", badge_pending_payment:"⏳ Awaiting payment", badge_active:"✅ Active",
   btn_details:"Details", btn_reactivate:"Reactivate", btn_suspend:"Suspend", empty_companies:"No companies yet.",
   confirm_suspend:"Suspend this company? Its users will be logged out and unable to log back in, and the WhatsApp webhook will ignore its messages.",
   loading_creating:"Creating…", company_created:"✅ Company created.",
@@ -248,8 +249,8 @@ function renderCompanies(){
     companies.map(c=>{
       const aiLabel = c.aiUsage.limit==null ? t('ai_unlimited') : (c.aiUsage.remaining+' / '+c.aiUsage.limit+' '+t('ai_remaining'));
       const prospectsLabel = c.prospectsThisMonth + (c.limits.maxProspectsPerMonth!=null?' / '+c.limits.maxProspectsPerMonth:' '+t('prospects_unlimited'));
-      const suspendedBadge = c.suspended ? '<span class="badge handoff">'+t('badge_suspended')+'</span>' : (!c.approvedAt ? '<span class="badge hot">'+t('badge_pending_payment')+'</span>' : '<span class="badge">'+t('badge_active')+'</span>');
-      return '<tr><td><strong>'+esc(c.name)+'</strong><br><span class="muted">'+esc(c.sector||'—')+'</span><br>'+suspendedBadge+'</td>'+
+      const suspendedBadge = c.suspended ? '<span class="badge handoff">'+t('badge_suspended')+'</span>' : c.expired ? '<span class="badge handoff">'+t('badge_blocked')+'</span>' : (!c.approvedAt ? '<span class="badge hot">'+t('badge_pending_payment')+'</span>' : '<span class="badge">'+t('badge_active')+'</span>');
+      return '<tr><td><strong>'+esc(c.name)+'</strong><br><span class="muted">'+esc(c.sector||'—')+'</span><br>'+suspendedBadge+(c.nextBillingAt?'<br><span class="muted">'+t('billing_until_label')+' '+new Date(c.nextBillingAt).toLocaleDateString(lang==='en'?'en-GB':'fr-FR')+'</span>':'')+'</td>'+
         '<td><select onchange="changePlan(\''+c.id+'\',this.value)">'+
           ['Starter','Business','Pro'].map(p=>'<option value="'+p+'"'+(p===c.plan?' selected':'')+'>'+p+'</option>').join('')+
         '</select></td>'+
@@ -259,6 +260,7 @@ function renderCompanies(){
         '<td>'+esc(prospectsLabel)+'</td>'+
         '<td><div class="actions">'+
           '<button class="btn" onclick="openDetail(\''+c.id+'\')">'+t('btn_details')+'</button>'+
+          '<button class="btn" onclick="extendDays(\''+c.id+'\')">'+t('btn_extend')+'</button>'+
           '<button class="btn '+(c.suspended?'':'danger')+'" onclick="toggleSuspend(\''+c.id+'\','+(!c.suspended)+')">'+(c.suspended?t('btn_reactivate'):t('btn_suspend'))+'</button>'+
         '</div></td></tr>';
     }).join('')+'</tbody></table>' : '<div class="empty">'+t('empty_companies')+'</div>';
@@ -266,6 +268,18 @@ function renderCompanies(){
 async function changePlan(id,plan){
   try{ await api('/api/superadmin/companies/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan})}); await loadCompanies(); }
   catch(e){ alert(e.message); await loadCompanies(); }
+}
+async function sendReportsNow(){
+  if(!confirm(t('confirm_send_reports'))) return;
+  const el=document.getElementById('reportMsg'); el.textContent='…';
+  try{ const r=await api('/api/superadmin/reports/send',{method:'POST'}); el.textContent=t('report_sent').replace('{c}',r.companyEmailsSent).replace('{s}',r.superAdminSent?t('report_yes'):t('report_no')); }
+  catch(e){ el.textContent=e.message; }
+}
+async function extendDays(id){
+  const v=prompt(t('prompt_extend'),'30'); if(v===null) return;
+  const n=parseInt(v,10); if(!(n>=1&&n<=365)) return alert(t('prompt_extend'));
+  try{ await api('/api/superadmin/companies/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({extendDays:n})}); await loadCompanies(); }
+  catch(e){ alert(e.message); }
 }
 async function toggleSuspend(id,suspended){
   if(suspended && !confirm(t('confirm_suspend'))) return;
