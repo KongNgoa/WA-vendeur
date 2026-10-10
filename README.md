@@ -139,6 +139,11 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - Le tableau du parrain montre ses filleuls (abonné actif ou en attente de paiement) et ce que chacun lui a rapporté.
 
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.
+## 1.10.41 — Business : 15 bannières/mois, fonctions verrouillées avec cadenas
+
+- Forfait Business : bannières du Studio promo **10 → 15/mois** (Starter reste à 10, Pro illimité).
+- Politique « cadenas » : une fonction hors forfait reste visible avec 🔒 et un bouton d'invitation à passer au forfait supérieur (campagnes sur Starter, et désormais relances automatiques sur Starter).
+
 ## 1.10.40 — Limites de forfaits ajustées
 
 - **Starter** : messages IA 100 → **150**/mois ; bannières du Studio promo limitées à **10/mois**.

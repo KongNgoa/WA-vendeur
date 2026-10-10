@@ -267,6 +267,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <input id="fDue" type="datetime-local" required><input id="fText" class="full" placeholder="Message de relance" required data-i18n-placeholder="placeholder_followup_message">
 <div class="full"><button class="btn primary" data-i18n="btn_schedule">Programmer</button></div></form></div>
 <div class="panel"><h3 data-i18n="nav_followups">Relances</h3> <span class="muted" id="followupCount"></span>
+<div id="fuLock" class="hidden"></div>
 <p class="muted" data-i18n="followups_auto_note">Une relance auto (🤖) est envoyée automatiquement au client par WhatsApp dès son échéance — aucune action requise. « Envoyée » = relance déjà partie.</p>
 <div id="followupTable"></div></div>
 <div class="panel"><h3 data-i18n="appointments_title">Rendez-vous</h3> <span class="muted" id="appointmentCount"></span>
@@ -670,6 +671,7 @@ fr: {
   ostatus_en_attente:"En attente", ostatus_confirmee:"Confirmée", ostatus_en_preparation:"En préparation", ostatus_livree:"Livrée", ostatus_annulee:"Annulée",
   btn_create_order:"Créer la commande", btn_export_excel:"📊 Exporter en Excel", th_number:"N°", th_client:"Client", th_amount:"Montant", empty_orders:"Aucune commande.",
   followups_schedule_title:"Programmer une relance", placeholder_followup_message:"Message de relance", btn_schedule:"Programmer",
+  fu_locked:"Les relances automatiques par WhatsApp sont disponibles à partir du forfait Business. Passez au forfait supérieur pour y accéder.",
   followups_auto_note:"Une relance auto (🤖) est envoyée automatiquement au client par WhatsApp dès son échéance — aucune action requise. « Envoyée » = relance déjà partie.",
   th_due:"Échéance", th_message:"Message", th_origin:"Origine", th_action:"Action", origin_auto:"🤖 Auto", origin_manual:"✍️ Manuel",
   status_overdue:"En retard", fstatus_programmee:"Programmée", fstatus_envoyee:"Envoyée", fstatus_annulee:"Annulée",
@@ -964,6 +966,7 @@ en: {
   ostatus_en_attente:"Pending", ostatus_confirmee:"Confirmed", ostatus_en_preparation:"Preparing", ostatus_livree:"Delivered", ostatus_annulee:"Cancelled",
   btn_create_order:"Create order", btn_export_excel:"📊 Export to Excel", th_number:"No.", th_client:"Client", th_amount:"Amount", empty_orders:"No orders yet.",
   followups_schedule_title:"Schedule a follow-up", placeholder_followup_message:"Follow-up message", btn_schedule:"Schedule",
+  fu_locked:"Automatic WhatsApp follow-ups are available from the Business plan. Upgrade to unlock them.",
   followups_auto_note:"An automatic follow-up (🤖) is sent to the client on WhatsApp as soon as it's due — no action needed. \"Sent\" = the follow-up already went out.",
   th_due:"Due", th_message:"Message", th_origin:"Origin", th_action:"Action", origin_auto:"🤖 Auto", origin_manual:"✍️ Manual",
   status_overdue:"Overdue", fstatus_programmee:"Scheduled", fstatus_envoyee:"Sent", fstatus_annulee:"Cancelled",
@@ -1872,7 +1875,14 @@ async function exportOrdersExcel(){
   }catch(x){ alert(x.message); }
 }
 
+function renderFollowupLock(){
+  const el=$('fuLock'); if(!el) return;
+  const off=data.usage&&data.usage.autoFollowups===false;
+  el.classList.toggle('hidden',!off);
+  el.innerHTML=off?'<div class="panel" style="border:2px dashed #e9b949;margin:0 0 10px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>🔒 '+t('fu_locked')+'</span> <button type="button" class="btn primary" onclick="goUpgrade(\'Business\')">'+tf('upgrade_btn',{plan:'Business'})+'</button></div>':'';
+}
 function renderFollowups(){
+  renderFollowupLock();
   $('followupCount').textContent='('+(data.followups||[]).length+')';
   $('followupTable').innerHTML=(data.followups||[]).length
     ? '<table><thead><tr><th>'+t('th_prospect')+'</th><th>'+t('th_due')+'</th><th>'+t('th_message')+'</th><th>'+t('th_origin')+'</th><th>'+t('th_status')+'</th><th>'+t('th_action')+'</th></tr></thead><tbody>'+
