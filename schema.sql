@@ -508,3 +508,14 @@ CREATE TABLE IF NOT EXISTS support_messages (
 );
 CREATE INDEX IF NOT EXISTS support_messages_ticket_idx ON support_messages(ticket_id, created_at);
 
+-- Quota mensuel de bannières du Studio promo (une ligne par bannière téléchargée/partagée)
+CREATE TABLE IF NOT EXISTS promo_banners (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  user_id UUID,
+  product_id UUID,
+  format TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS promo_banners_company_idx ON promo_banners(company_id, created_at DESC);
+

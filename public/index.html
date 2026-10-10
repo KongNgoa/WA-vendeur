@@ -431,6 +431,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 </div>
 <canvas id="posterCanvas" style="width:100%;max-width:340px;border-radius:14px;display:block;margin:14px 0;box-shadow:0 4px 16px rgba(0,0,0,.18)"></canvas>
 <div><button type="button" class="btn primary" onclick="downloadPoster()" data-i18n="btn_download_poster">Télécharger l'affiche</button> <button type="button" class="btn hidden" id="posterShareBtn" onclick="sharePoster()" data-i18n="btn_share_poster">Partager l'affiche</button></div>
+<div id="posterQuota" class="muted" style="margin-top:8px"></div>
 <div id="posterStatus" style="margin-top:10px"></div>
 </div>
 </section>
@@ -619,6 +620,7 @@ fr: {
   nav_promo:"Studio promo", promo_title:"Studio promo", promo_desc:"Créez en quelques secondes un texte et une affiche pour un produit de votre catalogue, prêts à publier en statut WhatsApp ou sur les réseaux sociaux.", promo_empty:"Ajoutez d'abord un produit à votre catalogue.",
   promo_product_label:"Produit", promo_format_label:"Type de texte", promo_format_status:"Statut WhatsApp", promo_format_post:"Publication Facebook / Instagram", promo_format_broadcast:"Message à un client",
   btn_generate_text:"✨ Générer le texte", btn_generating:"Génération…", placeholder_promo_text:"Le texte apparaîtra ici — vous pouvez le modifier.", btn_copy_text:"Copier le texte",
+  promo_banner_quota:"Bannières téléchargées ce mois : {used} / {limit} (forfait {plan})", upgrade_btn_plans:"Voir les forfaits",
   promo_poster_title:"Affiche", promo_size_label:"Format", promo_size_story:"Statut WhatsApp (9:16)", promo_size_square:"Carré (1:1)", promo_theme_label:"Couleurs",
   promo_size_portrait:"Portrait Instagram (4:5)", promo_size_wide:"Facebook / lien (1,91:1)", promo_style_label:"Modèle", promo_style_studio:"Studio — lumineux", promo_style_luxe:"Luxe — noir et or", promo_style_pop:"Pop — énergique", promo_style_minimal:"Minimal — clair",
   promo_theme_auto:"Automatique (selon la photo)", promo_theme_violet:"Violet", promo_theme_sunset:"Coucher de soleil", promo_theme_ocean:"Océan", promo_theme_noir:"Noir et jaune",
@@ -912,6 +914,7 @@ en: {
   nav_promo:"Promo studio", promo_title:"Promo studio", promo_desc:"Create a text and a poster for a product in your catalog in seconds, ready to post on WhatsApp Status or social media.", promo_empty:"Add a product to your catalog first.",
   promo_product_label:"Product", promo_format_label:"Text type", promo_format_status:"WhatsApp Status", promo_format_post:"Facebook / Instagram post", promo_format_broadcast:"Message to a customer",
   btn_generate_text:"✨ Generate text", btn_generating:"Generating…", placeholder_promo_text:"The text will appear here — you can edit it.", btn_copy_text:"Copy text",
+  promo_banner_quota:"Banners downloaded this month: {used} / {limit} ({plan} plan)", upgrade_btn_plans:"See plans",
   promo_poster_title:"Poster", promo_size_label:"Format", promo_size_story:"WhatsApp Status (9:16)", promo_size_square:"Square (1:1)", promo_theme_label:"Colors",
   promo_size_portrait:"Instagram portrait (4:5)", promo_size_wide:"Facebook / link (1.91:1)", promo_style_label:"Style", promo_style_studio:"Studio — bright", promo_style_luxe:"Luxe — black and gold", promo_style_pop:"Pop — energetic", promo_style_minimal:"Minimal — light",
   promo_theme_auto:"Automatic (from the photo)", promo_theme_violet:"Violet", promo_theme_sunset:"Sunset", promo_theme_ocean:"Ocean", promo_theme_noir:"Black and yellow",
@@ -2036,6 +2039,7 @@ async function loadPromo(){
   $('posterShareBtn').classList.toggle('hidden',!canSharePosterFile());
   if(!promoShop){ try{ promoShop=await api('/api/settings/shop'); }catch(e){ promoShop={}; } }
   if(prods.length) drawPoster();
+  loadPosterQuota();
   loadPromoLibrary();
 }
 function posterProduct(){ const ps=data.products||[]; return ps.find(p=>p.id===$('promoProduct').value)||ps[0]; }
@@ -2079,7 +2083,15 @@ function posterFileName(){
   const p=posterProduct();
   return 'affiche-'+String((p&&p.name)||'produit').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40)+'.png';
 }
-function downloadPoster(){
+async function posterQuotaUse(){
+  const p=posterProduct();
+  try{ const q=await api('/api/promo/banners/use',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({productId:p&&p.id,format:$('posterSize').value})}); renderPosterQuota(q); return true; }
+  catch(e){ $('posterStatus').innerHTML='<span class="error">'+esc(e.message)+'</span> <button type="button" class="btn primary" onclick="tab(\'billing\')">'+t('upgrade_btn_plans')+'</button>'; loadPosterQuota(); return false; }
+}
+function renderPosterQuota(q){ const el=$('posterQuota'); if(!el) return; el.textContent=(q&&q.limit!=null)?tf('promo_banner_quota',{used:q.used,limit:q.limit,plan:q.plan}):''; }
+async function loadPosterQuota(){ try{ renderPosterQuota(await api('/api/promo/banners/usage')); }catch(e){} }
+async function downloadPoster(){
+  if(!(await posterQuotaUse())) return;
   $('posterCanvas').toBlob(b=>{
     if(!b) return;
     const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=posterFileName();
@@ -2089,7 +2101,8 @@ function downloadPoster(){
 function canSharePosterFile(){
   try{ return !!(navigator.canShare && navigator.canShare({files:[new File([''],'a.png',{type:'image/png'})]})); }catch(e){ return false; }
 }
-function sharePoster(){
+async function sharePoster(){
+  if(!(await posterQuotaUse())) return;
   $('posterCanvas').toBlob(async b=>{
     if(!b) return;
     try{ await navigator.share({files:[new File([b],posterFileName(),{type:'image/png'})],text:$('promoText').value||''}); }catch(e){}

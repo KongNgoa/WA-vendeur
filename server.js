@@ -1131,9 +1131,9 @@ function extractSelectedProductId(msg) {
 // façon, Business impose un administrateur unique (transférable), Pro en
 // autorise jusqu'à 3 pour les équipes plus grandes.
 const PLAN_LIMITS = {
-  Starter:  { monthlyPrice: 10000, maxProspectsPerMonth: 100, maxUsers: 1,    maxAdmins: 1, aiAutoReply: true, aiMessagesLimit: 100, autoFollowups: false, prioritySupport: false, campaignsPerMonth: 0, maxShops: 1 },
-  Business: { monthlyPrice: 25000, maxProspectsPerMonth: 300, maxUsers: 3,    maxAdmins: 1, aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: false, campaignsPerMonth: 500, maxShops: 3 },
-  Pro:      { monthlyPrice: 50000, maxProspectsPerMonth: null, maxUsers: null, maxAdmins: 3, aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: true,  campaignsPerMonth: 3000, maxShops: 10 },
+  Starter:  { monthlyPrice: 10000, maxProspectsPerMonth: 100, maxUsers: 1,    maxAdmins: 1, aiAutoReply: true, aiMessagesLimit: 150, autoFollowups: false, prioritySupport: false, campaignsPerMonth: 0, bannersPerMonth: 10, maxShops: 1 },
+  Business: { monthlyPrice: 25000, maxProspectsPerMonth: 300, maxUsers: 3,    maxAdmins: 1, aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: false, campaignsPerMonth: 300, bannersPerMonth: 10, maxShops: 3 },
+  Pro:      { monthlyPrice: 50000, maxProspectsPerMonth: null, maxUsers: null, maxAdmins: 3, aiAutoReply: true, aiMessagesLimit: null, autoFollowups: true,  prioritySupport: true,  campaignsPerMonth: 3000, bannersPerMonth: null, maxShops: 10 },
 };
 const planLimits = plan => PLAN_LIMITS[plan] || PLAN_LIMITS.Starter;
 
@@ -1470,6 +1470,13 @@ async function campaignQuota(companyId) {
   const limit = planLimits(plan).campaignsPerMonth;
   const u = await query("SELECT COUNT(*)::int AS n FROM campaign_recipients WHERE company_id=$1 AND status IN ('sent','pending','sending') AND COALESCE(sent_at, now()) >= date_trunc('month', now())", [companyId]);
   return { plan, limit, used: u.rows[0].n, remaining: Math.max(0, limit - u.rows[0].n) };
+}
+async function bannerQuota(companyId) {
+  const sub = await query('SELECT plan FROM subscriptions WHERE company_id=$1', [companyId]);
+  const plan = sub.rows[0]?.plan || 'Starter';
+  const limit = planLimits(plan).bannersPerMonth;
+  const u = await query("SELECT COUNT(*)::int AS n FROM promo_banners WHERE company_id=$1 AND created_at >= date_trunc('month', now())", [companyId]);
+  return { plan, limit, used: u.rows[0].n, remaining: limit == null ? null : Math.max(0, limit - u.rows[0].n) };
 }
 function campaignText(message, firstName) {
   const m = String(message).replace(/\{pr[ée]nom\}/gi, firstName || '').replace(/[ ]{2,}/g, ' ').trim();
@@ -1841,8 +1848,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.39',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.39'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.40',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.40'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -2201,7 +2208,7 @@ async function handler(req,res) {
   if(req.method==='GET'&&u.pathname==='/api/plans') {
     const plans=Object.fromEntries(Object.entries(PLAN_LIMITS).map(([name,l])=>[name,{
       monthlyPrice:l.monthlyPrice, maxProspectsPerMonth:l.maxProspectsPerMonth, maxUsers:l.maxUsers,
-      aiMessagesLimit:l.aiMessagesLimit, autoFollowups:l.autoFollowups, prioritySupport:l.prioritySupport
+      aiMessagesLimit:l.aiMessagesLimit, bannersPerMonth:l.bannersPerMonth, campaignsPerMonth:l.campaignsPerMonth, autoFollowups:l.autoFollowups, prioritySupport:l.prioritySupport
     }]));
     return json(res,200,{plans,payment:{orangeMoney:ORANGE_MONEY_NUMBER,mtnMomo:MTN_MOMO_NUMBER}});
   }
@@ -2551,6 +2558,16 @@ async function handler(req,res) {
   // Abonnement expiré au-delà de la période de grâce : seul le renouvellement reste accessible.
   if(susp.rows[0]?.expired&&!(u.pathname==='/api/billing'&&req.method==='GET')&&!(u.pathname==='/api/billing/renew'&&req.method==='POST')&&!u.pathname.startsWith('/api/support/'))
     return json(res,402,{error:'Abonnement expiré — renouvelez-le pour réactiver votre compte. / Subscription expired — renew it to reactivate your account.',code:'subscription_expired'});
+
+  // ---- Quota de bannières du Studio promo ----
+  if(u.pathname==='/api/promo/banners/usage'&&req.method==='GET') return json(res,200,await bannerQuota(companyId));
+  if(u.pathname==='/api/promo/banners/use'&&req.method==='POST') {
+    const b=await body(req); const q=await bannerQuota(companyId);
+    if(q.limit!=null&&q.used>=q.limit) return json(res,402,{error:'Limite de '+q.limit+' bannières par mois atteinte avec le forfait '+q.plan+'. Passez au forfait supérieur pour en créer davantage. / Monthly banner limit reached — upgrade your plan.',code:'banner_quota',...q});
+    const pid=/^[0-9a-f-]{36}$/i.test(String(b.productId||''))?b.productId:null;
+    await query('INSERT INTO promo_banners(company_id,user_id,product_id,format) VALUES($1,$2,$3,$4)',[companyId,session.userId,pid,String(b.format||'').slice(0,12)||null]);
+    return json(res,200,await bannerQuota(companyId));
+  }
 
   // ---- Support intégré (espace client) ----
   if(u.pathname.startsWith('/api/support/')) {
@@ -4402,6 +4419,8 @@ async function ensureMigrations() {
     "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS soft_asks INT NOT NULL DEFAULT 0",
     "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS soft_asks_at TIMESTAMPTZ",
     "CREATE TABLE IF NOT EXISTS vendia_campaigns (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT NOT NULL, spec JSONB NOT NULL DEFAULT '{}'::jsonb, caption TEXT, hashtags TEXT, link TEXT, lang TEXT NOT NULL DEFAULT 'fr', created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())",
+    "CREATE TABLE IF NOT EXISTS promo_banners (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE, user_id UUID, product_id UUID, format TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
+    "CREATE INDEX IF NOT EXISTS promo_banners_company_idx ON promo_banners(company_id, created_at DESC)",
     "CREATE TABLE IF NOT EXISTS support_tickets (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE, user_id UUID, subject TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'autre', priority TEXT NOT NULL DEFAULT 'normal', status TEXT NOT NULL DEFAULT 'ai', qualification TEXT, satisfaction INT, summary TEXT, resolution_note TEXT, escalate_reason TEXT, unread_admin BOOLEAN NOT NULL DEFAULT false, unread_user BOOLEAN NOT NULL DEFAULT false, lang TEXT NOT NULL DEFAULT 'fr', created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), escalated_at TIMESTAMPTZ, resolved_at TIMESTAMPTZ)",
     "CREATE INDEX IF NOT EXISTS support_tickets_company_idx ON support_tickets(company_id, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS support_tickets_status_idx ON support_tickets(status, updated_at DESC)",
@@ -4426,6 +4445,6 @@ ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>
   const renewalTick=()=>checkRenewalReminders().catch(e=>console.error('[renewal] echec:',e.message));
   setInterval(renewalTick, 10*60*1000); setTimeout(renewalTick, 20*1000); // + un passage peu après chaque démarrage
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.39 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.40 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});
