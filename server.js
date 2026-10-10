@@ -1286,12 +1286,29 @@ const STOP_RE = /^\s*(stop|arr[êe]t|unsubscribe|d[ée]sabonner|d[ée]sinscri(?:
 const RESUME_RE = /^\s*(reprendre|start|subscribe|r[ée]abonner)\s*[.!]*\s*$/i;
 const CAMPAIGN_STAGES = ['Nouveau', 'À contacter', 'En discussion', 'Gagné', 'Perdu'];
 const CAMPAIGN_HEATS = ['Chaud', 'Tiède', 'Froid'];
+// Bases clients : listes dynamiques (toujours à jour, calculées à la demande) construites
+// sur la table prospects (alias p). 'all' = aucun filtre. Les libellés sont côté interface.
+const HAS_ORDER_SQL = "EXISTS (SELECT 1 FROM orders o WHERE o.prospect_id=p.id AND o.status NOT IN ('Annulée','Bloquée'))";
+const CLIENT_BASES = {
+  all: null,
+  clients: '(' + HAS_ORDER_SQL + " OR p.stage='Gagné')",
+  repeat: "(SELECT COUNT(*) FROM orders o WHERE o.prospect_id=p.id AND o.status NOT IN ('Annulée','Bloquée'))>=2",
+  new7: "p.created_at >= now() - interval '7 days'",
+  open: '(NOT ' + HAS_ORDER_SQL + " AND p.stage NOT IN ('Gagné','Perdu'))",
+  followup: "EXISTS (SELECT 1 FROM followups f WHERE f.prospect_id=p.id AND f.status='Programmée')",
+  hesitant: "(p.stage NOT IN ('Gagné','Perdu') AND p.score BETWEEN 40 AND 69)",
+  hot: "(p.stage NOT IN ('Gagné','Perdu') AND p.score >= 70)",
+  inactive: "(p.last_contact IS NULL OR p.last_contact < now() - interval '30 days')",
+  lost: "p.stage='Perdu'"
+};
+const PHONE_KEY_SQL = "right(regexp_replace(p.phone,'\\D','','g'),9)";
 
 function cleanAudience(a) {
   a = a && typeof a === 'object' ? a : {};
   return {
     stages: (Array.isArray(a.stages) ? a.stages : []).filter(x => CAMPAIGN_STAGES.includes(x)),
     heats: (Array.isArray(a.heats) ? a.heats : []).filter(x => CAMPAIGN_HEATS.includes(x)),
+    bases: (Array.isArray(a.bases) ? a.bases : []).filter(x => typeof x === 'string' && Object.prototype.hasOwnProperty.call(CLIENT_BASES, x)),
     customers: ['only', 'never'].includes(a.customers) ? a.customers : 'all',
     inactiveDays: Math.min(365, Math.max(0, parseInt(a.inactiveDays, 10) || 0))
   };
@@ -1302,7 +1319,9 @@ function audienceWhere(aud, startIdx = 2) {
   const add = v => { params.push(v); return '$' + (startIdx + params.length - 1); };
   if (aud.stages.length) cond.push('p.stage = ANY(' + add(aud.stages) + '::text[])');
   if (aud.heats.length) cond.push('p.status = ANY(' + add(aud.heats) + '::text[])');
-  const hasOrder = "EXISTS (SELECT 1 FROM orders o WHERE o.prospect_id=p.id AND o.status NOT IN ('Annulée','Bloquée'))";
+  const hasOrder = HAS_ORDER_SQL;
+  // Bases : union (OU) des bases cochées ; 'all' ou aucune base = pas de restriction.
+  if (aud.bases && aud.bases.length && !aud.bases.includes('all')) cond.push('(' + aud.bases.map(k => CLIENT_BASES[k]).join(' OR ') + ')');
   if (aud.customers === 'only') cond.push(hasOrder);
   if (aud.customers === 'never') cond.push('NOT ' + hasOrder);
   if (aud.inactiveDays > 0) cond.push("(p.last_contact IS NULL OR p.last_contact < now() - (" + add(aud.inactiveDays) + " || ' days')::interval)");
@@ -1493,8 +1512,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.30',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.30'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.31',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.31'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -2268,6 +2287,43 @@ async function handler(req,res) {
   // voie tout de suite ; elle choisit ensuite de l'activer. Une vitrine ne peut
   // être activée qu'avec un numéro WhatsApp valide (c'est son bouton principal).
   // --- Campagnes de diffusion WhatsApp (propriétaire/admin) -----------------
+  // --- Bases clients : listes automatiques de contacts (voir CLIENT_BASES) ---
+  if(u.pathname==='/api/bases' && req.method==='GET') {
+    const keys=Object.keys(CLIENT_BASES);
+    const sel=keys.map(k=>`COUNT(DISTINCT ${PHONE_KEY_SQL}) FILTER (WHERE NOT p.opted_out${CLIENT_BASES[k]?' AND '+CLIENT_BASES[k]:''})::int AS "${k}"`).join(',');
+    const r=await query(`SELECT ${sel},
+        COUNT(DISTINCT ${PHONE_KEY_SQL}) FILTER (WHERE p.opted_out)::int AS "optedOut"
+      FROM prospects p WHERE p.company_id=$1 AND p.phone IS NOT NULL AND btrim(p.phone)<>''`,[companyId]);
+    const row=r.rows[0], np=await query("SELECT COUNT(*)::int AS n FROM prospects WHERE company_id=$1 AND (phone IS NULL OR btrim(phone)='')",[companyId]);
+    return json(res,200,{bases:keys.map(k=>({key:k,count:row[k]})),optedOut:row.optedOut,noPhone:np.rows[0].n});
+  }
+  const baseMatch=u.pathname.match(/^\/api\/bases\/([a-z0-9]+)\/(contacts|export)$/);
+  if(baseMatch && req.method==='GET') {
+    const key=baseMatch[1];
+    if(!Object.prototype.hasOwnProperty.call(CLIENT_BASES,key)) return json(res,404,{error:'Base introuvable'});
+    const exporting=baseMatch[2]==='export';
+    if(exporting&&!['owner','admin'].includes(await getUserRole(session.userId))) return json(res,403,{error:'Réservé au propriétaire ou à un administrateur.'});
+    const params=[companyId]; let where="p.company_id=$1 AND p.phone IS NOT NULL AND btrim(p.phone)<>'' AND NOT p.opted_out"+(CLIENT_BASES[key]?' AND '+CLIENT_BASES[key]:'');
+    const q=String(u.searchParams.get('q')||'').trim().slice(0,60);
+    if(q) { params.push('%'+q.replace(/[\\%_]/g,'\\$&')+'%'); where+=` AND (p.name ILIKE $${params.length} OR p.phone ILIKE $${params.length})`; }
+    const cols=`DISTINCT ON (${PHONE_KEY_SQL}) p.id,p.name,p.phone,p.stage,p.status,p.score,p.last_contact AS "lastContact",
+      (SELECT COUNT(*)::int FROM orders o WHERE o.prospect_id=p.id AND o.status NOT IN ('Annulée','Bloquée')) AS orders,
+      (SELECT COALESCE(SUM(o.amount),0)::float FROM orders o WHERE o.prospect_id=p.id AND o.status NOT IN ('Annulée','Bloquée')) AS spent`;
+    if(exporting) {
+      const rows=(await query(`SELECT * FROM (SELECT ${cols} FROM prospects p WHERE ${where} ORDER BY ${PHONE_KEY_SQL},p.created_at) x ORDER BY name NULLS LAST LIMIT 20000`,params)).rows;
+      // Neutralise l'injection de formules tableur dans les champs texte libres (pas dans le numéro, qui commence par +).
+      const esc=(v,free)=>{ v=String(v==null?'':v); if(free&&/^[=+\-@\t\r]/.test(v)) v="'"+v; return /[;"\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+      const csv='﻿'+['Nom','Téléphone','Étape','Température','Score','Commandes','Total dépensé (FCFA)','Dernier contact'].join(';')+'\r\n'+
+        rows.map(r=>[esc(r.name,true),esc(r.phone),esc(r.stage),esc(r.status),esc(r.score),esc(r.orders),esc(r.spent),esc(r.lastContact?new Date(r.lastContact).toISOString().slice(0,10):'')].join(';')).join('\r\n');
+      res.writeHead(200,{'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="vendia-base-'+key+'-'+new Date().toISOString().slice(0,10)+'.csv"','Cache-Control':'no-store'});
+      return res.end(csv);
+    }
+    const offset=Math.max(0,parseInt(u.searchParams.get('offset'),10)||0);
+    const total=(await query(`SELECT COUNT(DISTINCT ${PHONE_KEY_SQL})::int AS n FROM prospects p WHERE ${where}`,params)).rows[0].n;
+    const rows=(await query(`SELECT * FROM (SELECT ${cols} FROM prospects p WHERE ${where} ORDER BY ${PHONE_KEY_SQL},p.created_at) x ORDER BY "lastContact" DESC NULLS LAST LIMIT 50 OFFSET ${offset}`,params)).rows;
+    return json(res,200,{total,contacts:rows,offset});
+  }
+
   if(u.pathname==='/api/campaigns' || u.pathname.startsWith('/api/campaigns/')) {
     if(!['owner','admin'].includes(await getUserRole(session.userId))) return json(res,403,{error:'Réservé au propriétaire ou à un administrateur.'});
     const cm=u.pathname.match(/^\/api\/campaigns\/([0-9a-f-]{36})(?:\/(start|cancel))?$/i);
@@ -3610,6 +3666,6 @@ ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>
   const renewalTick=()=>checkRenewalReminders().catch(e=>console.error('[renewal] echec:',e.message));
   setInterval(renewalTick, 10*60*1000); setTimeout(renewalTick, 20*1000); // + un passage peu après chaque démarrage
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.30 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.31 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});
