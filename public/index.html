@@ -29,7 +29,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px 8px
 .auto{background:#eef2ff;color:#3538cd}.manual{background:#eef2f6;color:#536071}.overdue{background:#fee4e2;color:#b42318}.cancelledRow{opacity:.55}.cancelledRow td{text-decoration:line-through}.cancelledRow td:last-child{text-decoration:none}
 .usageBar{height:10px;border-radius:6px;background:#eef2f6;overflow:hidden;margin-top:6px}.usageBar>div{height:100%;border-radius:6px;background:#18794e;transition:width .3s}.usageBar.orange>div{background:#b54708}.usageBar.red>div{background:#b42318}
 .usageBlink{animation:usageBlink 1s step-start infinite}@keyframes usageBlink{50%{opacity:.35}}
-form.formgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px}.formgrid .full{grid-column:1/-1}
+.formgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px;align-items:end}.formgrid .full{grid-column:1/-1}
 input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px;background:white}.chat{display:flex;gap:8px}.chat input{flex:1}.reply{margin-top:12px;background:#f0f4ff;padding:13px;border-radius:10px;min-height:22px}
 .convRow{display:flex;align-items:center;gap:14px;padding:14px 10px;border-bottom:1px solid #edf0f5;cursor:pointer;transition:background .15s}.convRow:hover{background:#f7f9fc}.convRow:last-child{border-bottom:0}
 .convAvatar{flex:0 0 auto;width:42px;height:42px;border-radius:50%;background:var(--gradient);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
@@ -52,7 +52,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 .kanbanCard:active{cursor:grabbing}
 .login{max-width:430px;margin:45px auto}.login h2{margin-top:0}.login input{display:block;margin:10px 0}.error{color:#b42318;margin-top:10px}.success{color:#18794e;margin-top:10px}.hidden{display:none}.empty{padding:28px;text-align:center;color:#687386}
 .langSwitch{display:flex;border:1px solid #ffffff33;border-radius:8px;overflow:hidden}.langSwitch button{border:0;background:transparent;color:#fff;opacity:.6;padding:6px 10px;font-weight:700;font-size:12px;cursor:pointer;border-radius:0}.langSwitch button.active{opacity:1;background:#ffffff26}
-@media(max-width:800px){.stats{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}form.formgrid{grid-template-columns:1fr}.hero h2{font-size:25px}header{padding:15px 18px}}
+@media(max-width:800px){.stats{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}.formgrid{grid-template-columns:1fr}.hero h2{font-size:25px}header{padding:15px 18px}}
 
 .navBadge{display:inline-block;min-width:20px;padding:1px 6px;margin-left:6px;border-radius:12px;background:#d62839;color:#fff;font-size:11px;font-weight:800;text-align:center;line-height:18px}.navBadge.soft{background:#17A2FE}
 .pill{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;margin-left:6px;white-space:nowrap}.pill.todo{background:#fff1d6;color:#9a5b00}.pill.urgent{background:#d62839;color:#fff}.pill.paused{background:#eef2f6;color:#536071}
@@ -78,6 +78,39 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 .gdFoot{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 22px;border-top:1px solid #edf0f5;font-size:13px}
 .gdCardBox{border:1px solid #cfe4ff;background:linear-gradient(135deg,#f2f8ff,#f1fbf6)}
 @media(max-width:560px){.gdBody{padding-left:16px}.gdState{display:none}}
+
+/* ---- navigation latérale ---- */
+.wrap{max-width:1360px}
+.shell{display:grid;grid-template-columns:272px minmax(0,1fr);gap:22px;align-items:start}
+.content{min-width:0}
+.side{position:sticky;top:92px;max-height:calc(100vh - 110px);overflow:auto;background:#fff;border-radius:22px;padding:14px;box-shadow:0 10px 34px #0b144212;display:flex;flex-direction:column;gap:6px;scrollbar-width:thin}
+.sgroup{display:flex;flex-direction:column;gap:2px;padding:6px 0 8px;border-top:1px solid #edf0f5}.sgroup:first-of-type{border-top:0}
+.sgroup:not(:has(.si:not(.hidden))){display:none}
+.sglabel{font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:#8a95a8;padding:8px 12px 6px}
+.si{display:flex;align-items:center;gap:12px;width:100%;border:0;background:transparent;border-radius:14px;padding:9px 12px;font:inherit;font-weight:600;font-size:14.5px;color:#34415a;cursor:pointer;text-align:left;position:relative;transition:background .15s,color .15s}
+.si .ic{width:34px;height:34px;border-radius:11px;background:#eef2fa;display:flex;align-items:center;justify-content:center;font-size:17px;flex:none;transition:background .15s}
+.si .lb{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.si:hover{background:#f3f6fc}
+.si.active{background:linear-gradient(90deg,#17a2fe1f,#1fd37a14);color:var(--navy);font-weight:800}
+.si.active .ic{background:var(--gradient);box-shadow:0 6px 14px #17a2fe44}
+.si.active:before{content:"";position:absolute;left:-14px;top:10px;bottom:10px;width:4px;border-radius:0 4px 4px 0;background:var(--gradient)}
+.si.guide{background:linear-gradient(135deg,var(--navy),#1c3fb8);color:#fff;font-weight:800;margin-bottom:6px}.si.guide .ic{background:#ffffff26}.si.guide:hover{filter:brightness(1.12)}
+.si .navBadge{margin-left:auto}
+.mobbar,.sideScrim{display:none}
+#dashboardTab .hero{background:linear-gradient(135deg,var(--navy) 0%,#1c3fb8 70%,#17a2fe 130%);color:#fff;padding:28px 30px;position:relative;overflow:hidden}
+#dashboardTab .hero:after{content:"";position:absolute;right:-60px;top:-80px;width:260px;height:260px;border-radius:50%;background:#ffffff14}
+#dashboardTab .hero h2{color:#fff;font-size:28px;position:relative}#dashboardTab .hero .muted{color:#ffffffcc;position:relative}
+.stats{grid-template-columns:repeat(auto-fit,minmax(168px,1fr))}
+.stat{position:relative;overflow:hidden}.stat:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--gradient)}
+.panel h3{font-size:18px}
+@media(max-width:980px){
+ .shell{display:block}
+ .mobbar{display:flex;align-items:center;gap:12px;position:sticky;top:70px;z-index:9;background:#f5f7fb;padding:8px 0 12px}.mobbar strong{font-size:17px}
+ .side{position:fixed;left:0;top:0;bottom:0;max-height:none;width:292px;max-width:86vw;z-index:60;border-radius:0 24px 24px 0;transform:translateX(-105%);transition:transform .25s;padding-top:20px}
+ .side.open{transform:none}
+ .si.active:before{left:-14px}
+ .sideScrim{display:block;position:fixed;inset:0;background:#0b144288;z-index:55;opacity:0;pointer-events:none;transition:opacity .25s}.sideScrim.on{opacity:1;pointer-events:auto}
+}
 </style>
 </head>
 <body>
@@ -110,16 +143,18 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 </section>
 
 <section id="app" class="hidden">
-<div class="hero"><h2 data-i18n="hero_title">Votre entreprise gagne un commercial IA.</h2><p class="muted" data-i18n="hero_subtitle">Pilotez vos produits, prospects et performances depuis un seul espace.</p></div>
-<nav class="nav">
-<button id="guideNavBtn" class="hidden" onclick="openGuide()">🚀 <span data-i18n="nav_guide">Guide</span><span id="guideNavCount" class="navBadge soft"></span></button>
-<button class="active" data-tab="dashboard" onclick="tab('dashboard')">📊 <span data-i18n="nav_dashboard">Tableau de bord</span></button>
-<button data-tab="products" onclick="tab('products')">📦 <span data-i18n="nav_products">Produits</span></button>
-<button data-tab="crm" onclick="tab('crm')">👥 <span data-i18n="nav_crm">CRM</span></button>
-<button data-tab="conversations" onclick="tab('conversations')">💬 <span data-i18n="nav_conversations">Conversations</span><span id="convBadge" class="navBadge hidden"></span></button><button data-tab="orders" onclick="tab('orders')">🛒 <span data-i18n="nav_orders">Commandes</span></button><button data-tab="followups" onclick="tab('followups')">🔁 <span data-i18n="nav_followups">Relances</span></button><button data-tab="bases" onclick="tab('bases')">🗂️ <span data-i18n="nav_bases">Bases clients</span></button><button data-tab="campaigns" onclick="tab('campaigns')">📣 <span data-i18n="nav_campaigns">Campagnes</span></button><button data-tab="analytics" onclick="tab('analytics')">📈 <span data-i18n="nav_analytics">Analytics</span></button><button data-tab="assistant" onclick="tab('assistant')">🤖 <span data-i18n="nav_assistant">Assistant IA</span></button><button data-tab="team" onclick="tab('team')">👥 <span data-i18n="nav_team">Équipe</span></button><button data-tab="promo" onclick="tab('promo')">🎨 <span data-i18n="nav_promo">Studio promo</span></button><button data-tab="billing" onclick="tab('billing')">💳 <span data-i18n="nav_billing">Abonnement</span></button><button data-tab="referral" onclick="tab('referral')">🤝 <span data-i18n="nav_referral">Parrainage</span></button><button data-tab="settings" onclick="tab('settings')">⚙️ <span data-i18n="nav_settings">Réglages WhatsApp</span></button>
-</nav>
+<div class="mobbar"><button type="button" class="btn" onclick="toggleSide()" aria-label="Menu">☰</button><strong id="mobTitle"></strong></div>
+<div class="shell"><div class="sideScrim" id="sideScrim" onclick="toggleSide(false)"></div>
+<aside class="side" id="side">
+<button type="button" id="guideNavBtn" class="si guide hidden" onclick="openGuide();toggleSide(false)"><span class="ic">🚀</span><span class="lb" data-i18n="nav_guide">Guide</span><span id="guideNavCount" class="navBadge soft"></span></button>
+<div class="sgroup"><div class="sglabel" data-i18n="nav_g_overview">Pilotage</div><button type="button" class="si active" data-tab="dashboard" onclick="tab('dashboard')"><span class="ic">📊</span><span class="lb" data-i18n="nav_dashboard">Tableau de bord</span></button><button type="button" class="si" data-tab="analytics" onclick="tab('analytics')"><span class="ic">📈</span><span class="lb" data-i18n="nav_analytics">Analytics</span></button></div>
+<div class="sgroup"><div class="sglabel" data-i18n="nav_g_sales">Ventes</div><button type="button" class="si" data-tab="conversations" onclick="tab('conversations')"><span class="ic">💬</span><span class="lb" data-i18n="nav_conversations">Conversations</span><span id="convBadge" class="navBadge hidden"></span></button><button type="button" class="si" data-tab="orders" onclick="tab('orders')"><span class="ic">🛒</span><span class="lb" data-i18n="nav_orders">Commandes</span></button><button type="button" class="si" data-tab="products" onclick="tab('products')"><span class="ic">📦</span><span class="lb" data-i18n="nav_products">Produits</span></button><button type="button" class="si" data-tab="crm" onclick="tab('crm')"><span class="ic">👥</span><span class="lb" data-i18n="nav_crm">CRM</span></button><button type="button" class="si" data-tab="followups" onclick="tab('followups')"><span class="ic">🔁</span><span class="lb" data-i18n="nav_followups">Relances</span></button></div>
+<div class="sgroup"><div class="sglabel" data-i18n="nav_g_growth">Développer</div><button type="button" class="si" data-tab="promo" onclick="tab('promo')"><span class="ic">🎨</span><span class="lb" data-i18n="nav_promo">Studio promo</span></button><button type="button" class="si" data-tab="campaigns" onclick="tab('campaigns')"><span class="ic">📣</span><span class="lb" data-i18n="nav_campaigns">Campagnes</span></button><button type="button" class="si" data-tab="bases" onclick="tab('bases')"><span class="ic">🗂️</span><span class="lb" data-i18n="nav_bases">Bases clients</span></button><button type="button" class="si" data-tab="referral" onclick="tab('referral')"><span class="ic">🤝</span><span class="lb" data-i18n="nav_referral">Parrainage</span></button></div>
+<div class="sgroup"><div class="sglabel" data-i18n="nav_g_setup">Configuration</div><button type="button" class="si" data-tab="assistant" onclick="tab('assistant')"><span class="ic">🤖</span><span class="lb" data-i18n="nav_assistant">Assistant IA</span></button><button type="button" class="si" data-tab="settings" onclick="tab('settings')"><span class="ic">⚙️</span><span class="lb" data-i18n="nav_settings">Réglages WhatsApp</span></button><button type="button" class="si" data-tab="team" onclick="tab('team')"><span class="ic">🧑‍🤝‍🧑</span><span class="lb" data-i18n="nav_team">Équipe</span></button><button type="button" class="si" data-tab="billing" onclick="tab('billing')"><span class="ic">💳</span><span class="lb" data-i18n="nav_billing">Abonnement</span></button></div>
+</aside><div class="content">
 
 <section id="dashboardTab">
+<div class="hero"><h2 data-i18n="hero_title">Votre entreprise gagne un commercial IA.</h2><p class="muted" data-i18n="hero_subtitle">Pilotez vos produits, prospects et performances depuis un seul espace.</p></div>
 <div id="guideCard"></div>
 <div class="stats">
 <div class="stat"><div class="muted" data-i18n="stat_prospects">Prospects</div><div class="num" id="mProspects">0</div></div>
@@ -481,6 +516,7 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <div id="pStatus" style="margin-top:10px"></div>
 </div>
 </section>
+</div></div>
 </main>
 
 <div id="guideModal" class="gdOverlay" onclick="if(event.target===this)closeGuide()"><div class="gdModal">
@@ -659,7 +695,7 @@ fr: {
   qualification_hot:"Chaud", qualification_warm:"Tiède", qualification_cold:"Froid",
   conv_pill_urgent:"🚨 Urgent",
   conv_banner_urgent:"🚨 Urgent — cette conversation a besoin d'un humain : {r}",
-  nav_guide:"Guide",
+  nav_guide:"Guide", nav_g_overview:"Pilotage", nav_g_sales:"Ventes", nav_g_growth:"Développer", nav_g_setup:"Configuration", nav_g_overview:"Pilotage", nav_g_sales:"Ventes", nav_g_growth:"Développer", nav_g_setup:"Configuration",
   gd_title:"Guide de démarrage",
   gd_sub:"{done} étape(s) sur {total} terminées",
   gd_intro:"Suivez ces étapes dans l'ordre : votre progression se met à jour toute seule. Chaque étape s'ouvre pour vous expliquer quoi faire, pas à pas.",
@@ -947,7 +983,7 @@ en: {
   qualification_hot:"Hot", qualification_warm:"Warm", qualification_cold:"Cold",
   conv_pill_urgent:"🚨 Urgent",
   conv_banner_urgent:"🚨 Urgent — this conversation needs a human: {r}",
-  nav_guide:"Guide",
+  nav_guide:"Guide", nav_g_overview:"Overview", nav_g_sales:"Sales", nav_g_growth:"Grow", nav_g_setup:"Setup",
   gd_title:"Getting started guide",
   gd_sub:"{done} of {total} steps completed",
   gd_intro:"Follow these steps in order: your progress updates by itself. Each step opens to explain what to do, one action at a time.",
@@ -1268,8 +1304,9 @@ async function load() {
   } catch(e) { console.error(e); }
 }
 
+function toggleSide(force){ const o=force===undefined?!$('side').classList.contains('open'):force; $('side').classList.toggle('open',o); $('sideScrim').classList.toggle('on',o); }
 function tab(name) {
-  currentTab=name;
+  currentTab=name; toggleSide(false); { const ab=document.querySelector('.si[data-tab="'+name+'"] .lb'); if(ab&&$('mobTitle')) $('mobTitle').textContent=ab.textContent; window.scrollTo({top:0}); }
   document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   ['dashboard','products','crm','assistant','conversations','orders','followups','bases','campaigns','analytics','team','promo','billing','referral','settings'].forEach(x => $(x+'Tab').classList.toggle('hidden', x !== name));
   if (name === 'products') { renderProducts(); renderOnboardingTemplates(); }
