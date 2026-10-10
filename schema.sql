@@ -409,3 +409,26 @@ CREATE TABLE IF NOT EXISTS contacts (
 CREATE UNIQUE INDEX IF NOT EXISTS contacts_company_phone_idx ON contacts(company_id, phone_key);
 CREATE INDEX IF NOT EXISTS contacts_company_tag_idx ON contacts(company_id, tag);
 ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL;
+
+-- Bibliothèque de promotions réutilisables + campagnes programmées
+CREATE TABLE IF NOT EXISTS promotions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+  format TEXT NOT NULL DEFAULT 'status',
+  lang TEXT NOT NULL DEFAULT 'fr',
+  text TEXT NOT NULL,
+  headline TEXT,
+  poster_theme TEXT,
+  poster_size TEXT,
+  times_used INTEGER NOT NULL DEFAULT 0,
+  last_used_at TIMESTAMPTZ,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS promotions_company_idx ON promotions(company_id, created_at DESC);
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS promotion_id UUID REFERENCES promotions(id) ON DELETE SET NULL;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS optin_confirmed_at TIMESTAMPTZ;

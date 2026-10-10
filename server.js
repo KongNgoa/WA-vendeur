@@ -1382,6 +1382,53 @@ function campaignText(message, firstName) {
   const m = String(message).replace(/\{pr[ée]nom\}/gi, firstName || '').replace(/[ ]{2,}/g, ' ').trim();
   return m + '\n\nRépondez STOP pour ne plus recevoir nos messages.';
 }
+// Démarre une campagne : fige la liste des destinataires (calculée à cet instant, donc à jour
+// pour une campagne programmée), vérifie WhatsApp et le quota, puis passe en 'En cours'.
+async function beginCampaign(companyId, campaignId, fromStatus) {
+  return transaction(async client => {
+    const c = (await client.query("SELECT id,audience,status,promotion_id FROM campaigns WHERE id=$1 AND company_id=$2 FOR UPDATE", [campaignId, companyId])).rows[0];
+    if (!c) return { code: 404, error: 'Campagne introuvable' };
+    if (c.status !== fromStatus) return { code: 409, error: 'Cette campagne a déjà été lancée.' };
+    const ws = await client.query("SELECT whatsapp_phone_number_id AS id,whatsapp_access_token AS tok FROM companies WHERE id=$1", [companyId]);
+    if (!ws.rows[0]?.id || !ws.rows[0]?.tok) return { code: 400, error: "Configurez d'abord WhatsApp dans les Réglages." };
+    const aud = cleanAudience(c.audience);
+    const am = audienceMembers(aud);
+    const rec = await client.query(`WITH members AS (${am.members}), blocked AS (${am.blocked}) SELECT DISTINCT ON (key) key,phone,name,prospect_id AS id,contact_id FROM members WHERE key NOT IN (SELECT k FROM blocked) ORDER BY key,(prospect_id IS NULL) LIMIT 5000`, [companyId, ...am.params]);
+    if (!rec.rows.length) return { code: 400, error: 'Aucun contact dans cette audience.' };
+    const quota = await campaignQuota(companyId);
+    if (rec.rows.length > quota.remaining) return { code: 403, upgrade: true, error: 'Quota mensuel insuffisant : ' + rec.rows.length + ' contacts ciblés, ' + quota.remaining + ' message(s) restant(s) ce mois-ci (' + quota.limit + ' avec le forfait ' + quota.plan + ').' };
+    for (const p of rec.rows) await client.query('INSERT INTO campaign_recipients(campaign_id,company_id,prospect_id,contact_id,phone,first_name) VALUES($1,$2,$3,$4,$5,$6)', [c.id, companyId, p.id, p.contact_id, p.phone, String(p.name || '').trim().split(/\s+/)[0] || null]);
+    await client.query("UPDATE campaigns SET status='En cours',started_at=now() WHERE id=$1", [c.id]);
+    if (c.promotion_id) await client.query("UPDATE promotions SET times_used=times_used+1,last_used_at=now() WHERE id=$1 AND company_id=$2", [c.promotion_id, companyId]);
+    return { code: 200, total: rec.rows.length };
+  });
+}
+// Campagnes programmées : démarrées à l'heure dite avec une audience recalculée. Annulées
+// (avec le motif, et un e-mail à l'administrateur) si elles ne peuvent pas partir, ou si l'heure
+// est dépassée de plus de 6 h (serveur indisponible) : une promo envoyée en retard peut être périmée.
+let schedTickRunning = false;
+async function runScheduledCampaigns() {
+  if (schedTickRunning) return;
+  schedTickRunning = true;
+  try {
+    const due = (await query("SELECT id,company_id AS \"companyId\",name,scheduled_at AS \"at\" FROM campaigns WHERE status='Programmée' AND scheduled_at<=now() ORDER BY scheduled_at LIMIT 20")).rows;
+    for (const c of due) {
+      let note = null;
+      const co = (await query('SELECT c.suspended,('+EXPIRED_SQL+') AS expired,c.approved_at AS "approvedAt" FROM companies c WHERE c.id=$1', [c.companyId])).rows[0];
+      if (!co || co.suspended || co.expired || !co.approvedAt) note = 'Entreprise suspendue, abonnement expiré ou non validée';
+      else if (Date.now() - new Date(c.at).getTime() > 6 * 3600 * 1000) note = "Heure d'envoi dépassée de plus de 6 h (serveur indisponible)";
+      else {
+        const out = await beginCampaign(c.companyId, c.id, 'Programmée');
+        if (out.code === 200) { setTimeout(() => runCampaignTick(), 300); continue; }
+        note = out.error;
+      }
+      await query("UPDATE campaigns SET status='Annulée',finished_at=now(),note=$1 WHERE id=$2 AND status='Programmée'", [note, c.id]);
+      const owners = (await query("SELECT email,name FROM users WHERE company_id=$1 AND role='owner'", [c.companyId])).rows;
+      for (const o of owners) await sendEmail(o.email, 'VENDIA — Votre campagne programmée n\'a pas pu partir', '<p>Bonjour '+escHtml(o.name)+',</p><p>La campagne <strong>'+escHtml(c.name)+'</strong>, programmée pour le '+new Date(c.at).toLocaleString('fr-FR',{dateStyle:'long',timeStyle:'short',timeZone:'Africa/Douala'})+', n\'a pas été envoyée : <strong>'+escHtml(note)+'</strong>.</p><p>Corrigez le problème puis relancez-la depuis l\'onglet Campagnes (bouton « Réutiliser »).</p>');
+    }
+  } catch (e) { console.error('[campaigns] programmation:', e.message); }
+  finally { schedTickRunning = false; }
+}
 let campaignTickRunning = false;
 async function runCampaignTick() {
   if (campaignTickRunning) return;
@@ -1552,8 +1599,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.32',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.32'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.33',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.33'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -2367,6 +2414,54 @@ async function handler(req,res) {
     return json(res,200,{total,contacts:rows,offset});
   }
 
+  // --- Bibliothèque de promotions : textes et affiches enregistrés, réutilisables et envoyables à une base ---
+  if(u.pathname==='/api/promotions' || u.pathname.startsWith('/api/promotions/')) {
+    const pmx=u.pathname.match(/^\/api\/promotions\/([0-9a-f-]{36})$/i);
+    const clean=b=>{
+      const o={};
+      if(b.name!==undefined) { o.name=String(b.name||'').trim().slice(0,80); if(o.name.length<2) return {error:'Donnez un nom à la promotion (2 caractères minimum).'}; }
+      if(b.text!==undefined) { o.text=String(b.text||'').trim(); if(o.text.length<5||o.text.length>4000) return {error:'Le texte doit faire entre 5 et 4000 caractères.'}; }
+      if(b.headline!==undefined) o.headline=String(b.headline||'').trim().slice(0,24);
+      if(b.theme!==undefined) o.theme=/^[a-z]{3,12}$/.test(String(b.theme))?String(b.theme):null;
+      if(b.size!==undefined) o.size=/^[a-z]{3,12}$/.test(String(b.size))?String(b.size):null;
+      if(b.format!==undefined) o.format=PROMO_FORMATS.includes(b.format)?b.format:'status';
+      if(b.lang!==undefined) o.lang=b.lang==='en'?'en':'fr';
+      return {o};
+    };
+    if(req.method==='GET'&&u.pathname==='/api/promotions') {
+      const r=await query(`SELECT p.id,p.name,p.product_id AS "productId",pr.name AS "productName",p.format,p.lang,p.text,p.headline,p.poster_theme AS theme,p.poster_size AS size,p.times_used AS "timesUsed",p.last_used_at AS "lastUsedAt",p.created_at AS "createdAt"
+        FROM promotions p LEFT JOIN products pr ON pr.id=p.product_id WHERE p.company_id=$1 ORDER BY COALESCE(p.last_used_at,p.created_at) DESC LIMIT 200`,[companyId]);
+      return json(res,200,{promotions:r.rows});
+    }
+    if(req.method==='POST'&&u.pathname==='/api/promotions') {
+      const b=await body(req); const c=clean({name:b.name,text:b.text,headline:b.headline||'',theme:b.theme,size:b.size,format:b.format||'status',lang:b.lang||'fr'});
+      if(c.error) return json(res,400,{error:c.error});
+      if((await query('SELECT COUNT(*)::int AS n FROM promotions WHERE company_id=$1',[companyId])).rows[0].n>=200) return json(res,403,{error:'Bibliothèque pleine (200 promotions) : supprimez-en avant d\'en ajouter.'});
+      let productId=null;
+      if(b.productId) { if(!/^[0-9a-f-]{36}$/i.test(String(b.productId))) return json(res,400,{error:'Produit invalide'}); const pr=await query('SELECT id FROM products WHERE id=$1 AND company_id=$2',[b.productId,companyId]); if(!pr.rows[0]) return json(res,404,{error:'Produit introuvable'}); productId=pr.rows[0].id; }
+      const o=c.o;
+      const r=await query('INSERT INTO promotions(company_id,name,product_id,format,lang,text,headline,poster_theme,poster_size,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id',[companyId,o.name,productId,o.format,o.lang,o.text,o.headline||null,o.theme,o.size,session.userId]);
+      return json(res,201,{id:r.rows[0].id});
+    }
+    if(pmx&&req.method==='PATCH') {
+      const c=clean(await body(req)); if(c.error) return json(res,400,{error:c.error});
+      const map={name:'name',text:'text',headline:'headline',theme:'poster_theme',size:'poster_size',format:'format',lang:'lang'};
+      const sets=[],params=[pmx[1],companyId];
+      for(const [k,col] of Object.entries(map)) if(c.o[k]!==undefined) { params.push(c.o[k]||null); sets.push(col+'=$'+params.length); }
+      if(!sets.length) return json(res,400,{error:'Rien à modifier'});
+      const r=await query(`UPDATE promotions SET ${sets.join(',')},updated_at=now() WHERE id=$1 AND company_id=$2 RETURNING id`,params);
+      if(!r.rows[0]) return json(res,404,{error:'Promotion introuvable'});
+      return json(res,200,{ok:true});
+    }
+    if(pmx&&req.method==='DELETE') {
+      if(!['owner','admin'].includes(await getUserRole(session.userId))) return json(res,403,{error:'Réservé au propriétaire ou à un administrateur.'});
+      const r=await query('DELETE FROM promotions WHERE id=$1 AND company_id=$2 RETURNING id',[pmx[1],companyId]);
+      if(!r.rows[0]) return json(res,404,{error:'Promotion introuvable'});
+      return json(res,200,{ok:true});
+    }
+    return json(res,404,{error:'Route introuvable'});
+  }
+
   // --- Répertoire : contacts importés (téléphone, fichier, copier-coller), par groupes ---
   if(u.pathname==='/api/contacts' || u.pathname.startsWith('/api/contacts/')) {
     if(!['owner','admin'].includes(await getUserRole(session.userId))) return json(res,403,{error:'Réservé au propriétaire ou à un administrateur.'});
@@ -2442,9 +2537,9 @@ async function handler(req,res) {
 
   if(u.pathname==='/api/campaigns' || u.pathname.startsWith('/api/campaigns/')) {
     if(!['owner','admin'].includes(await getUserRole(session.userId))) return json(res,403,{error:'Réservé au propriétaire ou à un administrateur.'});
-    const cm=u.pathname.match(/^\/api\/campaigns\/([0-9a-f-]{36})(?:\/(start|cancel))?$/i);
+    const cm=u.pathname.match(/^\/api\/campaigns\/([0-9a-f-]{36})(?:\/(start|cancel|schedule))?$/i);
     if(req.method==='GET'&&u.pathname==='/api/campaigns') {
-      const r=await query(`SELECT c.id,c.name,c.status,c.note,c.created_at AS "createdAt",c.started_at AS "startedAt",c.finished_at AS "finishedAt",
+      const r=await query(`SELECT c.id,c.name,c.status,c.note,c.scheduled_at AS "scheduledAt",c.promotion_id AS "promotionId",c.created_at AS "createdAt",c.started_at AS "startedAt",c.finished_at AS "finishedAt",
           COUNT(r.id)::int AS total,COUNT(r.id) FILTER (WHERE r.status='sent')::int AS sent,COUNT(r.id) FILTER (WHERE r.status='failed')::int AS failed,COUNT(r.id) FILTER (WHERE r.status='skipped')::int AS skipped
         FROM campaigns c LEFT JOIN campaign_recipients r ON r.campaign_id=c.id WHERE c.company_id=$1 GROUP BY c.id ORDER BY c.created_at DESC LIMIT 100`,[companyId]);
       return json(res,200,{campaigns:r.rows,quota:await campaignQuota(companyId)});
@@ -2461,11 +2556,18 @@ async function handler(req,res) {
       if(tpl && !/^[a-z0-9_]{1,512}$/.test(tpl)) return json(res,400,{error:'Nom de modèle invalide : minuscules, chiffres et _ uniquement (tel que dans Meta).'});
       const lang=String(b.lang||'fr').trim();
       if(!/^[a-z]{2}(_[A-Z]{2})?$/.test(lang)) return json(res,400,{error:'Code langue invalide (ex. fr, en, en_US).'});
-      const r=await query('INSERT INTO campaigns(company_id,name,message,template_name,template_lang,audience,created_by) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id',[companyId,name,message,tpl||null,lang,JSON.stringify(cleanAudience(b.audience)),session.userId]);
+      let promotionId=null;
+      if(b.promotionId) {
+        if(!/^[0-9a-f-]{36}$/i.test(String(b.promotionId))) return json(res,400,{error:'Promotion invalide'});
+        const pr=await query('SELECT id FROM promotions WHERE id=$1 AND company_id=$2',[b.promotionId,companyId]);
+        if(!pr.rows[0]) return json(res,404,{error:'Promotion introuvable'});
+        promotionId=pr.rows[0].id;
+      }
+      const r=await query('INSERT INTO campaigns(company_id,name,message,template_name,template_lang,audience,created_by,promotion_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id',[companyId,name,message,tpl||null,lang,JSON.stringify(cleanAudience(b.audience)),session.userId,promotionId]);
       return json(res,201,{id:r.rows[0].id});
     }
     if(cm && req.method==='GET' && !cm[2]) {
-      const c=(await query('SELECT id,name,message,template_name AS template,template_lang AS lang,audience,status,note,created_at AS "createdAt" FROM campaigns WHERE id=$1 AND company_id=$2',[cm[1],companyId])).rows[0];
+      const c=(await query('SELECT id,name,message,template_name AS template,template_lang AS lang,audience,status,note,scheduled_at AS "scheduledAt",promotion_id AS "promotionId",created_at AS "createdAt" FROM campaigns WHERE id=$1 AND company_id=$2',[cm[1],companyId])).rows[0];
       if(!c) return json(res,404,{error:'Campagne introuvable'});
       const rc=await query("SELECT phone,first_name AS \"firstName\",status,error FROM campaign_recipients WHERE campaign_id=$1 AND status IN ('failed','skipped') ORDER BY status LIMIT 200",[c.id]);
       return json(res,200,{campaign:c,problems:rc.rows});
@@ -2473,29 +2575,29 @@ async function handler(req,res) {
     if(cm && cm[2]==='start' && req.method==='POST') {
       const b=await body(req);
       if(b.confirmOptIn!==true) return json(res,400,{error:'Confirmez que ces contacts ont accepté de recevoir vos messages.'});
-      const out=await transaction(async client=>{
-        const c=(await client.query("SELECT id,audience,status FROM campaigns WHERE id=$1 AND company_id=$2 FOR UPDATE",[cm[1],companyId])).rows[0];
-        if(!c) return {code:404,error:'Campagne introuvable'};
-        if(c.status!=='Brouillon') return {code:409,error:'Cette campagne a déjà été lancée.'};
-        const ws=await client.query("SELECT whatsapp_phone_number_id AS id,whatsapp_access_token AS tok FROM companies WHERE id=$1",[companyId]);
-        if(!ws.rows[0]?.id||!ws.rows[0]?.tok) return {code:400,error:'Configurez d\'abord WhatsApp dans les Réglages.'};
-        const aud=cleanAudience(c.audience);
-        const am=audienceMembers(aud);
-        const rec=await client.query(`WITH members AS (${am.members}), blocked AS (${am.blocked}) SELECT DISTINCT ON (key) key,phone,name,prospect_id AS id,contact_id FROM members WHERE key NOT IN (SELECT k FROM blocked) ORDER BY key,(prospect_id IS NULL) LIMIT 5000`,[companyId,...am.params]);
-        if(!rec.rows.length) return {code:400,error:'Aucun contact dans cette audience.'};
-        const quota=await campaignQuota(companyId);
-        if(rec.rows.length>quota.remaining) return {code:403,upgrade:true,error:'Quota mensuel insuffisant : '+rec.rows.length+' contacts ciblés, '+quota.remaining+' message(s) restant(s) ce mois-ci ('+quota.limit+' avec le forfait '+quota.plan+').'};
-        for(const p of rec.rows) await client.query('INSERT INTO campaign_recipients(campaign_id,company_id,prospect_id,contact_id,phone,first_name) VALUES($1,$2,$3,$4,$5,$6)',[c.id,companyId,p.id,p.contact_id,p.phone,String(p.name||'').trim().split(/\s+/)[0]||null]);
-        await client.query("UPDATE campaigns SET status='En cours',started_at=now() WHERE id=$1",[c.id]);
-        return {code:200,total:rec.rows.length};
-      });
+      const out=await beginCampaign(companyId,cm[1],'Brouillon');
       if(out.code!==200) return json(res,out.code,{error:out.error,upgrade:out.upgrade||false});
       setTimeout(()=>runCampaignTick(),500);
       return json(res,200,{ok:true,total:out.total});
     }
+    if(cm && cm[2]==='schedule' && req.method==='POST') {
+      const b=await body(req);
+      if(b.confirmOptIn!==true) return json(res,400,{error:'Confirmez que ces contacts ont accepté de recevoir vos messages.'});
+      const at=new Date(b.scheduledAt);
+      if(isNaN(at.getTime())||at.getTime()<Date.now()+60*1000) return json(res,400,{error:'Choisissez une date et une heure dans le futur (au moins 1 minute).'});
+      if(at.getTime()>Date.now()+90*86400000) return json(res,400,{error:'La programmation est limitée à 90 jours.'});
+      const quota=await campaignQuota(companyId);
+      if(quota.limit===0) return json(res,403,{error:'Les campagnes de diffusion sont disponibles à partir du forfait Business.',upgrade:true});
+      const c0=(await query("SELECT audience,status FROM campaigns WHERE id=$1 AND company_id=$2",[cm[1],companyId])).rows[0];
+      if(!c0) return json(res,404,{error:'Campagne introuvable'});
+      if(c0.status!=='Brouillon') return json(res,409,{error:'Seul un brouillon peut être programmé.'});
+      if(!(await audienceCount(companyId,cleanAudience(c0.audience))).n) return json(res,400,{error:'Aucun contact dans cette audience.'});
+      await query("UPDATE campaigns SET status='Programmée',scheduled_at=$1,optin_confirmed_at=now() WHERE id=$2 AND company_id=$3 AND status='Brouillon'",[at.toISOString(),cm[1],companyId]);
+      return json(res,200,{ok:true,scheduledAt:at.toISOString()});
+    }
     if(cm && cm[2]==='cancel' && req.method==='POST') {
-      const c=(await query("UPDATE campaigns SET status='Annulée',finished_at=now(),note='Annulée manuellement' WHERE id=$1 AND company_id=$2 AND status='En cours' RETURNING id",[cm[1],companyId])).rows[0];
-      if(!c) return json(res,409,{error:'Seule une campagne en cours peut être annulée.'});
+      const c=(await query("UPDATE campaigns SET status='Annulée',finished_at=now(),note='Annulée manuellement' WHERE id=$1 AND company_id=$2 AND status IN ('En cours','Programmée') RETURNING id",[cm[1],companyId])).rows[0];
+      if(!c) return json(res,409,{error:'Seule une campagne en cours ou programmée peut être annulée.'});
       await query("UPDATE campaign_recipients SET status='skipped',error='Campagne annulée' WHERE campaign_id=$1 AND status='pending'",[cm[1]]);
       return json(res,200,{ok:true});
     }
@@ -3578,6 +3680,27 @@ async function ensureMigrations() {
     'CREATE UNIQUE INDEX IF NOT EXISTS contacts_company_phone_idx ON contacts(company_id, phone_key)',
     'CREATE INDEX IF NOT EXISTS contacts_company_tag_idx ON contacts(company_id, tag)',
     'ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL',
+    `CREATE TABLE IF NOT EXISTS promotions (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+       name TEXT NOT NULL,
+       product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+       format TEXT NOT NULL DEFAULT 'status',
+       lang TEXT NOT NULL DEFAULT 'fr',
+       text TEXT NOT NULL,
+       headline TEXT,
+       poster_theme TEXT,
+       poster_size TEXT,
+       times_used INTEGER NOT NULL DEFAULT 0,
+       last_used_at TIMESTAMPTZ,
+       created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+     )`,
+    'CREATE INDEX IF NOT EXISTS promotions_company_idx ON promotions(company_id, created_at DESC)',
+    'ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS promotion_id UUID REFERENCES promotions(id) ON DELETE SET NULL',
+    'ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ',
+    'ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS optin_confirmed_at TIMESTAMPTZ',
     // Lot "administration d'équipe, réinitialisation de mot de passe et
     // super-admin" — idempotent. Le super_admin_id est ajouté à 'sessions'
     // (avec user_id/company_id rendus nullables) plutôt que d'utiliser une
@@ -3796,9 +3919,10 @@ const server=http.createServer((req,res)=>handler(req,res).catch(e=>{ if(e&&e.st
 ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>console.error('[demarrage] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>runCampaignTick(), 20*1000);
+  setInterval(()=>runScheduledCampaigns(), 30*1000);
   const renewalTick=()=>checkRenewalReminders().catch(e=>console.error('[renewal] echec:',e.message));
   setInterval(renewalTick, 10*60*1000); setTimeout(renewalTick, 20*1000); // + un passage peu après chaque démarrage
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.32 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.33 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

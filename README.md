@@ -139,6 +139,13 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - Le tableau du parrain montre ses filleuls (abonné actif ou en attente de paiement) et ce que chacun lui a rapporté.
 
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.
+## 1.10.33 — Bibliothèque de promotions et campagnes programmées
+
+- **Bibliothèque** : l'onglet Promotions enregistre chaque promo (texte, produit, affiche) sous un nom ; on peut la réutiliser, la mettre à jour, la supprimer (200 max par entreprise). `GET/POST/PATCH/DELETE /api/promotions`.
+- **« Envoyer à ma base »** : ouvre le formulaire de campagne avec le texte prérempli ; on choisit une ou plusieurs bases clients et/ou le répertoire.
+- **Programmation** : « Quand ? » → plus tard (≥ 1 min, ≤ 90 jours, plan Business). `POST /api/campaigns/:id/schedule`. Le serveur vérifie toutes les 30 s ; la campagne est annulée avec une note et un e-mail si l'entreprise est suspendue/expirée, si l'heure est dépassée de plus de 6 h, ou si le lancement échoue. Une campagne programmée peut être annulée.
+- Les campagnes gardent le lien vers la promotion (`promotion_id`, compteur d'utilisations).
+
 ## 1.10.32 — Répertoire téléphonique
 Dans l'onglet **Bases clients**, nouveau panneau **Mon répertoire téléphonique** (propriétaire/administrateur) : on importe ses propres contacts par copier-coller (« Nom, numéro »), par fichier `.vcf` / `.csv` / `.txt` (export du téléphone) ou, sur Android/Chrome, directement depuis le répertoire du téléphone (« Choisir dans mon téléphone »). Les contacts se rangent par **groupes** (Famille, Voisinage, Salon 2026…). Les numéros sont normalisés (+237 ajouté pour les numéros camerounais à 9 chiffres ; indicatif requis pour les autres pays), dédoublonnés et comparés au CRM (un numéro déjà dans le CRM n'est pas ajouté en double). Une confirmation d'accord des contacts est obligatoire à l'import. Limite : 5 000 contacts par entreprise.
 **Campagnes** : une case « Mon répertoire téléphonique » (avec choix des groupes) s'ajoute aux bases du CRM ; l'audience est l'union des deux, sans doublon. Un contact qui répond STOP (ou que l'on exclut) n'est plus jamais contacté, il ne peut pas être supprimé ni réimporté, et seul son propre REPRENDRE le réactive. Un contact du répertoire qui répond devient un prospect du CRM comme les autres. Les contacts du répertoire hors fenêtre de 24 h nécessitent le modèle Meta Marketing, comme tous les envois de masse.
