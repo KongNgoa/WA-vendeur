@@ -1309,10 +1309,30 @@ function cleanAudience(a) {
     stages: (Array.isArray(a.stages) ? a.stages : []).filter(x => CAMPAIGN_STAGES.includes(x)),
     heats: (Array.isArray(a.heats) ? a.heats : []).filter(x => CAMPAIGN_HEATS.includes(x)),
     bases: (Array.isArray(a.bases) ? a.bases : []).filter(x => typeof x === 'string' && Object.prototype.hasOwnProperty.call(CLIENT_BASES, x)),
+    directory: {
+      on: Boolean(a.directory && a.directory.on),
+      tags: (a.directory && Array.isArray(a.directory.tags) ? a.directory.tags : []).filter(x => typeof x === 'string' && x.trim()).map(x => x.trim().slice(0, 40)).slice(0, 30)
+    },
     customers: ['only', 'never'].includes(a.customers) ? a.customers : 'all',
     inactiveDays: Math.min(365, Math.max(0, parseInt(a.inactiveDays, 10) || 0))
   };
 }
+// --- Répertoire téléphonique (contacts importés par l'entreprise) -----------
+const MAX_CONTACTS = 5000;
+function normalizeContactPhone(raw) {
+  let d = String(raw || '').trim().replace(/[\s().\- ]/g, '');
+  if (d.startsWith('00')) d = '+' + d.slice(2);
+  const hasPlus = d.startsWith('+');
+  d = d.replace(/\D/g, '');
+  if (!d) return null;
+  if (!hasPlus) {
+    if (/^[62]\d{8}$/.test(d)) d = '237' + d;      // mobile/fixe camerounais sans indicatif
+    else if (d.startsWith('0')) return null;        // numéro local d'un autre pays : indicatif requis
+  }
+  return d.length >= 8 && d.length <= 15 ? '+' + d : null;
+}
+const cleanContactName = n => String(n || '').replace(/[\u0000-\u001f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || null;
+
 function audienceWhere(aud, startIdx = 2) {
   const cond = ["p.company_id=$1", "p.phone IS NOT NULL", "btrim(p.phone)<>''"];
   const params = [];
@@ -1327,9 +1347,28 @@ function audienceWhere(aud, startIdx = 2) {
   if (aud.inactiveDays > 0) cond.push("(p.last_contact IS NULL OR p.last_contact < now() - (" + add(aud.inactiveDays) + " || ' days')::interval)");
   return { cond, params };
 }
+// Audience = (contacts du CRM filtrés par bases/filtres) ∪ (répertoire importé, éventuellement par groupes).
+// Le CRM est inclus si au moins une base est cochée, ou si le répertoire n'est pas sélectionné
+// (comportement historique : sans choix, tous les contacts du CRM). Un numéro n'apparaît qu'une
+// fois (clé = 9 derniers chiffres) et tout numéro désabonné, dans le CRM comme dans le
+// répertoire, est exclu. Les paramètres $1 = entreprise, puis ceux renvoyés dans params.
+function audienceMembers(aud) {
+  const parts = []; let params = [];
+  if ((aud.bases && aud.bases.length) || !aud.directory.on) {
+    const w = audienceWhere(aud); params = [...w.params];
+    parts.push(`SELECT ${PHONE_KEY_SQL} AS key, p.phone, p.name, p.id AS prospect_id, NULL::uuid AS contact_id FROM prospects p WHERE ${w.cond.join(' AND ')}`);
+  }
+  if (aud.directory.on) {
+    let extra = '';
+    if (aud.directory.tags.length) { params.push(aud.directory.tags); extra = ` AND c.tag = ANY($${1 + params.length}::text[])`; }
+    parts.push(`SELECT c.phone_key AS key, c.phone, c.name, NULL::uuid AS prospect_id, c.id AS contact_id FROM contacts c WHERE c.company_id=$1${extra}`);
+  }
+  const blocked = "SELECT right(regexp_replace(q.phone,'\\D','','g'),9) AS k FROM prospects q WHERE q.company_id=$1 AND q.opted_out AND q.phone IS NOT NULL UNION SELECT x.phone_key AS k FROM contacts x WHERE x.company_id=$1 AND x.opted_out";
+  return { members: parts.join(' UNION ALL '), blocked, params };
+}
 async function audienceCount(companyId, aud) {
-  const w = audienceWhere(aud);
-  const r = await query(`SELECT COUNT(DISTINCT right(regexp_replace(p.phone,'\\D','','g'),9)) FILTER (WHERE NOT p.opted_out)::int AS n, COUNT(DISTINCT right(regexp_replace(p.phone,'\\D','','g'),9)) FILTER (WHERE p.opted_out)::int AS "optedOut" FROM prospects p WHERE ${w.cond.join(' AND ')}`, [companyId, ...w.params]);
+  const m = audienceMembers(aud);
+  const r = await query(`WITH members AS (${m.members}), blocked AS (${m.blocked}) SELECT COUNT(DISTINCT key) FILTER (WHERE key NOT IN (SELECT k FROM blocked))::int AS n, COUNT(DISTINCT key) FILTER (WHERE key IN (SELECT k FROM blocked))::int AS "optedOut" FROM members`, [companyId, ...m.params]);
   return r.rows[0];
 }
 async function campaignQuota(companyId) {
@@ -1362,7 +1401,8 @@ async function runCampaignTick() {
       for (const rcp of batch) {
         let status = 'failed', error = null;
         try {
-          const pr = (await query("SELECT 1 FROM prospects WHERE company_id=$1 AND opted_out AND right(regexp_replace(COALESCE(phone,''),'\\D','','g'),9)=right(regexp_replace($2,'\\D','','g'),9) LIMIT 1", [c.companyId, rcp.phone])).rows[0];
+          const pr = (await query("SELECT 1 FROM prospects WHERE company_id=$1 AND opted_out AND right(regexp_replace(COALESCE(phone,''),'\\D','','g'),9)=right(regexp_replace($2,'\\D','','g'),9) LIMIT 1", [c.companyId, rcp.phone])).rows[0]
+            || (await query("SELECT 1 FROM contacts WHERE company_id=$1 AND opted_out AND phone_key=right(regexp_replace($2,'\\D','','g'),9) LIMIT 1", [c.companyId, rcp.phone])).rows[0];
           if (pr) { status = 'skipped'; error = 'Désabonné (STOP)'; }
           else {
             const last = (await query("SELECT max(m.created_at) AS t FROM messages m JOIN conversations cv ON cv.id=m.conversation_id WHERE cv.company_id=$1 AND m.direction='in' AND right(regexp_replace(COALESCE(cv.external_contact,''),'\\D','','g'),9)=right(regexp_replace($2,'\\D','','g'),9)", [c.companyId, rcp.phone])).rows[0].t;
@@ -1512,8 +1552,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.31',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.31'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.32',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.32'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -1712,6 +1752,7 @@ async function handler(req,res) {
             if((optStop||optResume) && ingestResult.prospectId) {
               try {
                 await query("UPDATE prospects SET opted_out=$1,opted_out_at=CASE WHEN $1 THEN now() ELSE NULL END WHERE company_id=$3 AND (id=$2 OR right(regexp_replace(COALESCE(phone,''),'\\D','','g'),9)=right(regexp_replace($4,'\\D','','g'),9))",[optStop,ingestResult.prospectId,targetCompanyId,from]);
+                await query("UPDATE contacts SET opted_out=$1,opted_out_at=CASE WHEN $1 THEN now() ELSE NULL END WHERE company_id=$2 AND phone_key=right(regexp_replace($3,'\\D','','g'),9)",[optStop,targetCompanyId,from]);
                 await ingestMessage(targetCompanyId,conversationRow.id,conversationRow,{direction:'out',body: optStop
                   ? 'Vous ne recevrez plus de messages promotionnels de '+companyRow.name+'. Répondez REPRENDRE pour vous réabonner.'
                   : 'Merci ! Vous recevrez à nouveau les actualités de '+companyRow.name+'.'});
@@ -2295,7 +2336,9 @@ async function handler(req,res) {
         COUNT(DISTINCT ${PHONE_KEY_SQL}) FILTER (WHERE p.opted_out)::int AS "optedOut"
       FROM prospects p WHERE p.company_id=$1 AND p.phone IS NOT NULL AND btrim(p.phone)<>''`,[companyId]);
     const row=r.rows[0], np=await query("SELECT COUNT(*)::int AS n FROM prospects WHERE company_id=$1 AND (phone IS NULL OR btrim(phone)='')",[companyId]);
-    return json(res,200,{bases:keys.map(k=>({key:k,count:row[k]})),optedOut:row.optedOut,noPhone:np.rows[0].n});
+    const dir=await query('SELECT tag,COUNT(*) FILTER (WHERE NOT opted_out)::int AS n FROM contacts WHERE company_id=$1 GROUP BY tag ORDER BY n DESC,tag',[companyId]);
+    const dirCount=dir.rows.reduce((a,r)=>a+r.n,0);
+    return json(res,200,{bases:keys.map(k=>({key:k,count:row[k]})),optedOut:row.optedOut,noPhone:np.rows[0].n,directory:{count:dirCount,tags:dir.rows.filter(r=>r.tag).map(r=>({tag:r.tag,count:r.n}))}});
   }
   const baseMatch=u.pathname.match(/^\/api\/bases\/([a-z0-9]+)\/(contacts|export)$/);
   if(baseMatch && req.method==='GET') {
@@ -2322,6 +2365,79 @@ async function handler(req,res) {
     const total=(await query(`SELECT COUNT(DISTINCT ${PHONE_KEY_SQL})::int AS n FROM prospects p WHERE ${where}`,params)).rows[0].n;
     const rows=(await query(`SELECT * FROM (SELECT ${cols} FROM prospects p WHERE ${where} ORDER BY ${PHONE_KEY_SQL},p.created_at) x ORDER BY "lastContact" DESC NULLS LAST LIMIT 50 OFFSET ${offset}`,params)).rows;
     return json(res,200,{total,contacts:rows,offset});
+  }
+
+  // --- Répertoire : contacts importés (téléphone, fichier, copier-coller), par groupes ---
+  if(u.pathname==='/api/contacts' || u.pathname.startsWith('/api/contacts/')) {
+    if(!['owner','admin'].includes(await getUserRole(session.userId))) return json(res,403,{error:'Réservé au propriétaire ou à un administrateur.'});
+    const ctm=u.pathname.match(/^\/api\/contacts\/([0-9a-f-]{36})$/i);
+    if(req.method==='GET'&&u.pathname==='/api/contacts') {
+      const params=[companyId]; let where='company_id=$1';
+      const q=String(u.searchParams.get('q')||'').trim().slice(0,60), tag=String(u.searchParams.get('tag')||'').slice(0,40);
+      if(q) { params.push('%'+q.replace(/[\\%_]/g,'\\$&')+'%'); where+=` AND (name ILIKE $${params.length} OR phone ILIKE $${params.length})`; }
+      if(tag==='__none') where+=' AND tag IS NULL'; else if(tag) { params.push(tag); where+=` AND tag=$${params.length}`; }
+      const offset=Math.max(0,parseInt(u.searchParams.get('offset'),10)||0);
+      const [rows,total,tags,all]=await Promise.all([
+        query(`SELECT id,name,phone,tag,opted_out AS "optedOut",created_at AS "createdAt" FROM contacts WHERE ${where} ORDER BY created_at DESC,id LIMIT 50 OFFSET ${offset}`,params),
+        query(`SELECT COUNT(*)::int AS n FROM contacts WHERE ${where}`,params),
+        query('SELECT tag,COUNT(*)::int AS n FROM contacts WHERE company_id=$1 GROUP BY tag ORDER BY n DESC,tag',[companyId]),
+        query('SELECT COUNT(*)::int AS n,COUNT(*) FILTER (WHERE opted_out)::int AS out FROM contacts WHERE company_id=$1',[companyId])
+      ]);
+      return json(res,200,{contacts:rows.rows,total:total.rows[0].n,offset,tags:tags.rows.map(r=>({tag:r.tag,count:r.n})),all:all.rows[0].n,optedOut:all.rows[0].out,max:MAX_CONTACTS});
+    }
+    if(req.method==='POST'&&u.pathname==='/api/contacts/import') {
+      if(rateLimited('contactimport:'+companyId,30,60*60*1000)) return tooManyRequests(res);
+      const b=await body(req,600000);
+      if(b.confirmConsent!==true) return json(res,400,{error:'Confirmez que ces personnes ont accepté de recevoir vos messages.'});
+      const tag=String(b.tag||'').trim().slice(0,40)||null;
+      const list=Array.isArray(b.contacts)?b.contacts.slice(0,2000):[];
+      const seen=new Set(), valid=[], invalid=[]; let duplicatesInFile=0;
+      for(const x of list) {
+        const ph=normalizeContactPhone(x&&x.phone);
+        if(!ph) { invalid.push(String((x&&x.phone)||'').slice(0,30)); continue; }
+        const key=ph.replace(/\D/g,'').slice(-9);
+        if(seen.has(key)) { duplicatesInFile++; continue; }
+        seen.add(key); valid.push({name:cleanContactName(x.name),phone:ph,key});
+      }
+      if(!valid.length) return json(res,400,{error:'Aucun numéro valide trouvé. Indiquez les numéros avec l\'indicatif du pays (ex. +237 6XX XX XX XX) ou au format camerounais à 9 chiffres.',invalid:invalid.slice(0,20)});
+      const inCrmRows=await query("SELECT DISTINCT right(regexp_replace(phone,'\\D','','g'),9) AS k FROM prospects WHERE company_id=$1 AND phone IS NOT NULL AND right(regexp_replace(phone,'\\D','','g'),9)=ANY($2::text[])",[companyId,valid.map(v=>v.key)]);
+      const inCrm=new Set(inCrmRows.rows.map(r=>r.k));
+      const out=await transaction(async client=>{
+        const cur=(await client.query('SELECT COUNT(*)::int AS n FROM contacts WHERE company_id=$1',[companyId])).rows[0].n;
+        let added=0, existing=0, alreadyInCrm=0, overLimit=0;
+        for(const v of valid) {
+          if(inCrm.has(v.key)) { alreadyInCrm++; continue; }
+          if(cur+added>=MAX_CONTACTS) { overLimit++; continue; }
+          const r=await client.query("INSERT INTO contacts(company_id,name,phone,phone_key,tag,source) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT (company_id,phone_key) DO UPDATE SET tag=COALESCE(EXCLUDED.tag,contacts.tag),name=COALESCE(NULLIF(contacts.name,''),EXCLUDED.name) RETURNING (xmax=0) AS inserted",[companyId,v.name,v.phone,v.key,tag,['import','picker'].includes(b.source)?b.source:'import']);
+          if(r.rows[0].inserted) added++; else existing++;
+        }
+        return {added,existing,alreadyInCrm,overLimit};
+      });
+      return json(res,200,{...out,duplicatesInFile,invalidCount:invalid.length,invalid:invalid.slice(0,20)});
+    }
+    if(ctm&&req.method==='PATCH') {
+      const b=await body(req); const sets=[], params=[ctm[1],companyId];
+      if(b.name!==undefined) { params.push(cleanContactName(b.name)); sets.push('name=$'+params.length); }
+      if(b.tag!==undefined) { params.push(String(b.tag||'').trim().slice(0,40)||null); sets.push('tag=$'+params.length); }
+      // On peut exclure un contact des envois, jamais le réactiver à la main : seul son propre REPRENDRE le peut.
+      if(b.optedOut===true) sets.push('opted_out=true,opted_out_at=now()');
+      if(!sets.length) return json(res,400,{error:'Rien à modifier'});
+      const r=await query(`UPDATE contacts SET ${sets.join(',')} WHERE id=$1 AND company_id=$2 RETURNING id`,params);
+      if(!r.rows[0]) return json(res,404,{error:'Contact introuvable'});
+      return json(res,200,{ok:true});
+    }
+    if(ctm&&req.method==='DELETE') {
+      // Un contact désabonné (STOP) est conservé : sa suppression le rendrait ré-importable.
+      const r=await query('DELETE FROM contacts WHERE id=$1 AND company_id=$2 AND NOT opted_out RETURNING id',[ctm[1],companyId]);
+      if(!r.rows[0]) return json(res,409,{error:'Contact introuvable, ou désabonné : il est conservé pour ne jamais être recontacté.'});
+      return json(res,200,{ok:true});
+    }
+    if(req.method==='POST'&&u.pathname==='/api/contacts/delete-group') {
+      const b=await body(req); const tag=String(b.tag||'').trim().slice(0,40);
+      const r=tag==='__none'||!tag?await query('DELETE FROM contacts WHERE company_id=$1 AND tag IS NULL AND NOT opted_out',[companyId]):await query('DELETE FROM contacts WHERE company_id=$1 AND tag=$2 AND NOT opted_out',[companyId,tag]);
+      return json(res,200,{ok:true,deleted:r.rowCount});
+    }
+    return json(res,404,{error:'Route introuvable'});
   }
 
   if(u.pathname==='/api/campaigns' || u.pathname.startsWith('/api/campaigns/')) {
@@ -2363,12 +2479,13 @@ async function handler(req,res) {
         if(c.status!=='Brouillon') return {code:409,error:'Cette campagne a déjà été lancée.'};
         const ws=await client.query("SELECT whatsapp_phone_number_id AS id,whatsapp_access_token AS tok FROM companies WHERE id=$1",[companyId]);
         if(!ws.rows[0]?.id||!ws.rows[0]?.tok) return {code:400,error:'Configurez d\'abord WhatsApp dans les Réglages.'};
-        const aud=cleanAudience(c.audience), w=audienceWhere(aud);
-        const rec=await client.query(`SELECT DISTINCT ON (right(regexp_replace(p.phone,'\\D','','g'),9)) p.id,p.phone,p.name FROM prospects p WHERE ${w.cond.join(' AND ')} AND NOT EXISTS (SELECT 1 FROM prospects q WHERE q.company_id=p.company_id AND q.opted_out AND right(regexp_replace(q.phone,'\\D','','g'),9)=right(regexp_replace(p.phone,'\\D','','g'),9)) ORDER BY right(regexp_replace(p.phone,'\\D','','g'),9),p.created_at LIMIT 5000`,[companyId,...w.params]);
+        const aud=cleanAudience(c.audience);
+        const am=audienceMembers(aud);
+        const rec=await client.query(`WITH members AS (${am.members}), blocked AS (${am.blocked}) SELECT DISTINCT ON (key) key,phone,name,prospect_id AS id,contact_id FROM members WHERE key NOT IN (SELECT k FROM blocked) ORDER BY key,(prospect_id IS NULL) LIMIT 5000`,[companyId,...am.params]);
         if(!rec.rows.length) return {code:400,error:'Aucun contact dans cette audience.'};
         const quota=await campaignQuota(companyId);
         if(rec.rows.length>quota.remaining) return {code:403,upgrade:true,error:'Quota mensuel insuffisant : '+rec.rows.length+' contacts ciblés, '+quota.remaining+' message(s) restant(s) ce mois-ci ('+quota.limit+' avec le forfait '+quota.plan+').'};
-        for(const p of rec.rows) await client.query('INSERT INTO campaign_recipients(campaign_id,company_id,prospect_id,phone,first_name) VALUES($1,$2,$3,$4,$5)',[c.id,companyId,p.id,p.phone,String(p.name||'').trim().split(/\s+/)[0]||null]);
+        for(const p of rec.rows) await client.query('INSERT INTO campaign_recipients(campaign_id,company_id,prospect_id,contact_id,phone,first_name) VALUES($1,$2,$3,$4,$5,$6)',[c.id,companyId,p.id,p.contact_id,p.phone,String(p.name||'').trim().split(/\s+/)[0]||null]);
         await client.query("UPDATE campaigns SET status='En cours',started_at=now() WHERE id=$1",[c.id]);
         return {code:200,total:rec.rows.length};
       });
@@ -3445,6 +3562,22 @@ async function ensureMigrations() {
     'ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS ai_usage_reset_at TIMESTAMPTZ NOT NULL DEFAULT now()',
     'ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS reminder_for TIMESTAMPTZ',
     'ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS reminder_stage INTEGER NOT NULL DEFAULT 0',
+    `CREATE TABLE IF NOT EXISTS contacts (
+       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+       name TEXT,
+       phone TEXT NOT NULL,
+       phone_key TEXT NOT NULL,
+       tag TEXT,
+       source TEXT NOT NULL DEFAULT 'import',
+       opted_out BOOLEAN NOT NULL DEFAULT false,
+       opted_out_at TIMESTAMPTZ,
+       consent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+     )`,
+    'CREATE UNIQUE INDEX IF NOT EXISTS contacts_company_phone_idx ON contacts(company_id, phone_key)',
+    'CREATE INDEX IF NOT EXISTS contacts_company_tag_idx ON contacts(company_id, tag)',
+    'ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL',
     // Lot "administration d'équipe, réinitialisation de mot de passe et
     // super-admin" — idempotent. Le super_admin_id est ajouté à 'sessions'
     // (avec user_id/company_id rendus nullables) plutôt que d'utiliser une
@@ -3666,6 +3799,6 @@ ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>
   const renewalTick=()=>checkRenewalReminders().catch(e=>console.error('[renewal] echec:',e.message));
   setInterval(renewalTick, 10*60*1000); setTimeout(renewalTick, 20*1000); // + un passage peu après chaque démarrage
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.31 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.32 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

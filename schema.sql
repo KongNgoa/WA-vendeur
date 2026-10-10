@@ -391,3 +391,21 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS telegram_webhook_secret TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS companies_telegram_secret_idx ON companies(telegram_webhook_secret) WHERE telegram_webhook_secret IS NOT NULL;
 ALTER TABLE prospects ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS prospects_company_telegram_idx ON prospects(company_id,telegram_chat_id) WHERE telegram_chat_id IS NOT NULL;
+
+-- Répertoire téléphonique : contacts importés par l'entreprise (téléphone, fichier, copier-coller)
+CREATE TABLE IF NOT EXISTS contacts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  name TEXT,
+  phone TEXT NOT NULL,
+  phone_key TEXT NOT NULL,
+  tag TEXT,
+  source TEXT NOT NULL DEFAULT 'import',
+  opted_out BOOLEAN NOT NULL DEFAULT false,
+  opted_out_at TIMESTAMPTZ,
+  consent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS contacts_company_phone_idx ON contacts(company_id, phone_key);
+CREATE INDEX IF NOT EXISTS contacts_company_tag_idx ON contacts(company_id, tag);
+ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS contact_id UUID REFERENCES contacts(id) ON DELETE SET NULL;
