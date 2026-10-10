@@ -142,7 +142,7 @@ Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationn
 ## 1.10.44 — Blocage strict à l'échéance et à la limite de messages
 
 - **Échéance** : plus de période de grâce (`GRACE_DAYS = 0`) — dès que `next_billing_at` est dépassé, API, webhooks, IA, relances et campagnes sont bloqués ; l'écran client ne montre que l'onglet Abonnement avec « Renouvelez votre forfait ou passez au forfait supérieur ». Vaut aussi pour la fin de l'essai gratuit.
-- **Limite de messages IA** (Starter : 150/mois) : l'IA est suspendue, la conversation du client est transmise au propriétaire (alerte « Quota IA atteint ») et un bandeau rouge propose le forfait supérieur.
+- **Limite de messages IA** (Starter : 150/mois) : l'IA est suspendue. Aucun relais humain automatique (l'humain reste le dernier recours) ; un bandeau rouge propose le forfait supérieur.
 - Rappel : campagnes (403 + upgrade), bannières (402), produits (403), membres et boutiques restent bloqués à leur plafond avec cadenas 🔒.
 
 ## 1.10.43 — Essai gratuit 7 jours, paiement annuel, limite de produits
