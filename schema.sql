@@ -461,3 +461,16 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS onboarding_dismissed_at TIMESTAMP
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS needs_human_urgent BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS soft_asks INT NOT NULL DEFAULT 0;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS soft_asks_at TIMESTAMPTZ;
+
+-- Campagnes marketing VENDIA (espace super-admin)
+CREATE TABLE IF NOT EXISTS vendia_campaigns (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  spec JSONB NOT NULL DEFAULT '{}'::jsonb,
+  caption TEXT,
+  hashtags TEXT,
+  link TEXT,
+  lang TEXT NOT NULL DEFAULT 'fr',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

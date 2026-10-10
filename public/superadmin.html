@@ -25,6 +25,8 @@ input,select{width:100%;padding:10px;border:1px solid #d9deea;border-radius:10px
 .empty{padding:24px;text-align:center;color:#687386}
 .msgIn{background:#f5f7fb}.msgOut{background:#f0f4ff}.msg{padding:8px;margin-top:6px;border-radius:8px;font-size:13px}
 .langSwitch{display:flex;border:1px solid #ffffff33;border-radius:8px;overflow:hidden}.langSwitch button{border:0;background:transparent;color:#fff;opacity:.6;padding:6px 10px;font-weight:700;font-size:12px;cursor:pointer;border-radius:0}.langSwitch button.active{opacity:1;background:#ffffff26}
+.tabs{display:flex;gap:8px;margin-bottom:16px}.tabbtn{border:0;border-radius:999px;padding:10px 18px;background:#e9edf5;color:#172033;font-weight:700;cursor:pointer;font-size:14px}.tabbtn.active{background:var(--gradient);color:#fff}
+.mkgrid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:22px}@media(max-width:900px){.mkgrid{grid-template-columns:1fr}}.formgrid label{display:block;margin-bottom:3px}
 </style>
 </head>
 <body>
@@ -40,6 +42,8 @@ input,select{width:100%;padding:10px;border:1px solid #d9deea;border-radius:10px
 </section>
 
 <section id="app" class="hidden">
+<div class="tabs"><button class="tabbtn active" id="tabBtnManage" onclick="showArea('manage')" data-i18n="tab_manage">Gestion</button><button class="tabbtn" id="tabBtnMarket" onclick="showArea('market')" data-i18n="tab_market">📣 Marketing</button></div>
+<div id="areaManage">
 <div class="panel"><h3 data-i18n="new_company_title">Nouvelle entreprise</h3>
 <form class="formgrid" onsubmit="createCompany(event)">
 <input id="ncName" placeholder="Nom de l'entreprise" required data-i18n-placeholder="placeholder_company_name">
@@ -82,11 +86,64 @@ input,select{width:100%;padding:10px;border:1px solid #d9deea;border-radius:10px
 <div id="detailConversations"></div>
 </div>
 
+</div>
+<div id="areaMarket" class="hidden">
+<div class="panel"><h3 data-i18n="mk_title">Campagnes de promotion de VENDIA</h3>
+<p class="muted" data-i18n="mk_desc">Choisissez un modèle, ajustez les textes, puis téléchargez les bannières pour tous les réseaux sociaux. Le code QR et le lien contiennent un suivi UTM pour mesurer vos campagnes.</p>
+<div class="mkgrid">
+<div>
+<div class="formgrid">
+<div><label class="muted" data-i18n="mk_preset">Modèle de campagne</label><select id="mkPreset"><option value="reply" data-i18n="mk_preset_reply">Répond 24h/24</option><option value="orders" data-i18n="mk_preset_orders">Ne perdez plus de commandes</option><option value="shop" data-i18n="mk_preset_shop">Boutique en ligne</option></select></div>
+<div><label class="muted" data-i18n="mk_lang">Langue</label><select id="mkLang"><option value="fr">Français</option><option value="en">English</option></select></div>
+<div class="full"><label class="muted" data-i18n="mk_name">Nom de la campagne</label><input id="mkName" maxlength="100"></div>
+<div><label class="muted" data-i18n="mk_style">Style</label><select id="mkStyle"><option value="studio" data-i18n="mk_style_studio">Studio</option><option value="luxe" data-i18n="mk_style_luxe">Luxe</option><option value="pop" data-i18n="mk_style_pop">Pop</option><option value="minimal" data-i18n="mk_style_minimal">Minimal</option></select></div>
+<div><label class="muted" data-i18n="mk_palette">Couleurs</label><select id="mkPalette"><option value="brand" data-i18n="mk_pal_brand">Bleu VENDIA</option><option value="violet" data-i18n="mk_pal_violet">Violet</option><option value="ocean" data-i18n="mk_pal_ocean">Océan</option><option value="gold" data-i18n="mk_pal_gold">Nuit et or</option><option value="green" data-i18n="mk_pal_green">Vert</option><option value="sunset" data-i18n="mk_pal_sunset">Coucher de soleil</option><option value="red" data-i18n="mk_pal_red">Rouge</option><option value="noir" data-i18n="mk_pal_noir">Noir et jaune</option></select></div>
+<div><label class="muted" data-i18n="mk_kicker">Marque (haut)</label><input id="mkKicker" maxlength="40"></div>
+<div><label class="muted" data-i18n="mk_headline">Accroche (badge)</label><input id="mkHeadline" maxlength="24"></div>
+<div class="full"><label class="muted" data-i18n="mk_title_f">Titre</label><input id="mkTitle" maxlength="90"></div>
+<div class="full"><label class="muted" data-i18n="mk_sub">Sous-titre</label><input id="mkSub" maxlength="120"></div>
+<div><label class="muted" data-i18n="mk_price">Ligne de prix / offre</label><input id="mkPrice" maxlength="40"></div>
+<div><label class="muted" data-i18n="mk_cta">Texte du bouton</label><input id="mkCta" maxlength="22"></div>
+<div class="full"><label class="muted" data-i18n="mk_chat">Conversation affichée sur le téléphone (C: client, V: VENDIA — vide = aucun)</label><textarea id="mkChat" rows="5" style="width:100%;padding:10px;border:1px solid #d9deea;border-radius:10px;font:inherit;font-size:13px"></textarea></div>
+<div class="full"><label class="muted" data-i18n="mk_link">Lien de destination (le suivi UTM est ajouté automatiquement)</label><input id="mkLink" maxlength="300" placeholder="https://"></div>
+<div><label class="muted" data-i18n="mk_qrlabel">Texte sous le QR</label><input id="mkQrLabel" maxlength="16"></div>
+<div style="display:flex;align-items:end"><label style="display:flex;gap:8px;align-items:center;font-size:14px"><input type="checkbox" id="mkQr" checked style="width:auto"> <span data-i18n="mk_qr">Afficher le code QR</span></label></div>
+<div><label class="muted" data-i18n="mk_contact">Ligne de contact (facultatif)</label><input id="mkContact" maxlength="40" placeholder="+237 6 91 96 50 12"></div>
+<div><label class="muted" data-i18n="mk_footer">Pied de page</label><input id="mkFooter" maxlength="60"></div>
+</div>
+</div>
+<div>
+<div class="formgrid" style="margin-bottom:10px"><div class="full"><label class="muted" data-i18n="mk_format">Format de la bannière</label><select id="mkFormat"><option value="story" data-i18n="mk_fmt_story">Story / Statut / TikTok (9:16)</option><option value="portrait" data-i18n="mk_fmt_portrait">Instagram portrait (4:5)</option><option value="square" data-i18n="mk_fmt_square">Carré (1:1)</option><option value="wide" data-i18n="mk_fmt_wide">Facebook / LinkedIn / lien (1,91:1)</option></select></div></div>
+<canvas id="mkCanvas" style="width:100%;max-width:360px;border-radius:14px;display:block;margin:0 auto 12px;box-shadow:0 4px 18px #0003"></canvas>
+<div class="actions" style="justify-content:center"><button class="btn primary" onclick="VMk.download(false)" data-i18n="mk_dl_one">⬇ Télécharger ce format</button><button class="btn" onclick="VMk.download(true)" data-i18n="mk_dl_all">⬇ Tous les formats</button></div>
+</div>
+</div>
+<h4 style="margin-top:18px" data-i18n="mk_caption_title">Texte de publication</h4>
+<div class="formgrid"><div><label class="muted" data-i18n="mk_channel">Réseau (pour le suivi UTM du lien)</label><select id="mkChannel"><option>facebook</option><option>instagram</option><option>tiktok</option><option>whatsapp</option><option>linkedin</option><option>x</option></select></div><span></span>
+<div class="full"><textarea id="mkCaption" rows="8" style="width:100%;padding:10px;border:1px solid #d9deea;border-radius:10px;font:inherit;font-size:13px"></textarea><div class="muted"><span id="mkCapCount">0</span> <span data-i18n="mk_chars">caractères — {link} sera remplacé par votre lien avec suivi</span></div></div>
+<div class="full"><label class="muted" data-i18n="mk_tags">Hashtags</label><input id="mkTags" maxlength="500"></div></div>
+<div class="actions" style="margin-top:12px"><button class="btn" onclick="VMk.copyCaption()" data-i18n="mk_copy">📋 Copier le texte + hashtags</button><button class="btn primary" onclick="VMk.save()" data-i18n="mk_save">💾 Enregistrer la campagne</button><button class="btn" onclick="VMk.newCampaign()" data-i18n="mk_new">＋ Nouvelle campagne</button></div>
+<div id="mkStatus" style="margin-top:10px"></div>
+</div>
+<div class="panel"><h3 data-i18n="mk_saved_title">Campagnes enregistrées</h3><div id="mkList"></div></div>
+</div>
 </section>
 </main>
+<script src="assets/qr.js"></script>
+<script src="assets/banner.js"></script>
+<script src="assets/marketing.js"></script>
 <script>
 const I18N = {
 fr: {
+  tab_manage:"Gestion", tab_market:"📣 Marketing", mk_title:"Campagnes de promotion de VENDIA", mk_desc:"Choisissez un modèle, ajustez les textes, puis téléchargez les bannières pour tous les réseaux sociaux. Le code QR et le lien contiennent un suivi UTM pour mesurer vos campagnes.",
+  mk_preset:"Modèle de campagne", mk_preset_reply:"Répond 24h/24", mk_preset_orders:"Ne perdez plus de commandes", mk_preset_shop:"Boutique en ligne", mk_lang:"Langue", mk_name:"Nom de la campagne", mk_style:"Style", mk_style_studio:"Studio", mk_style_luxe:"Luxe", mk_style_pop:"Pop", mk_style_minimal:"Minimal",
+  mk_palette:"Couleurs", mk_pal_brand:"Bleu VENDIA", mk_pal_violet:"Violet", mk_pal_ocean:"Océan", mk_pal_gold:"Nuit et or", mk_pal_green:"Vert", mk_pal_sunset:"Coucher de soleil", mk_pal_red:"Rouge", mk_pal_noir:"Noir et jaune",
+  mk_kicker:"Marque (haut)", mk_headline:"Accroche (badge)", mk_title_f:"Titre", mk_sub:"Sous-titre", mk_price:"Ligne de prix / offre", mk_cta:"Texte du bouton", mk_chat:"Conversation affichée sur le téléphone (C: client, V: VENDIA — vide = aucun)",
+  mk_link:"Lien de destination (le suivi UTM est ajouté automatiquement)", mk_qrlabel:"Texte sous le QR", mk_qr:"Afficher le code QR", mk_contact:"Ligne de contact (facultatif)", mk_footer:"Pied de page",
+  mk_format:"Format de la bannière", mk_fmt_story:"Story / Statut / TikTok (9:16)", mk_fmt_portrait:"Instagram portrait (4:5)", mk_fmt_square:"Carré (1:1)", mk_fmt_wide:"Facebook / LinkedIn / lien (1,91:1)",
+  mk_dl_one:"⬇ Télécharger ce format", mk_dl_all:"⬇ Tous les formats", mk_caption_title:"Texte de publication", mk_channel:"Réseau (pour le suivi UTM du lien)", mk_chars:"caractères — {link} sera remplacé par votre lien avec suivi", mk_tags:"Hashtags",
+  mk_copy:"📋 Copier le texte + hashtags", mk_save:"💾 Enregistrer la campagne", mk_new:"＋ Nouvelle campagne", mk_saved_title:"Campagnes enregistrées", mk_saved:"Campagne enregistrée.", mk_copied:"Texte copié.", mk_copy_fail:"Copie impossible : sélectionnez le texte manuellement.",
+  mk_col_name:"Campagne", mk_col_date:"Modifiée", mk_open:"Ouvrir", mk_empty:"Aucune campagne enregistrée.", mk_confirm_delete:"Supprimer cette campagne ?", mk_online:"en ligne",
   title_suffix:"Super-admin", header_subtitle:"Vue et contrôle sur toutes les entreprises", logout_btn:"Déconnexion",
   login_title:"Connexion super-admin", placeholder_password:"Mot de passe", login_btn:"Se connecter",
   new_company_title:"Nouvelle entreprise", placeholder_company_name:"Nom de l'entreprise", placeholder_sector:"Secteur",
@@ -118,6 +175,15 @@ fr: {
   status_active:"Actif", status_trial:"Essai",
 },
 en: {
+  tab_manage:"Management", tab_market:"📣 Marketing", mk_title:"VENDIA promotion campaigns", mk_desc:"Pick a template, tweak the texts, then download banners for every social network. The QR code and link carry UTM tracking so you can measure your campaigns.",
+  mk_preset:"Campaign template", mk_preset_reply:"Answers 24/7", mk_preset_orders:"Never lose an order", mk_preset_shop:"Online shop", mk_lang:"Language", mk_name:"Campaign name", mk_style:"Style", mk_style_studio:"Studio", mk_style_luxe:"Luxe", mk_style_pop:"Pop", mk_style_minimal:"Minimal",
+  mk_palette:"Colors", mk_pal_brand:"VENDIA blue", mk_pal_violet:"Violet", mk_pal_ocean:"Ocean", mk_pal_gold:"Night and gold", mk_pal_green:"Green", mk_pal_sunset:"Sunset", mk_pal_red:"Red", mk_pal_noir:"Black and yellow",
+  mk_kicker:"Brand (top)", mk_headline:"Hook (badge)", mk_title_f:"Title", mk_sub:"Subtitle", mk_price:"Price / offer line", mk_cta:"Button text", mk_chat:"Conversation shown on the phone (C: customer, V: VENDIA — empty = none)",
+  mk_link:"Destination link (UTM tracking is added automatically)", mk_qrlabel:"Text under QR", mk_qr:"Show QR code", mk_contact:"Contact line (optional)", mk_footer:"Footer",
+  mk_format:"Banner format", mk_fmt_story:"Story / Status / TikTok (9:16)", mk_fmt_portrait:"Instagram portrait (4:5)", mk_fmt_square:"Square (1:1)", mk_fmt_wide:"Facebook / LinkedIn / link (1.91:1)",
+  mk_dl_one:"⬇ Download this format", mk_dl_all:"⬇ All formats", mk_caption_title:"Post text", mk_channel:"Network (for the link's UTM tracking)", mk_chars:"characters — {link} will be replaced by your tracked link", mk_tags:"Hashtags",
+  mk_copy:"📋 Copy text + hashtags", mk_save:"💾 Save campaign", mk_new:"＋ New campaign", mk_saved_title:"Saved campaigns", mk_saved:"Campaign saved.", mk_copied:"Text copied.", mk_copy_fail:"Copy failed: select the text manually.",
+  mk_col_name:"Campaign", mk_col_date:"Updated", mk_open:"Open", mk_empty:"No saved campaigns.", mk_confirm_delete:"Delete this campaign?", mk_online:"online",
   title_suffix:"Super-admin", header_subtitle:"View and control across all companies", logout_btn:"Log out",
   login_title:"Super-admin login", placeholder_password:"Password", login_btn:"Log in",
   new_company_title:"New company", placeholder_company_name:"Company name", placeholder_sector:"Sector",
@@ -162,8 +228,9 @@ function setLang(l){
   if(lang===l) return;
   lang=l; localStorage.setItem('vendia_lang', l);
   applyI18n();
-  if(!$('app').classList.contains('hidden')){ renderCompanies(); if(lastPending) renderPending(lastPending); if(currentDetailId){ loadDetailUsers(); loadDetailConversations(); } }
+  if(!$('app').classList.contains('hidden')){ if(window.VMk&&!$('areaMarket').classList.contains('hidden')){ VMk.loadList(); VMk.redraw(); } renderCompanies(); if(lastPending) renderPending(lastPending); if(currentDetailId){ loadDetailUsers(); loadDetailConversations(); } }
 }
+function showArea(a){ const m=a==='market'; $('areaManage').classList.toggle('hidden',m); $('areaMarket').classList.toggle('hidden',!m); $('tabBtnManage').classList.toggle('active',!m); $('tabBtnMarket').classList.toggle('active',m); if(m) VMk.init(); }
 const STATUS_KEY_MAP={ active:'status_active', trial:'status_trial' };
 function statusLabel(raw){ const key=STATUS_KEY_MAP[raw]; return key?t(key):(raw||'—'); }
 

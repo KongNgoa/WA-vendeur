@@ -524,7 +524,9 @@ function renderShopPage(c, products, origin, single = null) {
     '.ph{aspect-ratio:4/3;background:var(--bd);display:grid;place-items:center;font-size:2.4rem}.ph img{width:100%;height:100%;object-fit:cover}' +
     '.bd{padding:12px;display:flex;flex-direction:column;gap:6px;flex:1}.bd h3{margin:0;font-size:1rem}.cat{margin:0;color:var(--mut);font-size:.85rem}.pr{margin:0;font-weight:700;font-size:1.05rem}' +
     '.btn{margin-top:auto;display:block;text-align:center;padding:10px;border-radius:10px;background:#25d366;color:#05301a;font-weight:700;text-decoration:none}.btn.off{background:var(--bd);color:var(--mut)}' +
-    '.btn.buy{border:0;cursor:pointer;font:inherit;font-weight:700;background:var(--a);color:#fff;width:100%}.wa{display:block;text-align:center;font-size:.8rem;color:var(--mut);margin-top:6px}' +
+    '.btn.buy{border:0;cursor:pointer;font:inherit;font-weight:800;font-size:1.05rem;letter-spacing:.04em;text-transform:uppercase;background:linear-gradient(135deg,#1fd37a,#17a2fe);color:#04210f;width:100%;padding:14px 12px;border-radius:999px;box-shadow:0 8px 20px rgba(23,162,254,.35);transition:transform .15s}.btn.buy:active{transform:scale(.97)}.btn.buy:disabled{opacity:.6}.btn.buy:before{content:"\\1F6D2  "}.btn.buy.go:before{content:""}' +
+    '.sticky{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;align-items:center;gap:12px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--bd);box-shadow:0 -6px 24px rgba(0,0,0,.15)}.sticky b{font-size:1.1rem;white-space:nowrap}.sticky .btn.buy{flex:1;margin:0}.fab.hasbar{bottom:84px}' +
+    '.wa{display:block;text-align:center;font-size:.8rem;color:var(--mut);margin-top:6px}' +
     '.ov{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-end;justify-content:center;z-index:50}.ov.on{display:flex}' +
     '.sheet{background:var(--card);color:var(--fg);width:100%;max-width:480px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:18px 16px 24px}@media(min-width:560px){.ov{align-items:center}.sheet{border-radius:18px}}' +
     '.sheet h2{margin:0 0 4px;font-size:1.15rem}.sheet .sum{margin:0 0 12px;color:var(--mut)}.sheet label{display:block;font-size:.85rem;color:var(--mut);margin:10px 0 4px}' +
@@ -541,7 +543,7 @@ function renderShopPage(c, products, origin, single = null) {
       cats.map(k => '<button type="button" class="chip" data-cat="' + escHtml(k) + '">' + escHtml(k) + '</button>').join('') + '</div>' +
       '<div class="grid" id="g">' + cards + '</div><p class="empty" id="none" hidden>Aucun produit ne correspond.</p>'
       : '<p class="empty">Le catalogue sera bientôt disponible.</p>') +
-    '</main><a class="fab" href="' + escHtml(waLink('Bonjour, je souhaite avoir des informations.')) + '" rel="noopener">💬 WhatsApp</a>' +
+    '</main>' + (single && Number(single.stock) > 0 ? '<div class="sticky"><b>' + escHtml(formatFcfa(single.price)) + '</b><button type="button" class="btn buy" id="stk">Commander</button></div>' : '') + '<a class="fab' + (single && Number(single.stock) > 0 ? ' hasbar' : '') + '" href="' + escHtml(waLink('Bonjour, je souhaite avoir des informations.')) + '" rel="noopener">💬 WhatsApp</a>' +
     '<div class="ov" id="ov" role="dialog" aria-modal="true" aria-labelledby="ot"><div class="sheet"><button type="button" class="x" id="ox" aria-label="Fermer">×</button>' +
     '<div id="of"><h2 id="ot">Commander</h2><p class="sum" id="os"></p><form id="oform" novalidate>' +
     '<div class="row"><div><label for="oq">Quantité</label><input id="oq" type="number" min="1" value="1" inputmode="numeric"></div><div><label for="op">Votre téléphone</label><input id="op" type="tel" inputmode="tel" placeholder="6XX XX XX XX" autocomplete="tel" required></div></div>' +
@@ -560,7 +562,7 @@ function renderShopPage(c, products, origin, single = null) {
     '<script>(function(){var ov=document.getElementById("ov");if(!ov)return;var cur=null,form=document.getElementById("oform"),err=document.getElementById("oe"),sub=document.getElementById("osub"),SLUG=' + JSON.stringify(c.shopSlug) + ',WA=' + JSON.stringify(c.shopWhatsapp) + ';' +
     'function $(i){return document.getElementById(i);}function close(){ov.classList.remove("on");}' +
     '[].forEach.call(document.querySelectorAll("[data-buy]"),function(b){b.addEventListener("click",function(){var a=b.closest(".card");cur={id:a.dataset.id,name:a.dataset.pn,price:a.dataset.pp,pv:+a.dataset.pv||0,max:+a.dataset.max||1};window.vtrack&&window.vtrack("InitiateCheckout",{value:cur.pv,id:cur.id,name:cur.name});$("ot").textContent=cur.name;$("os").textContent=cur.price+" l\u2019unit\u00e9";$("oq").max=cur.max;$("oq").value=1;err.hidden=true;$("of").hidden=false;$("od").hidden=true;sub.disabled=false;ov.classList.add("on");setTimeout(function(){$("op").focus();},50);});});' +
-    '$("ox").addEventListener("click",close);ov.addEventListener("click",function(e){if(e.target===ov)close();});document.addEventListener("keydown",function(e){if(e.key==="Escape")close();});' +
+    'var stk=$("stk");if(stk)stk.addEventListener("click",function(){var b=document.querySelector(".card [data-buy]");if(b)b.click();});$("ox").addEventListener("click",close);ov.addEventListener("click",function(e){if(e.target===ov)close();});document.addEventListener("keydown",function(e){if(e.key==="Escape")close();});' +
     'form.addEventListener("submit",function(e){e.preventDefault();err.hidden=true;var q=parseInt($("oq").value,10)||1;sub.disabled=true;sub.textContent="Envoi\u2026";' +
     'fetch("/api/boutique/"+SLUG+"/order",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({productId:cur.id,quantity:q,name:$("on").value,phone:$("op").value,address:$("oa").value,note:$("ono").value,website:$("oh").value})})' +
     '.then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j};});}).then(function(x){sub.textContent="Confirmer la commande";if(!x.ok){err.textContent=x.j.error||"Une erreur est survenue.";err.hidden=false;sub.disabled=false;return;}' +
@@ -1798,7 +1800,7 @@ async function handler(req,res) {
     } catch { return json(res,404,{error:'Introuvable'}); }
   }
   if(req.method==='GET'&&u.pathname.startsWith('/assets/')) {
-    const assetTypes={'.png':'image/png','.ico':'image/x-icon','.svg':'image/svg+xml','.jpg':'image/jpeg','.jpeg':'image/jpeg'};
+    const assetTypes={'.png':'image/png','.ico':'image/x-icon','.svg':'image/svg+xml','.jpg':'image/jpeg','.jpeg':'image/jpeg','.js':'application/javascript; charset=utf-8'};
     const ext=path.extname(u.pathname).toLowerCase();
     const rel=path.normalize(u.pathname).replace(/^(\.\.[/\\])+/,'');
     if(!assetTypes[ext]) return json(res,404,{error:'Introuvable'});
@@ -1806,7 +1808,7 @@ async function handler(req,res) {
       const filePath=path.join(__dirname,'public',rel);
       if(!filePath.startsWith(path.join(__dirname,'public'))) return json(res,404,{error:'Introuvable'});
       const data=await readFile(filePath);
-      res.writeHead(200,{'Content-Type':assetTypes[ext],'Cache-Control':'public, max-age=604800, immutable'});
+      res.writeHead(200,{'Content-Type':assetTypes[ext],'Cache-Control':ext==='.js'?'public, max-age=300, must-revalidate':'public, max-age=604800, immutable'});
       return res.end(data);
     } catch { return json(res,404,{error:'Introuvable'}); }
   }
@@ -2218,6 +2220,34 @@ async function handler(req,res) {
     const saSession=await getSession(saAuth);
     if(!saSession||!saSession.superAdminId) return json(res,401,{error:'Authentification super-admin requise'});
 
+    if(u.pathname==='/api/superadmin/marketing') {
+      if(req.method==='GET') {
+        const r=await query('SELECT id,name,spec,caption,hashtags,link,lang,created_at AS "createdAt",updated_at AS "updatedAt" FROM vendia_campaigns ORDER BY updated_at DESC LIMIT 200');
+        return json(res,200,{campaigns:r.rows});
+      }
+      if(req.method==='POST') {
+        const b=await body(req);
+        const name=String(b.name||'').trim().slice(0,100);
+        if(name.length<2) return json(res,400,{error:'Donnez un nom à la campagne (2 caractères minimum).'});
+        const spec=(b.spec&&typeof b.spec==='object'&&!Array.isArray(b.spec))?b.spec:{};
+        if(JSON.stringify(spec).length>20000) return json(res,400,{error:'Campagne trop volumineuse.'});
+        const caption=String(b.caption||'').slice(0,3000),hashtags=String(b.hashtags||'').slice(0,500),link=String(b.link||'').slice(0,500),lang=b.lang==='en'?'en':'fr';
+        if(b.id) {
+          if(!/^[0-9a-f-]{36}$/i.test(String(b.id))) return json(res,400,{error:'Identifiant invalide.'});
+          const r=await query('UPDATE vendia_campaigns SET name=$2,spec=$3,caption=$4,hashtags=$5,link=$6,lang=$7,updated_at=now() WHERE id=$1 RETURNING id',[b.id,name,JSON.stringify(spec),caption,hashtags,link,lang]);
+          if(!r.rows[0]) return json(res,404,{error:'Campagne introuvable.'});
+          return json(res,200,{ok:true,id:r.rows[0].id});
+        }
+        const r=await query('INSERT INTO vendia_campaigns(name,spec,caption,hashtags,link,lang) VALUES($1,$2,$3,$4,$5,$6) RETURNING id',[name,JSON.stringify(spec),caption,hashtags,link,lang]);
+        return json(res,200,{ok:true,id:r.rows[0].id});
+      }
+    }
+    const mkx=u.pathname.match(/^\/api\/superadmin\/marketing\/([0-9a-f-]{36})$/i);
+    if(mkx&&req.method==='DELETE') {
+      await query('DELETE FROM vendia_campaigns WHERE id=$1',[mkx[1]]);
+      return json(res,200,{ok:true});
+    }
+
     if(req.method==='GET'&&u.pathname==='/api/superadmin/companies') {
       const rows=(await query(`SELECT c.id,c.name,c.sector,c.suspended,(${EXPIRED_SQL}) AS expired,c.approved_at AS "approvedAt",c.created_at AS "createdAt",s.plan,s.status,s.monthly_price AS "monthlyPrice",s.next_billing_at AS "nextBillingAt" FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id ORDER BY c.created_at DESC`)).rows;
       const withUsage=await Promise.all(rows.map(async c=>{
@@ -2611,7 +2641,7 @@ async function handler(req,res) {
       if(b.name!==undefined) { o.name=String(b.name||'').trim().slice(0,80); if(o.name.length<2) return {error:'Donnez un nom à la promotion (2 caractères minimum).'}; }
       if(b.text!==undefined) { o.text=String(b.text||'').trim(); if(o.text.length<5||o.text.length>4000) return {error:'Le texte doit faire entre 5 et 4000 caractères.'}; }
       if(b.headline!==undefined) o.headline=String(b.headline||'').trim().slice(0,24);
-      if(b.theme!==undefined) o.theme=/^[a-z]{3,12}$/.test(String(b.theme))?String(b.theme):null;
+      if(b.theme!==undefined) o.theme=/^[a-z]{3,12}(\.[a-z]{3,12}){0,2}$/.test(String(b.theme))?String(b.theme):null;
       if(b.size!==undefined) o.size=/^[a-z]{3,12}$/.test(String(b.size))?String(b.size):null;
       if(b.format!==undefined) o.format=PROMO_FORMATS.includes(b.format)?b.format:'status';
       if(b.lang!==undefined) o.lang=b.lang==='en'?'en':'fr';
@@ -4190,6 +4220,7 @@ async function ensureMigrations() {
     "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS needs_human_urgent BOOLEAN NOT NULL DEFAULT false",
     "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS soft_asks INT NOT NULL DEFAULT 0",
     "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS soft_asks_at TIMESTAMPTZ",
+    "CREATE TABLE IF NOT EXISTS vendia_campaigns (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT NOT NULL, spec JSONB NOT NULL DEFAULT '{}'::jsonb, caption TEXT, hashtags TEXT, link TEXT, lang TEXT NOT NULL DEFAULT 'fr', created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now())",
   ];
   for (const stmt of statements) {
     try { await query(stmt); } catch(e) { console.error('[migrations] echec:',stmt.split('\n')[0],e.message); }

@@ -7,6 +7,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
 <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
 <link rel="icon" href="assets/favicon.ico">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Poppins:wght@500;600;700;800;900&display=swap">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#0B1442">
 <meta name="mobile-web-app-capable" content="yes">
@@ -358,9 +359,12 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <div class="panel" id="promoLibPanel"><h3 data-i18n="promo_lib_title">📚 Mes promotions</h3><p class="muted" data-i18n="promo_lib_desc"></p><div id="promoLib"></div></div>
 <div class="panel" id="posterPanel"><h3 data-i18n="promo_poster_title">Affiche</h3>
 <div class="formgrid">
-<div><label class="muted" data-i18n="promo_size_label">Format</label><select id="posterSize" onchange="drawPoster()"><option value="story" data-i18n="promo_size_story">Statut WhatsApp (9:16)</option><option value="square" data-i18n="promo_size_square">Carré (1:1)</option></select></div>
-<div><label class="muted" data-i18n="promo_theme_label">Couleurs</label><select id="posterTheme" onchange="drawPoster()"><option value="brand" data-i18n="promo_theme_brand">Bleu et vert</option><option value="gold" data-i18n="promo_theme_gold">Nuit et or</option><option value="red" data-i18n="promo_theme_red">Rouge vif</option><option value="green" data-i18n="promo_theme_green">Vert nature</option></select></div>
+<div><label class="muted" data-i18n="promo_size_label">Format</label><select id="posterSize" onchange="drawPoster()"><option value="story" data-i18n="promo_size_story">Statut WhatsApp (9:16)</option><option value="portrait" data-i18n="promo_size_portrait">Portrait Instagram (4:5)</option><option value="square" data-i18n="promo_size_square">Carré (1:1)</option><option value="wide" data-i18n="promo_size_wide">Facebook / lien (1,91:1)</option></select></div>
+<div><label class="muted" data-i18n="promo_style_label">Modèle</label><select id="posterStyle" onchange="drawPoster()"><option value="studio" data-i18n="promo_style_studio">Studio — lumineux</option><option value="luxe" data-i18n="promo_style_luxe">Luxe — noir et or</option><option value="pop" data-i18n="promo_style_pop">Pop — énergique</option><option value="minimal" data-i18n="promo_style_minimal">Minimal — clair</option></select></div>
+<div><label class="muted" data-i18n="promo_theme_label">Couleurs</label><select id="posterTheme" onchange="drawPoster()"><option value="auto" data-i18n="promo_theme_auto">Automatique (selon la photo)</option><option value="brand" data-i18n="promo_theme_brand">Bleu et vert</option><option value="gold" data-i18n="promo_theme_gold">Nuit et or</option><option value="red" data-i18n="promo_theme_red">Rouge vif</option><option value="green" data-i18n="promo_theme_green">Vert nature</option><option value="violet" data-i18n="promo_theme_violet">Violet</option><option value="sunset" data-i18n="promo_theme_sunset">Coucher de soleil</option><option value="ocean" data-i18n="promo_theme_ocean">Océan</option><option value="noir" data-i18n="promo_theme_noir">Noir et jaune</option></select></div>
+<div><label class="muted" data-i18n="promo_imgmode_label">Traitement de la photo</label><select id="posterImgMode" onchange="drawPoster()"><option value="auto" data-i18n="promo_imgmode_auto">Auto (détourer si le fond est uni)</option><option value="photo" data-i18n="promo_imgmode_photo">Garder la photo telle quelle</option></select></div>
 <input id="posterHeadline" class="full" maxlength="24" placeholder="Accroche (ex. NOUVEAUTÉ, PROMO)" data-i18n-placeholder="placeholder_poster_headline" oninput="drawPoster()">
+<input id="posterSub" class="full" maxlength="90" placeholder="Sous-titre (facultatif)" data-i18n-placeholder="placeholder_poster_sub" oninput="drawPoster()">
 </div>
 <canvas id="posterCanvas" style="width:100%;max-width:340px;border-radius:14px;display:block;margin:14px 0;box-shadow:0 4px 16px rgba(0,0,0,.18)"></canvas>
 <div><button type="button" class="btn primary" onclick="downloadPoster()" data-i18n="btn_download_poster">Télécharger l'affiche</button> <button type="button" class="btn hidden" id="posterShareBtn" onclick="sharePoster()" data-i18n="btn_share_poster">Partager l'affiche</button></div>
@@ -484,6 +488,8 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <div class="gdScroll"><p class="muted" data-i18n="gd_intro"></p><div class="gdBar"><div id="gdBarFill"></div></div><div id="gdList"></div></div>
 <div class="gdFoot"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="gdHide" onchange="gdDismiss(this.checked)" style="width:auto"> <span data-i18n="gd_hide"></span></label><button class="btn" onclick="loadGuide()" data-i18n="gd_refresh"></button></div>
 </div></div>
+<script src="assets/qr.js"></script>
+<script src="assets/banner.js"></script>
 <script>
 // --- i18n --------------------------------------------------------------
 const I18N = {
@@ -537,6 +543,9 @@ fr: {
   promo_product_label:"Produit", promo_format_label:"Type de texte", promo_format_status:"Statut WhatsApp", promo_format_post:"Publication Facebook / Instagram", promo_format_broadcast:"Message à un client",
   btn_generate_text:"✨ Générer le texte", btn_generating:"Génération…", placeholder_promo_text:"Le texte apparaîtra ici — vous pouvez le modifier.", btn_copy_text:"Copier le texte",
   promo_poster_title:"Affiche", promo_size_label:"Format", promo_size_story:"Statut WhatsApp (9:16)", promo_size_square:"Carré (1:1)", promo_theme_label:"Couleurs",
+  promo_size_portrait:"Portrait Instagram (4:5)", promo_size_wide:"Facebook / lien (1,91:1)", promo_style_label:"Modèle", promo_style_studio:"Studio — lumineux", promo_style_luxe:"Luxe — noir et or", promo_style_pop:"Pop — énergique", promo_style_minimal:"Minimal — clair",
+  promo_theme_auto:"Automatique (selon la photo)", promo_theme_violet:"Violet", promo_theme_sunset:"Coucher de soleil", promo_theme_ocean:"Océan", promo_theme_noir:"Noir et jaune",
+  promo_imgmode_label:"Traitement de la photo", promo_imgmode_auto:"Auto (détourer si le fond est uni)", promo_imgmode_photo:"Garder la photo telle quelle", placeholder_poster_sub:"Sous-titre (facultatif)", poster_cta_button:"Commander", poster_scan:"SCANNEZ", promo_cutout_done:"Fond de la photo retiré automatiquement.",
   promo_theme_brand:"Bleu et vert", promo_theme_gold:"Nuit et or", promo_theme_red:"Rouge vif", promo_theme_green:"Vert nature",
   placeholder_poster_headline:"Accroche (ex. NOUVEAUTÉ, PROMO)", btn_download_poster:"Télécharger l'affiche", btn_share_poster:"Partager l'affiche",
   promo_copied:"Texte copié.", promo_ai_ok:"Texte rédigé par l'IA", promo_no_ai:"IA indisponible : modèle de texte utilisé", promo_quota:"Quota IA du mois atteint : modèle de texte utilisé", promo_fallback:"Modèle de texte utilisé",
@@ -822,6 +831,9 @@ en: {
   promo_product_label:"Product", promo_format_label:"Text type", promo_format_status:"WhatsApp Status", promo_format_post:"Facebook / Instagram post", promo_format_broadcast:"Message to a customer",
   btn_generate_text:"✨ Generate text", btn_generating:"Generating…", placeholder_promo_text:"The text will appear here — you can edit it.", btn_copy_text:"Copy text",
   promo_poster_title:"Poster", promo_size_label:"Format", promo_size_story:"WhatsApp Status (9:16)", promo_size_square:"Square (1:1)", promo_theme_label:"Colors",
+  promo_size_portrait:"Instagram portrait (4:5)", promo_size_wide:"Facebook / link (1.91:1)", promo_style_label:"Style", promo_style_studio:"Studio — bright", promo_style_luxe:"Luxe — black and gold", promo_style_pop:"Pop — energetic", promo_style_minimal:"Minimal — light",
+  promo_theme_auto:"Automatic (from the photo)", promo_theme_violet:"Violet", promo_theme_sunset:"Sunset", promo_theme_ocean:"Ocean", promo_theme_noir:"Black and yellow",
+  promo_imgmode_label:"Photo treatment", promo_imgmode_auto:"Auto (cut out if the background is plain)", promo_imgmode_photo:"Keep the photo as is", placeholder_poster_sub:"Subtitle (optional)", poster_cta_button:"Order now", poster_scan:"SCAN ME", promo_cutout_done:"Photo background removed automatically.",
   promo_theme_brand:"Blue and green", promo_theme_gold:"Night and gold", promo_theme_red:"Bright red", promo_theme_green:"Nature green",
   placeholder_poster_headline:"Headline (e.g. NEW, SALE)", btn_download_poster:"Download poster", btn_share_poster:"Share poster",
   promo_copied:"Text copied.", promo_ai_ok:"Text written by AI", promo_no_ai:"AI unavailable: text template used", promo_quota:"Monthly AI quota reached: text template used", promo_fallback:"Text template used",
@@ -1880,12 +1892,6 @@ async function testWhatsappSettings(){
 // l'autorise (CORS) : sinon l'affiche s'affiche sans photo, mais reste
 // toujours téléchargeable.
 let promoShop=null, posterImg=null, posterImgFor='', posterPhotoFailed=false;
-const POSTER_THEMES={
-  brand:{bg:['#1f6feb','#1fa971'],ink:'#ffffff',accent:'#ffd84d',accentInk:'#10223f'},
-  gold:{bg:['#0b1b33','#1a2f55'],ink:'#ffffff',accent:'#e9b949',accentInk:'#1a1203'},
-  red:{bg:['#d62839','#7a1020'],ink:'#ffffff',accent:'#ffd84d',accentInk:'#3a0a10'},
-  green:{bg:['#1b7a4b','#0d3b27'],ink:'#ffffff',accent:'#f4e285',accentInk:'#0d3b27'}
-};
 async function loadPromo(){
   const prods=data.products||[];
   $('promoEmpty').classList.toggle('hidden',prods.length>0);
@@ -1900,35 +1906,20 @@ async function loadPromo(){
   loadPromoLibrary();
 }
 function posterProduct(){ const ps=data.products||[]; return ps.find(p=>p.id===$('promoProduct').value)||ps[0]; }
-function posterRoundRect(ctx,x,y,w,h,r){
-  r=Math.min(r,w/2,h/2); ctx.beginPath();
-  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
-}
-function posterFit(ctx,text,maxW){
-  text=String(text); if(ctx.measureText(text).width<=maxW) return text;
-  while(text.length>1 && ctx.measureText(text+'…').width>maxW) text=text.slice(0,-1);
-  return text.trimEnd()+'…';
-}
-function posterWrap(ctx,text,maxW,maxLines){
-  const words=String(text).split(/\s+/).filter(Boolean), lines=[]; let cur='';
-  for(let i=0;i<words.length;i++){
-    const test=cur?cur+' '+words[i]:words[i];
-    if(ctx.measureText(test).width<=maxW||!cur){ cur=test; }
-    else { lines.push(cur); cur=words[i]; if(lines.length===maxLines-1){ cur=words.slice(i).join(' '); break; } }
-  }
-  if(cur) lines.push(cur);
-  lines[lines.length-1]=posterFit(ctx,lines[lines.length-1]||'',maxW);
-  return lines;
-}
 function posterNumber(){
   const d=String(promoShop?.whatsapp||''); if(!d) return '';
   return (d.startsWith('237')&&d.length===12) ? '+237 '+d.slice(3,6)+' '+d.slice(6,9)+' '+d.slice(9) : '+'+d;
+}
+let posterPrep=null, posterPrepKey='';
+function posterOrderUrl(p){
+  const sh=promoShop||{}; if(sh.enabled&&sh.slug) return location.origin+'/boutique/'+sh.slug+'/p/'+p.id;
+  const n=String(sh.whatsapp||'').replace(/\D/g,''); return n?'https://wa.me/'+n+'?text='+encodeURIComponent(p.name):'';
 }
 function drawPoster(){
   const p=posterProduct(); if(!p) return;
   const key=p.id+'|'+(p.imageUrl||'');
   if(posterImgFor!==key){
-    posterImgFor=key; posterImg=null; posterPhotoFailed=false;
+    posterImgFor=key; posterImg=null; posterPhotoFailed=false; posterPrep=null; posterPrepKey='';
     if(p.imageUrl){
       const im=new Image(); im.crossOrigin='anonymous'; im.referrerPolicy='no-referrer';
       im.onload=()=>{ if(posterImgFor===key){ posterImg=im; drawPoster(); } };
@@ -1936,63 +1927,20 @@ function drawPoster(){
       im.src=p.imageUrl;
     }
   }
-  const cv=$('posterCanvas'), square=$('posterSize').value==='square';
-  const W=1080, H=square?1080:1920; cv.width=W; cv.height=H;
-  const ctx=cv.getContext('2d'), th=POSTER_THEMES[$('posterTheme').value]||POSTER_THEMES.brand;
-  const FONT='"Segoe UI",Roboto,Helvetica,Arial,sans-serif', pad=70;
-  const g=ctx.createLinearGradient(0,0,W,H); g.addColorStop(0,th.bg[0]); g.addColorStop(1,th.bg[1]);
-  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
-  ctx.globalAlpha=.10; ctx.fillStyle='#fff';
-  ctx.beginPath(); ctx.arc(W*.95,H*.08,W*.32,0,Math.PI*2); ctx.fill();
-  ctx.beginPath(); ctx.arc(W*.02,H*.95,W*.26,0,Math.PI*2); ctx.fill();
-  ctx.globalAlpha=1; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
-  // en-tête : entreprise + accroche
-  let y=square?96:130;
-  ctx.fillStyle=th.ink; ctx.font='700 '+(square?40:46)+'px '+FONT;
-  ctx.fillText(posterFit(ctx,String(data.company?.name||'').toUpperCase(),W-2*pad),W/2,y);
-  const headline=($('posterHeadline').value.trim()||t('promo_default_headline')).toUpperCase();
-  y+=square?30:50;
-  ctx.font='800 '+(square?44:54)+'px '+FONT;
-  const hw=Math.min(W-2*pad,ctx.measureText(headline).width+90), hh=square?76:92;
-  posterRoundRect(ctx,(W-hw)/2,y,hw,hh,hh/2); ctx.fillStyle=th.accent; ctx.fill();
-  ctx.fillStyle=th.accentInk; ctx.fillText(posterFit(ctx,headline,hw-60),W/2,y+hh*0.68);
-  const photoTop=y+hh+(square?30:50);
-  // pied de page, appel à l'action, prix et nom du produit (de bas en haut)
-  let by=H-(square?36:60);
-  ctx.font='500 '+(square?24:28)+'px '+FONT; ctx.fillStyle=th.ink; ctx.globalAlpha=.7;
-  ctx.fillText(t('poster_powered'),W/2,by); ctx.globalAlpha=1;
-  by-=square?58:84;
+  const mode=$('posterImgMode').value;
+  if(posterImg&&posterPrepKey!==key+'|'+mode){ posterPrepKey=key+'|'+mode; try{ posterPrep=VBanner.prepareImage(posterImg,mode); }catch(e){ posterPrep={photo:posterImg,cut:null,palette:null}; } }
+  const themeSel=$('posterTheme').value;
+  const palette=(themeSel==='auto'?(posterPrep&&posterPrep.palette):null)||VBanner.PALETTES[themeSel==='auto'?'brand':themeSel]||VBanner.PALETTES.brand;
   const num=posterNumber();
-  if(num){ ctx.font='800 '+(square?54:66)+'px '+FONT; ctx.fillStyle=th.accent; ctx.fillText(num,W/2,by); by-=square?56:72; }
-  ctx.font='600 '+(square?34:40)+'px '+FONT; ctx.fillStyle=th.ink; ctx.fillText(t('poster_order_cta'),W/2,by);
-  by-=square?48:72;
-  const price=money(p.price).replace(/[  ]/g,' ');
-  ctx.font='900 '+(square?84:104)+'px '+FONT;
-  const pw=Math.min(W-2*pad,ctx.measureText(price).width+120), phh=square?124:150;
-  by-=phh; posterRoundRect(ctx,(W-pw)/2,by,pw,phh,phh/2); ctx.fillStyle=th.accent; ctx.fill();
-  ctx.fillStyle=th.accentInk; ctx.fillText(posterFit(ctx,price,pw-70),W/2,by+phh*0.7);
-  by-=square?36:56;
-  const nameSize=square?56:72, lh=square?64:82;
-  ctx.font='800 '+nameSize+'px '+FONT; ctx.fillStyle=th.ink;
-  const lines=posterWrap(ctx,p.name,W-2*pad,2);
-  for(let i=lines.length-1;i>=0;i--){ ctx.fillText(lines[i],W/2,by); by-=lh; }
-  const photoBottom=by+lh-nameSize-24;
-  // photo (ou pastille « sac » si pas de photo exploitable)
-  const bx=pad, bw=W-2*pad, bh=photoBottom-photoTop;
-  if(bh>180){
-    ctx.save(); posterRoundRect(ctx,bx,photoTop,bw,bh,40); ctx.clip();
-    if(posterImg){
-      const s=Math.max(bw/posterImg.width,bh/posterImg.height), dw=posterImg.width*s, dh=posterImg.height*s;
-      ctx.drawImage(posterImg,bx+(bw-dw)/2,photoTop+(bh-dh)/2,dw,dh);
-    } else {
-      ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fillRect(bx,photoTop,bw,bh);
-      ctx.font=Math.round(Math.min(bw,bh)*0.42)+'px '+FONT; ctx.textBaseline='middle'; ctx.fillStyle='#fff';
-      ctx.fillText('🛍️',W/2,photoTop+bh/2);
-    }
-    ctx.restore();
-    posterRoundRect(ctx,bx,photoTop,bw,bh,40); ctx.lineWidth=6; ctx.strokeStyle='rgba(255,255,255,.55)'; ctx.stroke();
-  }
-  $('posterStatus').innerHTML = (p.imageUrl && posterPhotoFailed) ? '<span class="muted">'+t('promo_photo_failed')+'</span>' : '';
+  const spec={
+    format:$('posterSize').value, style:$('posterStyle').value, palette,
+    kicker:String(data.company?.name||''), headline:$('posterHeadline').value.trim()||t('promo_default_headline'),
+    title:p.name, subtitle:$('posterSub').value.trim(), price:money(p.price).replace(/[  ]/g,' '),
+    cta:t('poster_cta_button'), qrUrl:posterOrderUrl(p), qrLabel:t('poster_scan'), contact:num, footer:t('poster_powered'),
+    hero:posterPrep?{photo:posterPrep.photo,cut:posterPrep.cut}:null
+  };
+  VBanner.ready.then(()=>{ if(posterImgFor===key||!p.imageUrl) VBanner.render($('posterCanvas'),spec); });
+  $('posterStatus').innerHTML = (p.imageUrl && posterPhotoFailed) ? '<span class="muted">'+t('promo_photo_failed')+'</span>' : (posterPrep&&posterPrep.cut&&mode==='auto'?'<span class="muted">'+t('promo_cutout_done')+'</span>':'');
 }
 function posterFileName(){
   const p=posterProduct();
@@ -2378,7 +2326,7 @@ async function loadPromoLibrary(){
   }catch(e){ $('promoLib').innerHTML='<span class="error">'+esc(e.message)+'</span>'; }
 }
 function currentPromoPayload(){
-  return {name:$('promoName').value.trim(),productId:$('promoProduct').value||null,format:$('promoFormat').value,lang:lang,text:$('promoText').value.trim(),headline:$('posterHeadline').value.trim(),theme:$('posterTheme').value,size:$('posterSize').value};
+  return {name:$('promoName').value.trim(),productId:$('promoProduct').value||null,format:$('promoFormat').value,lang:lang,text:$('promoText').value.trim(),headline:$('posterHeadline').value.trim(),theme:[$('posterStyle').value,$('posterTheme').value,$('posterImgMode').value].join('.'),size:$('posterSize').value};
 }
 async function savePromotion(update){
   const b=currentPromoPayload();
@@ -2396,7 +2344,7 @@ function reusePromotion(id){
   currentPromoId=id; $('promoName').value=p.name; $('promoText').value=p.text;
   if(p.productId&&[...$('promoProduct').options].some(o=>o.value===p.productId)) $('promoProduct').value=p.productId;
   $('promoFormat').value=p.format; $('posterHeadline').value=p.headline||'';
-  if(p.theme&&[...$('posterTheme').options].some(o=>o.value===p.theme)) $('posterTheme').value=p.theme;
+  if(p.theme){ const tp=String(p.theme).split('.'); const set=(id,v)=>{ if(v&&[...$(id).options].some(o=>o.value===v)) $(id).value=v; }; if(tp.length>1){ set('posterStyle',tp[0]); set('posterTheme',tp[1]); set('posterImgMode',tp[2]); } else set('posterTheme',tp[0]); }
   if(p.size&&[...$('posterSize').options].some(o=>o.value===p.size)) $('posterSize').value=p.size;
   $('promoUpdateBtn').classList.remove('hidden'); drawPoster();
   $('promoStatus').innerHTML='<span class="badge">'+t('promo_loaded')+'</span>';
