@@ -389,7 +389,3 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS telegram_webhook_secret TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS companies_telegram_secret_idx ON companies(telegram_webhook_secret) WHERE telegram_webhook_secret IS NOT NULL;
 ALTER TABLE prospects ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS prospects_company_telegram_idx ON prospects(company_id,telegram_chat_id) WHERE telegram_chat_id IS NOT NULL;
-
-ALTER TABLE payment_requests ADD COLUMN IF NOT EXISTS provider TEXT;
-ALTER TABLE payment_requests ADD COLUMN IF NOT EXISTS provider_ref TEXT;
-CREATE UNIQUE INDEX IF NOT EXISTS payment_requests_provider_ref_idx ON payment_requests(provider_ref) WHERE provider_ref IS NOT NULL;

@@ -139,17 +139,8 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - Le tableau du parrain montre ses filleuls (abonné actif ou en attente de paiement) et ce que chacun lui a rapporté.
 
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.
-## 1.10.27 — Inscription avec paiement automatique
-
-Page d'inscription : si Campay est configuré, l'option « ⚡ Paiement automatique » est proposée en premier (aucune référence à saisir). Le futur client entre son numéro MTN/Orange, confirme sur son téléphone, et son compte est **activé immédiatement** (même logique que l'Abonnement : parrainage, e-mail d'activation). Échec immédiat de Campay : rien n'est créé. Paiement refusé ou expiré plus tard : le client peut réessayer avec le même e-mail et mot de passe (le compte non activé est réutilisé). Garde-fous : 3 demandes par numéro et par heure, suivi public protégé par un identifiant non devinable. Le paiement manuel reste disponible.
-
-## 1.10.26 — Paiement automatique Mobile Money (Campay)
-
-Onglet Abonnement : bloc vert « Payer maintenant avec Mobile Money » (visible seulement si Campay est configuré). Le client saisit son numéro MTN/Orange, reçoit la demande de confirmation sur son téléphone, et son forfait est **activé automatiquement** (30 jours ajoutés, commission de parrainage, commandes bloquées libérées, e-mail) — le paiement manuel reste disponible en secours.
-
-Configuration Railway : `CAMPAY_PERMANENT_TOKEN` (jeton d'accès permanent de l'application Campay) **ou** `CAMPAY_USERNAME` + `CAMPAY_PASSWORD` ; `CAMPAY_ENV=prod` pour le mode réel (sinon démo `demo.campay.net`). Dans le tableau de bord Campay, renseigner l'URL de webhook : `https://<votre-domaine>/webhooks/campay`.
-
-Sécurité : le montant vient toujours du forfait côté serveur ; le contenu du webhook n'est jamais cru (VENDIA interroge Campay `GET /transaction/<ref>/`) ; un montant reçu inférieur au prix est rejeté et signalé au super-admin ; validation idempotente (jamais deux fois) ; un balayage chaque minute reprend les paiements dont le webhook n'est pas arrivé (abandon après 24 h). Colonnes `payment_requests.provider/provider_ref`.
+## 1.10.28 — Retrait de Campay
+Le paiement automatique Campay (1.10.26 et 1.10.27) est retiré : la vérification d'entreprise (RCCM, ACF, NIU) n'est pas possible pour le moment. Le paiement manuel (référence de transaction validée par le super-admin) reste la seule méthode. Les variables `CAMPAY_*` ne sont plus utilisées et peuvent être supprimées de Railway. Les colonnes `payment_requests.provider` / `provider_ref` éventuellement créées sont ignorées sans risque.
 
 ## 1.10.25 — Canal Telegram
 
