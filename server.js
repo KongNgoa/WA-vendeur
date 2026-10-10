@@ -21,7 +21,7 @@ const MTN_MOMO_NUMBER = process.env.MTN_MOMO_NUMBER || '+237672353499';
 // l'échéance (next_billing_at), puis tout est bloqué (API, webhooks, IA,
 // relances, campagnes, vitrine) jusqu'à la validation d'un renouvellement.
 // EXPIRED_SQL suppose que la table companies est aliasée 'c'.
-const GRACE_DAYS = 2;
+const GRACE_DAYS = 0; // strict : blocage automatique dès l'échéance
 const TRIAL_DAYS = 7;          // essai gratuit : forfait Business débloqué
 const ANNUAL_MONTHS_PAID = 10; // paiement annuel = 10 mois payés pour 12 (2 mois offerts)
 const annualPrice = plan => planLimits(plan).monthlyPrice * ANNUAL_MONTHS_PAID;
@@ -995,7 +995,11 @@ async function handleTelegramUpdate(co, update) {
       reply = '🛍️ Nos produits :\n' + products.slice(0, 30).map(p => '• ' + p.name + ' — ' + Number(p.price).toLocaleString('fr-FR') + ' FCFA' + (Number(p.stock) <= 0 ? ' (épuisé)' : '')).join('\n');
     } else {
       const usage = await getAiUsage(co.id, co.plan);
-      if (usage.remaining !== null && usage.remaining <= 0) return;
+      if (usage.remaining !== null && usage.remaining <= 0) {
+        // Quota IA épuisé : l'IA est suspendue, la conversation est transmise au propriétaire (jamais de client laissé sans suite).
+        await flagHandoff(co.id, { ...conv, phone: conv.phone || chatId }, 'Quota de messages IA du forfait atteint — passez au forfait supérieur', text).catch(() => {});
+        return;
+      }
       const prospectRow = ing.prospectId ? (await query('SELECT status,need FROM prospects WHERE id=$1', [ing.prospectId])).rows[0] : null;
       const history = (await query('SELECT direction,body FROM messages WHERE conversation_id=$1 ORDER BY created_at DESC LIMIT 12', [conv.id])).rows.reverse();
       const ai = await generateAiReply(co, prospectRow, products, history, { situation: gate.situation });
@@ -1853,8 +1857,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.43',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.43'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.44',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.44'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -2132,6 +2136,7 @@ async function handler(req,res) {
                   const usage=await getAiUsage(targetCompanyId,companyRow.plan);
                   if(usage.remaining!==null && usage.remaining<=0) {
                     console.warn('[ai-reply] quota IA epuise companyId=%s plan=%s',targetCompanyId,companyRow.plan);
+                    await flagHandoff(targetCompanyId,{...conversationRow,phone:conversationRow.phone||from},'Quota de messages IA du forfait atteint — passez au forfait supérieur',text).catch(()=>{});
                   } else {
                     const prospectRow=ingestResult.prospectId ? (await query('SELECT status,need FROM prospects WHERE id=$1',[ingestResult.prospectId])).rows[0] : null;
                     const productsRows=(await query('SELECT name,category,price,stock FROM products WHERE company_id=$1 ORDER BY created_at',[targetCompanyId])).rows;
@@ -2577,7 +2582,7 @@ async function handler(req,res) {
   if(susp.rows[0]?.suspended) return json(res,403,{error:'Ce compte VENDIA est suspendu. Contactez le support.'});
   // Abonnement expiré au-delà de la période de grâce : seul le renouvellement reste accessible.
   if(susp.rows[0]?.expired&&!(u.pathname==='/api/billing'&&req.method==='GET')&&!(u.pathname==='/api/billing/renew'&&req.method==='POST')&&!u.pathname.startsWith('/api/support/'))
-    return json(res,402,{error:'Abonnement expiré — renouvelez-le pour réactiver votre compte. / Subscription expired — renew it to reactivate your account.',code:'subscription_expired'});
+    return json(res,402,{error:'Abonnement expiré — renouvelez-le ou passez au forfait supérieur pour réactiver votre compte. / Subscription expired — renew it to reactivate your account.',code:'subscription_expired'});
 
   // ---- Quota de bannières du Studio promo ----
   if(u.pathname==='/api/promo/banners/usage'&&req.method==='GET') return json(res,200,await bannerQuota(companyId));
@@ -4058,7 +4063,7 @@ async function checkDailyReportSchedule() {
 // paiement est déjà en attente de validation. Un e-mail non envoyé (Resend non
 // configuré) n'est pas marqué comme envoyé et sera retenté. Le blocage
 // effectif intervient GRACE_DAYS jours après l'échéance (voir EXPIRED_SQL).
-function renewalStage(days) { return days<=-GRACE_DAYS?5 : days<=-1?4 : days<=0?3 : days<=1?2 : days<=5?1 : 0; }
+function renewalStage(days) { return (days<0&&days<=-GRACE_DAYS)?5 : days<=-1?4 : days<=0?3 : days<=1?2 : days<=5?1 : 0; }
 function renewalEmail(name, plan, days, stage, until, graceEnd) {
   const price=planLimits(plan).monthlyPrice;
   const how='<p>Pour renouveler : envoyez <strong>'+money(price)+'</strong> par Orange Money au <strong>'+escHtml(ORANGE_MONEY_NUMBER)+'</strong> ou MTN MoMo au <strong>'+escHtml(MTN_MOMO_NUMBER)+'</strong>, puis saisissez la référence reçue par SMS dans l\'onglet <em>Abonnement</em> de votre espace VENDIA. Votre paiement est validé rapidement.</p>';
@@ -4474,6 +4479,6 @@ ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>
   const renewalTick=()=>checkRenewalReminders().catch(e=>console.error('[renewal] echec:',e.message));
   setInterval(renewalTick, 10*60*1000); setTimeout(renewalTick, 20*1000); // + un passage peu après chaque démarrage
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.43 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.44 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});
