@@ -431,4 +431,6 @@ CREATE TABLE IF NOT EXISTS promotions (
 CREATE INDEX IF NOT EXISTS promotions_company_idx ON promotions(company_id, created_at DESC);
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS promotion_id UUID REFERENCES promotions(id) ON DELETE SET NULL;
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS repeat TEXT;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS repeat_runs INT NOT NULL DEFAULT 0;
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS optin_confirmed_at TIMESTAMPTZ;

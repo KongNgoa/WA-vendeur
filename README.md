@@ -139,6 +139,12 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - Le tableau du parrain montre ses filleuls (abonné actif ou en attente de paiement) et ce que chacun lui a rapporté.
 
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.
+## 1.10.34 — Campagnes récurrentes
+
+- Lors de la programmation, option **Une seule fois / Chaque jour / Chaque semaine / Chaque mois** (`repeat` sur `POST /api/campaigns/:id/schedule`).
+- La campagne programmée sert de modèle et reste « Programmée » ; à chaque échéance une **copie** part (visible dans l'historique, avec la date) et l'audience est recalculée à ce moment-là.
+- Une occurrence en retard de plus de 6 h est sautée ; un échec ponctuel (quota, audience vide) envoie un e-mail mais la série continue ; entreprise suspendue/expirée : la série est annulée. Limite de 52 envois par série. « Annuler » arrête la série.
+
 ## 1.10.33 — Bibliothèque de promotions et campagnes programmées
 
 - **Bibliothèque** : l'onglet Promotions enregistre chaque promo (texte, produit, affiche) sous un nom ; on peut la réutiliser, la mettre à jour, la supprimer (200 max par entreprise). `GET/POST/PATCH/DELETE /api/promotions`.

@@ -1406,25 +1406,56 @@ async function beginCampaign(companyId, campaignId, fromStatus) {
 // Campagnes programmées : démarrées à l'heure dite avec une audience recalculée. Annulées
 // (avec le motif, et un e-mail à l'administrateur) si elles ne peuvent pas partir, ou si l'heure
 // est dépassée de plus de 6 h (serveur indisponible) : une promo envoyée en retard peut être périmée.
+const REPEATS = { daily: 'Chaque jour', weekly: 'Chaque semaine', monthly: 'Chaque mois' };
+const MAX_REPEAT_RUNS = 52;
+// Prochaine occurrence (UTC ; le Cameroun n'a pas d'heure d'été). Mensuel : même jour du mois, ramené à
+// la fin du mois si besoin. Saute les occurrences déjà passées.
+function nextOccurrence(from, repeat) {
+  const d = new Date(from), day = d.getUTCDate();
+  const step = () => {
+    if (repeat === 'daily') d.setUTCDate(d.getUTCDate() + 1);
+    else if (repeat === 'weekly') d.setUTCDate(d.getUTCDate() + 7);
+    else { d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + 1); d.setUTCDate(Math.min(day, new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate())); }
+  };
+  do step(); while (d.getTime() <= Date.now());
+  return d;
+}
 let schedTickRunning = false;
 async function runScheduledCampaigns() {
   if (schedTickRunning) return;
   schedTickRunning = true;
   try {
-    const due = (await query("SELECT id,company_id AS \"companyId\",name,scheduled_at AS \"at\" FROM campaigns WHERE status='Programmée' AND scheduled_at<=now() ORDER BY scheduled_at LIMIT 20")).rows;
+    const due = (await query("SELECT id,company_id AS \"companyId\",name,scheduled_at AS \"at\",repeat,repeat_runs AS runs FROM campaigns WHERE status='Programmée' AND scheduled_at<=now() ORDER BY scheduled_at LIMIT 20")).rows;
     for (const c of due) {
-      let note = null;
+      let note = null, fatal = false;
       const co = (await query('SELECT c.suspended,('+EXPIRED_SQL+') AS expired,c.approved_at AS "approvedAt" FROM companies c WHERE c.id=$1', [c.companyId])).rows[0];
-      if (!co || co.suspended || co.expired || !co.approvedAt) note = 'Entreprise suspendue, abonnement expiré ou non validée';
+      if (!co || co.suspended || co.expired || !co.approvedAt) { note = 'Entreprise suspendue, abonnement expiré ou non validée'; fatal = true; }
       else if (Date.now() - new Date(c.at).getTime() > 6 * 3600 * 1000) note = "Heure d'envoi dépassée de plus de 6 h (serveur indisponible)";
+      else if (c.repeat) {
+        // Série récurrente : chaque occurrence est une copie (visible dans l'historique) ; le modèle reste programmé.
+        const cl = (await query("INSERT INTO campaigns(company_id,name,message,template_name,template_lang,audience,created_by,promotion_id,optin_confirmed_at) SELECT company_id,left(name,60)||' · '||to_char(now() AT TIME ZONE 'Africa/Douala','DD/MM'),message,template_name,template_lang,audience,created_by,promotion_id,optin_confirmed_at FROM campaigns WHERE id=$1 RETURNING id", [c.id])).rows[0];
+        const out = await beginCampaign(c.companyId, cl.id, 'Brouillon');
+        if (out.code === 200) setTimeout(() => runCampaignTick(), 300);
+        else { await query("UPDATE campaigns SET status='Annulée',finished_at=now(),note=$1 WHERE id=$2", [out.error, cl.id]); note = out.error; }
+        const runs = c.runs + (out.code === 200 ? 1 : 0);
+        if (runs >= MAX_REPEAT_RUNS) await query("UPDATE campaigns SET status='Terminée',finished_at=now(),repeat_runs=$1,note=$3 WHERE id=$2", [runs, c.id, 'Série terminée ('+MAX_REPEAT_RUNS+' envois)']);
+        else await query("UPDATE campaigns SET scheduled_at=$1,repeat_runs=$2 WHERE id=$3 AND status='Programmée'", [nextOccurrence(c.at, c.repeat).toISOString(), runs, c.id]);
+        if (out.code === 200) continue;
+        note = 'Un envoi de la série « '+c.name+' » n\'a pas pu partir : '+note+' (la série continue).';
+        fatal = null;
+      }
       else {
         const out = await beginCampaign(c.companyId, c.id, 'Programmée');
         if (out.code === 200) { setTimeout(() => runCampaignTick(), 300); continue; }
         note = out.error;
       }
-      await query("UPDATE campaigns SET status='Annulée',finished_at=now(),note=$1 WHERE id=$2 AND status='Programmée'", [note, c.id]);
+      if (c.repeat && fatal === false) {
+        // Occurrence trop en retard : on la saute, la série continue.
+        await query("UPDATE campaigns SET scheduled_at=$1 WHERE id=$2 AND status='Programmée'", [nextOccurrence(c.at, c.repeat).toISOString(), c.id]);
+      } else if (fatal !== null) {
+        await query("UPDATE campaigns SET status='Annulée',finished_at=now(),note=$1 WHERE id=$2 AND status='Programmée'", [note, c.id]);
+      }
       const owners = (await query("SELECT email,name FROM users WHERE company_id=$1 AND role='owner'", [c.companyId])).rows;
-      for (const o of owners) await sendEmail(o.email, 'VENDIA — Votre campagne programmée n\'a pas pu partir', '<p>Bonjour '+escHtml(o.name)+',</p><p>La campagne <strong>'+escHtml(c.name)+'</strong>, programmée pour le '+new Date(c.at).toLocaleString('fr-FR',{dateStyle:'long',timeStyle:'short',timeZone:'Africa/Douala'})+', n\'a pas été envoyée : <strong>'+escHtml(note)+'</strong>.</p><p>Corrigez le problème puis relancez-la depuis l\'onglet Campagnes (bouton « Réutiliser »).</p>');
     }
   } catch (e) { console.error('[campaigns] programmation:', e.message); }
   finally { schedTickRunning = false; }
@@ -1599,8 +1630,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.33',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.33'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.34',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.34'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -2539,7 +2570,7 @@ async function handler(req,res) {
     if(!['owner','admin'].includes(await getUserRole(session.userId))) return json(res,403,{error:'Réservé au propriétaire ou à un administrateur.'});
     const cm=u.pathname.match(/^\/api\/campaigns\/([0-9a-f-]{36})(?:\/(start|cancel|schedule))?$/i);
     if(req.method==='GET'&&u.pathname==='/api/campaigns') {
-      const r=await query(`SELECT c.id,c.name,c.status,c.note,c.scheduled_at AS "scheduledAt",c.promotion_id AS "promotionId",c.created_at AS "createdAt",c.started_at AS "startedAt",c.finished_at AS "finishedAt",
+      const r=await query(`SELECT c.id,c.name,c.status,c.note,c.scheduled_at AS "scheduledAt",c.repeat,c.repeat_runs AS "repeatRuns",c.promotion_id AS "promotionId",c.created_at AS "createdAt",c.started_at AS "startedAt",c.finished_at AS "finishedAt",
           COUNT(r.id)::int AS total,COUNT(r.id) FILTER (WHERE r.status='sent')::int AS sent,COUNT(r.id) FILTER (WHERE r.status='failed')::int AS failed,COUNT(r.id) FILTER (WHERE r.status='skipped')::int AS skipped
         FROM campaigns c LEFT JOIN campaign_recipients r ON r.campaign_id=c.id WHERE c.company_id=$1 GROUP BY c.id ORDER BY c.created_at DESC LIMIT 100`,[companyId]);
       return json(res,200,{campaigns:r.rows,quota:await campaignQuota(companyId)});
@@ -2567,7 +2598,7 @@ async function handler(req,res) {
       return json(res,201,{id:r.rows[0].id});
     }
     if(cm && req.method==='GET' && !cm[2]) {
-      const c=(await query('SELECT id,name,message,template_name AS template,template_lang AS lang,audience,status,note,scheduled_at AS "scheduledAt",promotion_id AS "promotionId",created_at AS "createdAt" FROM campaigns WHERE id=$1 AND company_id=$2',[cm[1],companyId])).rows[0];
+      const c=(await query('SELECT id,name,message,template_name AS template,template_lang AS lang,audience,status,note,scheduled_at AS "scheduledAt",repeat,promotion_id AS "promotionId",created_at AS "createdAt" FROM campaigns WHERE id=$1 AND company_id=$2',[cm[1],companyId])).rows[0];
       if(!c) return json(res,404,{error:'Campagne introuvable'});
       const rc=await query("SELECT phone,first_name AS \"firstName\",status,error FROM campaign_recipients WHERE campaign_id=$1 AND status IN ('failed','skipped') ORDER BY status LIMIT 200",[c.id]);
       return json(res,200,{campaign:c,problems:rc.rows});
@@ -2592,8 +2623,10 @@ async function handler(req,res) {
       if(!c0) return json(res,404,{error:'Campagne introuvable'});
       if(c0.status!=='Brouillon') return json(res,409,{error:'Seul un brouillon peut être programmé.'});
       if(!(await audienceCount(companyId,cleanAudience(c0.audience))).n) return json(res,400,{error:'Aucun contact dans cette audience.'});
-      await query("UPDATE campaigns SET status='Programmée',scheduled_at=$1,optin_confirmed_at=now() WHERE id=$2 AND company_id=$3 AND status='Brouillon'",[at.toISOString(),cm[1],companyId]);
-      return json(res,200,{ok:true,scheduledAt:at.toISOString()});
+      const repeat=b.repeat?String(b.repeat):null;
+      if(repeat&&!REPEATS[repeat]) return json(res,400,{error:'Récurrence invalide.'});
+      await query("UPDATE campaigns SET status='Programmée',scheduled_at=$1,optin_confirmed_at=now(),repeat=$4,repeat_runs=0 WHERE id=$2 AND company_id=$3 AND status='Brouillon'",[at.toISOString(),cm[1],companyId,repeat]);
+      return json(res,200,{ok:true,scheduledAt:at.toISOString(),repeat});
     }
     if(cm && cm[2]==='cancel' && req.method==='POST') {
       const c=(await query("UPDATE campaigns SET status='Annulée',finished_at=now(),note='Annulée manuellement' WHERE id=$1 AND company_id=$2 AND status IN ('En cours','Programmée') RETURNING id",[cm[1],companyId])).rows[0];
@@ -3700,6 +3733,8 @@ async function ensureMigrations() {
     'CREATE INDEX IF NOT EXISTS promotions_company_idx ON promotions(company_id, created_at DESC)',
     'ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS promotion_id UUID REFERENCES promotions(id) ON DELETE SET NULL',
     'ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ',
+    'ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS repeat TEXT',
+    'ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS repeat_runs INT NOT NULL DEFAULT 0',
     'ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS optin_confirmed_at TIMESTAMPTZ',
     // Lot "administration d'équipe, réinitialisation de mot de passe et
     // super-admin" — idempotent. Le super_admin_id est ajouté à 'sessions'
@@ -3923,6 +3958,6 @@ ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>
   const renewalTick=()=>checkRenewalReminders().catch(e=>console.error('[renewal] echec:',e.message));
   setInterval(renewalTick, 10*60*1000); setTimeout(renewalTick, 20*1000); // + un passage peu après chaque démarrage
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.33 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.34 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});
