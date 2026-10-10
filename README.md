@@ -139,6 +139,15 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - Le tableau du parrain montre ses filleuls (abonné actif ou en attente de paiement) et ce que chacun lui a rapporté.
 
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.
+## 1.10.37 — Bannières publicitaires, Marketing super-admin, vidéo de lancement
+
+- **Moteur de bannières** (`public/assets/banner.js`, canvas, partagé) : 4 modèles (Studio, Luxe, Pop, Minimal), 4 formats (story 9:16, portrait 4:5, carré, Facebook 1,91:1), couleurs automatiques tirées de la photo, **détourage automatique** quand le fond de la photo est uni (sinon cadre photo avec fond flou), ombre portée, gros bouton **COMMANDER**, **QR code** (lib MIT `qrcode-generator`, `public/assets/qr.js`) vers la page produit de la boutique (ou un lien wa.me si la boutique est désactivée).
+- **Studio promo** : nouveaux contrôles Format / Modèle / Couleurs / Traitement de la photo / Sous-titre. Le choix est mémorisé dans la promotion (`poster_theme` = `modele.couleurs.photo`). Une image PNG n'est pas cliquable : la fonction « commander » vient du QR code, du lien et du numéro WhatsApp affichés.
+- **Boutique** : bouton « Commander » en dégradé bien visible + barre fixe en bas (prix + Commander) sur les pages produit.
+- **Super-admin → Marketing** : onglet Gestion | Marketing. Table `vendia_campaigns`, routes `GET/POST /api/superadmin/marketing`, `DELETE /api/superadmin/marketing/:id`. 3 modèles de campagne FR/EN avec maquette de téléphone WhatsApp, texte de publication, hashtags, lien avec suivi UTM, téléchargement d'un format ou de tous. Logique dans `public/assets/marketing.js`.
+- **Vidéo** : `marketing/video1/` (animation HTML pilotée par `window.__seek(t)`), rendu avec `python3 marketing/video1/render.py sortie.mp4` (Playwright + ffmpeg). Les MP4 ne sont pas versionnés.
+- Les fichiers `.js` de `/assets/` sont servis (cache 5 min).
+
 ## 1.10.36 — L'IA va au bout avant de passer la main
 
 - **L'IA est l'interlocuteur principal** : consigne renforcée dans son prompt. Avant toute transmission : (1) comprendre la demande (une question précise si elle est floue), (2) essayer de la traiter avec le catalogue, les paiements et les consignes, (3) ne transmettre que si elle dépasse vraiment ses capacités. Tant qu'elle n'a pas encore répondu dans la conversation, elle n'a pas le droit de transmettre.

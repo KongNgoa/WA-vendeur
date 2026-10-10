@@ -1,0 +1,124 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>VENDIA — Vidéo 1</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800;900&display=swap">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}html,body{width:1080px;height:1920px;overflow:hidden;background:#0B1442;font-family:Poppins,"Segoe UI",Arial,sans-serif;color:#fff}
+#stage{position:relative;width:1080px;height:1920px;overflow:hidden}
+.abs{position:absolute;left:0;top:0;opacity:0;will-change:transform,opacity}
+.bg{position:absolute;inset:0}
+.center{display:block;text-align:center}
+.pill{display:inline-block;padding:26px 56px;border-radius:999px;background:linear-gradient(135deg,#1FD37A,#17A2FE);color:#04210f;font-weight:900;font-size:56px;letter-spacing:.02em;box-shadow:0 0 70px rgba(31,211,122,.55)}
+/* phone */
+.phone{width:620px;height:1270px;border-radius:92px;background:#10131c;padding:15px;box-shadow:0 60px 120px rgba(0,0,0,.55)}
+.screen{width:100%;height:100%;border-radius:78px;background:#e9e2d6;overflow:hidden;position:relative}
+.head{height:170px;background:#0b6b57;padding:74px 30px 0;display:flex;align-items:center;gap:20px}
+.av{width:74px;height:74px;border-radius:50%;background:#1FD37A;color:#062a1a;font-weight:800;font-size:38px;display:flex;align-items:center;justify-content:center}
+.hn{font-weight:700;font-size:34px}.hs{font-size:24px;opacity:.8;margin-top:-4px}
+.notch{position:absolute;left:50%;top:18px;width:180px;height:44px;border-radius:22px;background:#10131c;transform:translateX(-50%)}
+.chat{position:absolute;left:0;right:0;top:170px;bottom:0;padding:26px 24px}
+.b{position:absolute;max-width:430px;padding:20px 26px;border-radius:30px;font-size:33px;line-height:1.3;font-weight:500;color:#111b21;box-shadow:0 3px 8px rgba(0,0,0,.12);opacity:0}
+.b.c{background:#fff;left:24px}.b.v{background:#d9fdd3;right:24px}
+.typing{position:absolute;right:24px;padding:22px 30px;border-radius:30px;background:#d9fdd3;display:flex;gap:10px;opacity:0}
+.typing i{width:16px;height:16px;border-radius:50%;background:#667781;display:block}
+/* cards */
+.card{width:900px;border-radius:44px;background:#fff;color:#10223f;padding:44px 48px;box-shadow:0 40px 90px rgba(0,0,0,.35)}
+.row{display:flex;align-items:center;gap:30px;width:880px;padding:34px 40px;border-radius:40px;background:rgba(255,255,255,.1);border:2px solid rgba(255,255,255,.18);font-size:54px;font-weight:800;white-space:nowrap}
+.row .ic{width:112px;height:112px;border-radius:32px;background:linear-gradient(135deg,#1FD37A,#17A2FE);display:flex;align-items:center;justify-content:center;font-size:62px;flex:none}
+.big{font-size:104px;font-weight:900;line-height:1.05}.mid{font-size:68px;font-weight:800;line-height:1.12}
+.g{background:linear-gradient(135deg,#1FD37A,#17A2FE);-webkit-background-clip:text;background-clip:text;color:transparent}
+</style></head><body><div id="stage">
+<!-- fonds -->
+<div class="bg" id="bgA" style="background:radial-gradient(circle at 50% 38%,#1b2a7a 0%,#0B1442 60%,#050a26 100%)"></div>
+<div class="bg" id="bgB" style="background:linear-gradient(160deg,#0B1442 0%,#1c3fb8 55%,#17A2FE 130%);opacity:0"></div>
+<div class="bg" id="bgE" style="background:linear-gradient(160deg,#17A2FE 0%,#1FD37A 100%);opacity:0"></div>
+<div class="abs" id="glow" style="left:140px;top:560px;width:800px;height:800px;border-radius:50%;background:radial-gradient(circle,rgba(23,162,254,.35),rgba(23,162,254,0) 70%)"></div>
+
+<!-- Scène A -->
+<div class="abs center" id="aClock" style="width:1080px;top:330px;font-size:260px;font-weight:900;letter-spacing:-.02em">23:07</div>
+<div class="abs center" id="aT1" style="width:1080px;top:650px;font-size:78px;font-weight:700;color:#cfd8ff">Il est 23h07. Un client vous écrit sur WhatsApp…</div>
+<div class="abs" id="aNotif" style="left:70px;top:930px;width:940px"><div style="background:#fff;border-radius:44px;padding:36px 40px;color:#111b21;box-shadow:0 40px 90px rgba(0,0,0,.5);display:flex;gap:30px;align-items:center"><div class="av" style="width:104px;height:104px;font-size:52px;background:#25d366;flex:none">💬</div><div><div style="font-size:30px;color:#667781;font-weight:600">WhatsApp · maintenant</div><div style="font-size:44px;font-weight:700;margin-top:4px;line-height:1.2">« Bonjour, vous avez la robe bleue en M ? »</div></div></div></div>
+<div class="abs center" id="aT2" style="width:1080px;top:1330px;font-size:96px;font-weight:900">Et vous dormez. <span>😴</span></div>
+
+<!-- Scène B -->
+<div class="abs center" id="bT" style="width:1080px;top:120px;font-size:96px;font-weight:900;line-height:1.08">VENDIA répond<br><span class="g" style="background:linear-gradient(135deg,#7dffc0,#7fd4ff);-webkit-background-clip:text;background-clip:text;color:transparent">à votre place.</span></div>
+<div class="abs" id="bPhone" style="left:230px;top:450px"><div class="phone"><div class="screen"><div class="notch"></div><div class="head"><div class="av">V</div><div><div class="hn">Boutique Mode</div><div class="hs">en ligne</div></div></div>
+<div class="chat" id="chat">
+<div class="b c" id="m1" style="top:24px">Bonjour, vous avez la robe bleue en M ?</div>
+<div class="typing" id="ty1" style="top:210px"><i></i><i></i><i></i></div>
+<div class="b v" id="m2" style="top:200px">Bonsoir ! Oui, disponible en M : 15 000 FCFA. Je vous la réserve ? 😊</div>
+<div class="b c" id="m3" style="top:470px">Oui ! Livraison à Bonamoussadi</div>
+<div class="typing" id="ty2" style="top:640px"><i></i><i></i><i></i></div>
+<div class="b v" id="m4" style="top:620px">Parfait, commande enregistrée ✅ Le vendeur confirme demain matin.</div>
+</div></div></div></div>
+<div class="abs center" id="bTag" style="width:1080px;top:1790px;font-size:50px;font-weight:600;color:#cfe6ff">Réponse en quelques secondes • 24h/24</div>
+
+<!-- Scène C -->
+<div class="abs center" id="cT" style="width:1080px;top:230px;font-size:104px;font-weight:900;line-height:1.08">Résultat ?</div>
+<div class="abs" id="cCard" style="left:90px;top:520px"><div class="card"><div style="display:flex;align-items:center;gap:26px"><div class="av" style="width:100px;height:100px;font-size:56px;background:#e7f7ee">🛒</div><div style="font-size:46px;font-weight:800">Nouvelle commande</div></div>
+<div style="font-size:44px;margin-top:34px;color:#44556f;font-weight:600">Robe bleue — taille M × 1</div>
+<div style="font-size:120px;font-weight:900;margin-top:10px;line-height:1.1" id="cAmt">15 000 FCFA</div>
+<div style="margin-top:20px;font-size:38px;color:#18794e;font-weight:700">✅ Paiement à la livraison · Bonamoussadi</div></div></div>
+<div class="abs center" id="cT2" style="width:1080px;top:1230px;font-size:84px;font-weight:900;line-height:1.1">Une vente de plus,<br><span style="color:#7dffc0">pendant que vous dormiez.</span></div>
+
+<!-- Scène D -->
+<div class="abs center" id="dT" style="width:1080px;top:180px;font-size:100px;font-weight:900">Avec <span class="g" style="background:linear-gradient(135deg,#7dffc0,#7fd4ff);-webkit-background-clip:text;background-clip:text;color:transparent">VENDIA</span> :</div>
+<div class="abs" id="d1" style="left:100px;top:470px"><div class="row"><div class="ic">⏰</div>Répond 24h/24</div></div>
+<div class="abs" id="d2" style="left:100px;top:760px"><div class="row"><div class="ic">🛒</div>Prend les commandes</div></div>
+<div class="abs" id="d3" style="left:100px;top:1050px"><div class="row"><div class="ic">🔁</div>Relance les clients</div></div>
+<div class="abs" id="d4" style="left:100px;top:1340px"><div class="row"><div class="ic">🔔</div>Vous alerte si besoin</div></div>
+
+<!-- Scène E -->
+<div class="abs" id="eLogo" style="left:290px;top:430px"><img src="../../public/assets/logo-mark.png" width="500" height="500" style="display:block;border-radius:110px;box-shadow:0 40px 90px rgba(0,0,0,.35)"></div>
+<div class="abs center" id="eName" style="width:1080px;top:980px;font-size:150px;font-weight:900;letter-spacing:.04em">VENDIA</div>
+<div class="abs center" id="eTag" style="width:1080px;top:1170px;font-size:62px;font-weight:700;line-height:1.2">Le vendeur IA<br>qui ne dort jamais.</div>
+<div class="abs center" id="eCta" style="width:1080px;top:1470px"><span class="pill" style="background:#0B1442;color:#fff;box-shadow:0 20px 60px rgba(0,0,0,.35)">Essayez VENDIA</span></div>
+<div class="abs center" id="eLink" style="width:1080px;top:1670px;font-size:52px;font-weight:700">👆 Lien en bio</div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
+const P=(t,a,b)=>clamp((t-a)/(b-a));
+const eo=x=>1-Math.pow(1-x,3), eb=x=>{const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(x-1,3)+c1*Math.pow(x-1,2);}, eio=x=>x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2;
+// set(el, in-window [a,b], out-window [c,d], opts)
+function put(el,t,a,b,c,d,o){o=o||{};const pi=P(t,a,b),po=(c==null)?0:P(t,c,d);const e=o.back?eb(pi):eo(pi),vis=pi>0&&(c==null||po<1);
+  const op=(c==null?1:1-eo(po))*clamp(pi*(o.fast?1:1)*(o.snap?9999:3));
+  const dx=(o.dx||0)*(1-e)+(o.odx||0)*eo(po),dy=(o.dy||0)*(1-e)+(o.ody||0)*eo(po),sc=(o.s0==null?1:o.s0+(1-o.s0)*e)*(o.s1==null?1:1+(o.s1-1)*eo(po));
+  el.style.opacity=vis?Math.max(0,Math.min(1,op)):0;el.style.transform='translate('+dx+'px,'+dy+'px) scale('+sc+')';}
+function fade(el,t,a,b,c,d){const v=(c==null?P(t,a,b):Math.min(P(t,a,b),1-P(t,c,d)));el.style.opacity=v;}
+function typing(el,t,a,b){const on=t>=a&&t<b;el.style.opacity=on?1:0;if(on){[...el.children].forEach((d,i)=>{d.style.transform='translateY('+(-10*Math.max(0,Math.sin((t*7)-i*.9)))+'px)';d.style.opacity=.55+.45*Math.max(0,Math.sin(t*7-i*.9));});}}
+window.DURATION=26;
+window.__seek=function(t){
+  // fonds
+  $('bgB').style.opacity=P(t,4.2,4.9)*(1-P(t,15.2,15.9));
+  $('bgE').style.opacity=P(t,21.0,21.8);
+  $('glow').style.opacity=.9*(1-P(t,21,21.6));$('glow').style.transform='scale('+(1+.08*Math.sin(t*1.6))+')';
+  // A
+  put($('aClock'),t,.1,.9,4.3,4.8,{dy:50,s0:.9,ody:-60});
+  put($('aT1'),t,.7,1.6,4.3,4.8,{dy:40,ody:-60});
+  put($('aNotif'),t,1.7,2.4,4.3,4.8,{dy:-260,back:1,ody:-120});
+  put($('aT2'),t,2.9,3.6,4.3,4.8,{dy:40,s0:.9,ody:-60});
+  const bell=t>1.7&&t<2.6?Math.sin((t-1.7)*40)*(1-P(t,1.7,2.6))*6:0;$('aNotif').style.transform+=' rotate('+bell+'deg)';
+  // B
+  put($('bT'),t,4.7,5.4,12.0,12.5,{dy:-60,ody:-60});
+  put($('bPhone'),t,4.7,5.6,12.0,12.5,{dy:260,back:1,ody:-200,s1:.9});
+  put($('bTag'),t,5.2,5.9,12.0,12.4,{dy:40,ody:30});
+  const m=(id,a)=>put($(id),t,a,a+.35,12.0,12.4,{dy:26,s0:.92});
+  m('m1',5.9);typing($('ty1'),t,6.8,7.6);m('m2',7.6);m('m3',9.0);typing($('ty2'),t,9.8,10.6);m('m4',10.6);
+  // le chat défile : m2/m3/m4 positions fixes (pas de scroll nécessaire)
+  // C
+  put($('cT'),t,12.7,13.3,15.3,15.7,{dy:60,s0:.9,ody:-50});
+  put($('cCard'),t,13.1,13.9,15.3,15.7,{dy:300,back:1,ody:-120,s0:.8});
+  const amt=Math.round(15000*eo(P(t,13.5,14.6)));$('cAmt').textContent=amt.toLocaleString('fr-FR').replace(/[  ]/g,' ')+' FCFA';
+  put($('cT2'),t,14.2,14.9,15.3,15.7,{dy:50,ody:-50});
+  // D
+  put($('dT'),t,15.9,16.5,20.5,20.9,{dy:-50,ody:-60});
+  ['d1','d2','d3','d4'].forEach((id,i)=>put($(id),t,16.3+i*.9,16.9+i*.9,20.5,20.9,{dx:-700,back:1,odx:700}));
+  // E
+  put($('eLogo'),t,21.2,22.1,null,null,{s0:.3,back:1});
+  put($('eName'),t,22.0,22.7,null,null,{dy:60});
+  put($('eTag'),t,22.5,23.2,null,null,{dy:50});
+  put($('eCta'),t,23.3,24.0,null,null,{dy:60,back:1,s0:.7});
+  const pulse=t>24?1+.04*Math.sin((t-24)*6):1;$('eCta').style.transform+=' scale('+pulse+')';
+  put($('eLink'),t,24.0,24.6,null,null,{dy:30});
+};
+window.__seek(0);
+</script></body></html>
