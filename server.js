@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { query, transaction, closeDatabase } from './db.js';
 import ExcelJS from 'exceljs';
+import webpush from 'web-push';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -968,8 +969,9 @@ async function handleTelegramUpdate(co, update) {
     return;
   }
   const ing = await ingestMessage(co.id, conv.id, conv, { body: text, direction: 'in', name, prospectId, providerMessageId: null });
+  const gate = await handoffGate(co.id, { ...conv, phone: conv.phone || chatId }, ing, text);
   const limits = planLimits(co.plan);
-  if (co.aiAutoReplyEnabled === false || !limits.aiAutoReply) return;
+  if (gate.skipAi || co.aiAutoReplyEnabled === false || !limits.aiAutoReply) return;
   let reply;
   if (ing.nextAction?.action === 'handoff') {
     reply = 'Merci pour votre message 🙏 Je transmets tout de suite à un membre de notre équipe qui revient vers vous rapidement.';
@@ -982,8 +984,10 @@ async function handleTelegramUpdate(co, update) {
       if (usage.remaining !== null && usage.remaining <= 0) return;
       const prospectRow = ing.prospectId ? (await query('SELECT status,need FROM prospects WHERE id=$1', [ing.prospectId])).rows[0] : null;
       const history = (await query('SELECT direction,body FROM messages WHERE conversation_id=$1 ORDER BY created_at DESC LIMIT 12', [conv.id])).rows.reverse();
-      reply = await generateAiReply(co, prospectRow, products, history);
+      const ai = await generateAiReply(co, prospectRow, products, history);
+      reply = ai ? ai.text : null;
       if (reply) await incrementAiUsage(co.id);
+      if (ai && ai.escalate) await flagHandoff(co.id, { ...conv, phone: conv.phone || chatId }, 'Question hors catalogue / consignes — l\'IA ne peut pas répondre', text);
     }
   }
   if (reply) await ingestMessage(co.id, conv.id, { ...conv, prospectId: ing.prospectId || prospectId }, { body: reply, direction: 'out' });
@@ -1169,7 +1173,8 @@ async function generateAiReply(company, prospect, products, history) {
     'Règles impératives :',
     '- Réponds de façon brève et naturelle, comme un vrai message WhatsApp (1 à 3 phrases courtes, pas de markdown, pas de listes à puces, pas de formule d\'email).',
     '- N\'invente jamais un prix, un produit ou une disponibilité qui n\'est pas dans le catalogue ci-dessus.',
-    '- Si tu ne peux pas répondre avec certitude, dis que tu vérifies et reviens vers le client, sans inventer de réponse.',
+    '- Réponds toi-même à tout ce que le catalogue, les moyens de paiement et les consignes ci-dessus permettent de traiter : tu es là pour gérer la conversation de bout en bout.',
+    '- Si une demande dépasse vraiment ce que tu peux traiter (information absente du catalogue et des consignes, cas particulier, demande sur mesure), n\'invente rien et ne promets pas de « vérifier » ni de « revenir plus tard » : dis honnêtement et simplement que la demande est transmise à l\'équipe, qui répondra dès que possible, puis termine ta réponse par le marqueur exact [[HUMAIN]] (le client ne le verra pas). N\'utilise ce marqueur que dans ce cas.',
     '- Ne révèle jamais que tu es une intelligence artificielle, sauf si le client le demande explicitement.',
   ].filter(Boolean).join('\n\n');
 
@@ -1194,8 +1199,10 @@ async function generateAiReply(company, prospect, products, history) {
       return null;
     }
     const data = await resp.json();
-    const text = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('').trim();
-    return text || null;
+    const raw0 = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('').trim();
+    const escalate = /\[\[\s*HUMAIN\s*\]\]/i.test(raw0);
+    const text = raw0.replace(HUMAN_MARK_RE, ' ').replace(/\s+$/,'').trim();
+    return text ? { text, escalate } : null;
   } catch(e) {
     console.error('[ai-reply] echec appel API Anthropic:', e.message);
     return null;
@@ -1584,6 +1591,105 @@ async function findOrCreateWhatsAppConversation(companyId, from) {
 // identique, sans dérive entre les deux.
 // conv = {id (conversationId), prospectId, phone, channel} tel que connu
 // avant l'ingestion (déjà en base ou résolu par l'appelant).
+
+// --- Notifications push (Web Push / VAPID) -----------------------------------
+// Les clés VAPID sont créées au premier démarrage et gardées en base (table
+// app_settings) : aucune variable d'environnement à configurer. Chaque appareil
+// (Android Chrome, iPhone avec l'app ajoutée à l'écran d'accueil, ordinateur)
+// s'abonne séparément ; seuls les propriétaires et administrateurs reçoivent
+// les alertes de passage à l'humain.
+let pushReady = false, vapidPublicKey = null;
+async function initPush() {
+  try {
+    const get = async k => (await query('SELECT value FROM app_settings WHERE key=$1', [k])).rows[0]?.value;
+    let pub = await get('vapid_public'), priv = await get('vapid_private');
+    if (!pub || !priv) {
+      const k = webpush.generateVAPIDKeys();
+      await query("INSERT INTO app_settings(key,value) VALUES('vapid_public',$1),('vapid_private',$2) ON CONFLICT (key) DO NOTHING", [k.publicKey, encryptSecret(k.privateKey)]);
+      pub = await get('vapid_public'); priv = await get('vapid_private');
+    }
+    const privClear = decryptSecret(priv);
+    if (!pub || !privClear) throw new Error('clés VAPID illisibles');
+    const contact = process.env.SUPERADMIN_EMAIL ? 'mailto:' + process.env.SUPERADMIN_EMAIL : 'mailto:admin@vendia.app';
+    webpush.setVapidDetails(contact, pub, privClear);
+    vapidPublicKey = pub; pushReady = true;
+  } catch (e) { console.error('[push] initialisation impossible:', e.message); }
+}
+// Envoie une alerte à tous les appareils des propriétaires/admins de l'entreprise.
+// Ne lève jamais d'exception : une alerte ratée ne doit pas casser le traitement d'un message.
+async function sendPushToCompany(companyId, payload) {
+  if (!pushReady) return { sent: 0, failed: 0 };
+  let sent = 0, failed = 0;
+  try {
+    const subs = (await query("SELECT s.id,s.endpoint,s.p256dh,s.auth FROM push_subscriptions s JOIN users u ON u.id=s.user_id WHERE s.company_id=$1 AND u.role IN ('owner','admin')", [companyId])).rows;
+    const body = JSON.stringify(payload);
+    await Promise.all(subs.map(async sub => {
+      try {
+        await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, body, { TTL: 3600, urgency: 'high' });
+        sent++;
+        await query('UPDATE push_subscriptions SET last_ok_at=now(),fail_count=0 WHERE id=$1', [sub.id]);
+      } catch (e) {
+        failed++;
+        if (e.statusCode === 404 || e.statusCode === 410) await query('DELETE FROM push_subscriptions WHERE id=$1', [sub.id]).catch(() => {});
+        else await query('UPDATE push_subscriptions SET fail_count=fail_count+1 WHERE id=$1', [sub.id]).catch(() => {});
+      }
+    }));
+  } catch (e) { console.error('[push] envoi impossible:', e.message); }
+  return { sent, failed };
+}
+
+// --- Passage à l'humain ------------------------------------------------------
+// L'IA reste prioritaire. Une conversation passe « à traiter » (needs_human) seulement si le client
+// demande un humain, signale un problème sensible, ou pose une question à laquelle l'IA ne peut pas
+// répondre. Le responsable est alerté (push) une seule fois par demande, puis rappelé à 30 min et 2 h
+// si personne n'a répondu. Dès qu'un humain répond, l'IA se met en pause sur cette conversation.
+const HUMAN_MARK_RE = /\s*\[\[\s*HUMAIN\s*\]\]\s*/gi;
+const HUMAN_PAUSE_HOURS = 12;
+async function flagHandoff(companyId, conv, reason, preview) {
+  try {
+    const r = await query("UPDATE conversations SET needs_human=true,needs_human_at=now(),needs_human_reason=$1,handoff_reminders=0 WHERE id=$2 AND company_id=$3 AND needs_human=false RETURNING id", [String(reason).slice(0, 200), conv.id, companyId]);
+    if (!r.rows[0]) return false; // déjà signalée : pas de nouvelle alerte
+    const nm = (await query('SELECT p.name FROM conversations c LEFT JOIN prospects p ON p.id=c.prospect_id WHERE c.id=$1', [conv.id])).rows[0]?.name || conv.phone || 'Client';
+    const pv = String(preview || '').replace(/\s+/g, ' ').trim();
+    sendPushToCompany(companyId, { title: '🔔 Client à traiter — ' + nm, body: String(reason) + (pv ? ' : « ' + (pv.length > 90 ? pv.slice(0, 90) + '…' : pv) + ' »' : ''), url: '/?conv=' + conv.id, tag: 'handoff-' + conv.id, urgent: true, kind: 'handoff' });
+    return true;
+  } catch (e) { console.error('[handoff] echec:', e.message); return false; }
+}
+async function aiPausedFor(conversationId) {
+  const r = await query('SELECT (ai_paused_until IS NOT NULL AND ai_paused_until>now()) AS paused,(human_handled_at IS NULL OR human_handled_at<now()-interval \'5 minutes\') AS quiet FROM conversations WHERE id=$1', [conversationId]);
+  return r.rows[0] || { paused: false, quiet: true };
+}
+async function handoffReminderTick() {
+  try {
+    const rows = (await query(`SELECT cv.id,cv.company_id AS "companyId",cv.handoff_reminders AS n,cv.needs_human_at AS at,p.name,cv.external_contact AS phone
+      FROM conversations cv JOIN companies c ON c.id=cv.company_id LEFT JOIN prospects p ON p.id=cv.prospect_id
+      WHERE cv.needs_human AND cv.handoff_reminders<2 AND c.approved_at IS NOT NULL AND NOT c.suspended AND NOT (${EXPIRED_SQL})
+        AND cv.needs_human_at < now() - (CASE WHEN cv.handoff_reminders=0 THEN interval '30 minutes' ELSE interval '2 hours' END) LIMIT 50`)).rows;
+    for (const r of rows) {
+      const upd = await query('UPDATE conversations SET handoff_reminders=handoff_reminders+1 WHERE id=$1 AND needs_human AND handoff_reminders=$2 RETURNING id', [r.id, r.n]);
+      if (!upd.rows[0]) continue;
+      const mins = Math.round((Date.now() - new Date(r.at).getTime()) / 60000);
+      sendPushToCompany(r.companyId, { title: '⏰ Toujours en attente — ' + (r.name || r.phone || 'Client'), body: 'Ce client attend une réponse depuis ' + (mins >= 120 ? Math.round(mins / 60) + ' h' : mins + ' min') + '.', url: '/?conv=' + r.id, tag: 'handoff-' + r.id, urgent: true, kind: 'reminder' });
+    }
+  } catch (e) { console.error('[handoff] rappels:', e.message); }
+}
+
+// Appelée à chaque message entrant : décide si l'IA doit répondre et signale au responsable
+// les passages à l'humain explicites. Retourne { skipAi }.
+async function handoffGate(companyId, conv, ing, text) {
+  try {
+    const st = await aiPausedFor(conv.id);
+    if (st.paused) {
+      // Un humain a pris la main : l'IA se tait. On ne dérange le responsable que si le client
+      // écrit alors que la dernière réponse humaine date de plus de 5 minutes.
+      if (st.quiet) await flagHandoff(companyId, conv, 'Le client a écrit alors que l\'IA est en pause', text);
+      return { skipAi: true };
+    }
+    if (ing && ing.nextAction && ing.nextAction.action === 'handoff') await flagHandoff(companyId, conv, ing.nextAction.reason, text);
+  } catch (e) { console.error('[handoff] gate:', e.message); }
+  return { skipAi: false };
+}
+
 async function ingestMessage(companyId, conversationId, conv, b) {
   const direction=b.direction||'out';
   const text=String(b.body).trim();
@@ -1630,8 +1736,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.34',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.34'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.35',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.35'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -1643,6 +1749,14 @@ async function handler(req,res) {
     if(!r.rows[0]) return json(res,404,{error:'Introuvable'});
     res.writeHead(200,{'Content-Type':r.rows[0].mime,'Cache-Control':'public, max-age=31536000, immutable','X-Content-Type-Options':'nosniff','Content-Length':r.rows[0].data.length});
     return res.end(r.rows[0].data);
+  }
+  if(req.method==='GET'&&(u.pathname==='/sw.js'||u.pathname==='/manifest.webmanifest')) {
+    try {
+      const data=await readFile(path.join(__dirname,'public',u.pathname.slice(1)));
+      const isSw=u.pathname==='/sw.js';
+      res.writeHead(200,{'Content-Type':isSw?'application/javascript; charset=utf-8':'application/manifest+json; charset=utf-8','Cache-Control':'no-cache',...(isSw?{'Service-Worker-Allowed':'/'}:{})});
+      return res.end(data);
+    } catch { return json(res,404,{error:'Introuvable'}); }
   }
   if(req.method==='GET'&&u.pathname.startsWith('/assets/')) {
     const assetTypes={'.png':'image/png','.ico':'image/x-icon','.svg':'image/svg+xml','.jpg':'image/jpeg','.jpeg':'image/jpeg'};
@@ -1878,7 +1992,8 @@ async function handler(req,res) {
             // reste chez l'humain (l'action recommandée reste visible dans
             // l'onglet Relances, comme avant).
             const limits=planLimits(companyRow.plan);
-            if(companyRow.aiAutoReplyEnabled!==false && limits.aiAutoReply) {
+            const waGate=await handoffGate(targetCompanyId,{...conversationRow,phone:conversationRow.phone||from},ingestResult,text);
+            if(!waGate.skipAi && companyRow.aiAutoReplyEnabled!==false && limits.aiAutoReply) {
               try {
                 let replyText;
                 let handledByCatalog=false;
@@ -1904,8 +2019,10 @@ async function handler(req,res) {
                     const prospectRow=ingestResult.prospectId ? (await query('SELECT status,need FROM prospects WHERE id=$1',[ingestResult.prospectId])).rows[0] : null;
                     const productsRows=(await query('SELECT name,category,price,stock FROM products WHERE company_id=$1 ORDER BY created_at',[targetCompanyId])).rows;
                     const historyRows=(await query('SELECT direction,body FROM messages WHERE conversation_id=$1 ORDER BY created_at DESC LIMIT 12',[conversationRow.id])).rows.reverse();
-                    replyText=await generateAiReply(companyRow,prospectRow,productsRows,historyRows);
+                    const aiOut=await generateAiReply(companyRow,prospectRow,productsRows,historyRows);
+                    replyText=aiOut?aiOut.text:null;
                     if(replyText) await incrementAiUsage(targetCompanyId);
+                    if(aiOut && aiOut.escalate) await flagHandoff(targetCompanyId,{...conversationRow,phone:conversationRow.phone||from},'Question hors catalogue / consignes — l\'IA ne peut pas répondre',text);
                   }
                 }
                 if(replyText) await ingestMessage(targetCompanyId,conversationRow.id,conversationRow,{body:replyText,direction:'out'});
@@ -3137,7 +3254,7 @@ async function handler(req,res) {
       return json(res,200,{reply:ai(b.text,d.rows),provider:'fallback-demo',quotaExceeded:true});
     }
     const real = await generateAiReply(c.rows[0]||{}, pr.rows[0]||null, d.rows, [{direction:'in',body:b.text}]);
-    if(real) { await incrementAiUsage(companyId); return json(res,200,{reply:real,provider:'anthropic'}); }
+    if(real) { await incrementAiUsage(companyId); return json(res,200,{reply:real.text,provider:'anthropic',escalate:real.escalate}); }
     return json(res,200,{reply:ai(b.text,d.rows),provider:'fallback-demo',aiUnavailable:!process.env.ANTHROPIC_API_KEY});
   }
 
@@ -3233,6 +3350,8 @@ async function handler(req,res) {
     // dashboard pour toutes les entreprises (voir audit). Les 500
     // conversations les plus récentes par entreprise, dans le même esprit.
     const r=await query(`SELECT c.id,c.channel,c.external_contact AS phone,c.prospect_id AS "prospectId",p.name AS prospect, c.created_at AS "createdAt",
+      c.needs_human AS "needsHuman",c.needs_human_reason AS "needsHumanReason",c.needs_human_at AS "needsHumanAt",
+      (c.ai_paused_until IS NOT NULL AND c.ai_paused_until>now()) AS "aiPaused",c.ai_paused_until AS "aiPausedUntil",
       COALESCE((SELECT json_agg(x ORDER BY x."createdAt") FROM (
         SELECT m.id,m.direction,m.body,m.created_at AS "createdAt",m.provider_error AS "providerError"
         FROM messages m WHERE m.conversation_id=c.id ORDER BY m.created_at DESC LIMIT 50
@@ -3253,7 +3372,83 @@ async function handler(req,res) {
     const own=await query('SELECT id,prospect_id AS "prospectId",external_contact AS phone,channel FROM conversations WHERE id=$1 AND company_id=$2',[convMatch[1],companyId]);
     if(!own.rows[0]) return json(res,404,{error:'Conversation introuvable'});
     const result=await ingestMessage(companyId,convMatch[1],own.rows[0],b);
+    if((b.direction||'out')==='out') {
+      // Un humain répond depuis l'application : l'IA se met en pause sur cette conversation
+      // (reprise manuelle ou automatique après HUMAN_PAUSE_HOURS) et la demande est considérée comme prise en charge.
+      await query("UPDATE conversations SET needs_human=false,human_handled_at=now(),ai_paused_until=now()+($1||' hours')::interval WHERE id=$2 AND company_id=$3",[String(HUMAN_PAUSE_HOURS),convMatch[1],companyId]);
+    } else if(result && result.nextAction && result.nextAction.action==='handoff') {
+      await flagHandoff(companyId,own.rows[0],result.nextAction.reason,b.body);
+    }
     return json(res,201,result);
+  }
+  const convAct=u.pathname.match(/^\/api\/conversations\/([0-9a-f-]+)\/(handled|resume-ai)$/i);
+  if(convAct && req.method==='POST') {
+    const own=await query('SELECT id FROM conversations WHERE id=$1 AND company_id=$2',[convAct[1],companyId]);
+    if(!own.rows[0]) return json(res,404,{error:'Conversation introuvable'});
+    if(convAct[2]==='handled') await query('UPDATE conversations SET needs_human=false,human_handled_at=now() WHERE id=$1',[convAct[1]]);
+    else await query('UPDATE conversations SET needs_human=false,ai_paused_until=NULL WHERE id=$1',[convAct[1]]);
+    return json(res,200,{ok:true});
+  }
+
+  // Résumé léger (interrogé toutes les 30 s par l'application ouverte) : badge + bip.
+  if(req.method==='GET'&&u.pathname==='/api/handoff/summary') {
+    const r=await query(`SELECT c.id,c.needs_human_reason AS reason,c.needs_human_at AS at,COALESCE(p.name,c.external_contact) AS name
+      FROM conversations c LEFT JOIN prospects p ON p.id=c.prospect_id WHERE c.company_id=$1 AND c.needs_human ORDER BY c.needs_human_at DESC LIMIT 50`,[companyId]);
+    return json(res,200,{count:r.rows.length,items:r.rows});
+  }
+  // --- Alertes push (Android / iPhone / ordinateur) ---
+  if(u.pathname.startsWith('/api/push/')) {
+    const role=await getUserRole(session.userId);
+    if(req.method==='GET'&&u.pathname==='/api/push/status') {
+      const mine=await query('SELECT count(*)::int AS n FROM push_subscriptions WHERE user_id=$1',[session.userId]);
+      const all=await query('SELECT count(*)::int AS n FROM push_subscriptions WHERE company_id=$1',[companyId]);
+      return json(res,200,{supported:pushReady,publicKey:pushReady?vapidPublicKey:null,mine:mine.rows[0].n,company:all.rows[0].n,canReceive:['owner','admin'].includes(role)});
+    }
+    if(!pushReady) return json(res,503,{error:'Les notifications ne sont pas disponibles sur ce serveur.'});
+    if(req.method==='POST'&&u.pathname==='/api/push/subscribe') {
+      if(!['owner','admin'].includes(role)) return json(res,403,{error:'Réservé au propriétaire ou à un administrateur.'});
+      const b=await body(req);
+      const sub=b.subscription||{};
+      if(!sub.endpoint||!sub.keys?.p256dh||!sub.keys?.auth||!/^https:\/\//.test(String(sub.endpoint))) return json(res,400,{error:'Abonnement invalide'});
+      await query(`INSERT INTO push_subscriptions(company_id,user_id,endpoint,p256dh,auth,user_agent) VALUES($1,$2,$3,$4,$5,$6)
+        ON CONFLICT (endpoint) DO UPDATE SET company_id=EXCLUDED.company_id,user_id=EXCLUDED.user_id,p256dh=EXCLUDED.p256dh,auth=EXCLUDED.auth,user_agent=EXCLUDED.user_agent,fail_count=0`,
+        [companyId,session.userId,String(sub.endpoint).slice(0,1000),String(sub.keys.p256dh),String(sub.keys.auth),String(req.headers['user-agent']||'').slice(0,200)]);
+      return json(res,201,{ok:true});
+    }
+    if(req.method==='POST'&&u.pathname==='/api/push/unsubscribe') {
+      const b=await body(req);
+      if(b.endpoint) await query('DELETE FROM push_subscriptions WHERE endpoint=$1 AND user_id=$2',[String(b.endpoint),session.userId]);
+      else await query('DELETE FROM push_subscriptions WHERE user_id=$1',[session.userId]);
+      return json(res,200,{ok:true});
+    }
+    if(req.method==='POST'&&u.pathname==='/api/push/test') {
+      if(rateLimited('pushtest:'+session.userId,6,10*60*1000)) return tooManyRequests(res);
+      const r=await sendPushToCompany(companyId,{title:'🔔 Test VENDIA',body:'Les alertes fonctionnent sur cet appareil.',url:'/',tag:'vendia-test',urgent:true,kind:'test'});
+      return json(res,200,r);
+    }
+    return json(res,404,{error:'Route introuvable'});
+  }
+
+  // --- Guide de démarrage : progression détectée automatiquement ---
+  if(req.method==='GET'&&u.pathname==='/api/onboarding/progress') {
+    const r=await query(`SELECT
+      (c.ai_rules IS NOT NULL AND length(trim(c.ai_rules))>0) AS ai,
+      (SELECT count(*)::int FROM products WHERE company_id=c.id) AS products,
+      (c.whatsapp_phone_number_id IS NOT NULL AND c.whatsapp_access_token IS NOT NULL) AS wa,
+      EXISTS(SELECT 1 FROM messages m JOIN conversations cv ON cv.id=m.conversation_id WHERE cv.company_id=c.id AND cv.channel='whatsapp' AND m.direction='in') AS inbound,
+      (coalesce(c.payment_orange_money,'')<>'' OR coalesce(c.payment_mtn_momo,'')<>'') AS pay,
+      (SELECT count(*)::int FROM push_subscriptions WHERE company_id=c.id) AS push,
+      (SELECT count(*)::int FROM users WHERE company_id=c.id) AS users,
+      (SELECT status FROM subscriptions WHERE company_id=c.id) AS sub,
+      c.onboarding_dismissed_at AS dismissed
+      FROM companies c WHERE c.id=$1`,[companyId]);
+    const x=r.rows[0]||{};
+    return json(res,200,{steps:{ai:!!x.ai,products:x.products>0,whatsapp:!!x.wa,inbound:!!x.inbound,payment:!!x.pay,alerts:x.push>0,team:x.users>1,subscription:x.sub==='active'},counts:{products:x.products||0,users:x.users||0},dismissed:!!x.dismissed,role:await getUserRole(session.userId)});
+  }
+  if(req.method==='POST'&&u.pathname==='/api/onboarding/dismiss') {
+    const b=await body(req);
+    await query('UPDATE companies SET onboarding_dismissed_at='+(b.dismissed===false?'NULL':'now()')+' WHERE id=$1',[companyId]);
+    return json(res,200,{ok:true});
   }
   if(req.method==='POST'&&u.pathname==='/api/orders') {
     const b=await body(req);
@@ -3941,6 +4136,16 @@ async function ensureMigrations() {
        paid_at TIMESTAMPTZ
      )`,
     "CREATE INDEX IF NOT EXISTS referral_commissions_referrer_idx ON referral_commissions(referrer_company_id,status)",
+    "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS push_subscriptions (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, endpoint TEXT NOT NULL UNIQUE, p256dh TEXT NOT NULL, auth TEXT NOT NULL, user_agent TEXT, fail_count INT NOT NULL DEFAULT 0, last_ok_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
+    "CREATE INDEX IF NOT EXISTS push_subscriptions_company_idx ON push_subscriptions(company_id)",
+    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS needs_human BOOLEAN NOT NULL DEFAULT false",
+    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS needs_human_reason TEXT",
+    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS needs_human_at TIMESTAMPTZ",
+    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS human_handled_at TIMESTAMPTZ",
+    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS ai_paused_until TIMESTAMPTZ",
+    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS handoff_reminders INT NOT NULL DEFAULT 0",
+    "ALTER TABLE companies ADD COLUMN IF NOT EXISTS onboarding_dismissed_at TIMESTAMPTZ",
   ];
   for (const stmt of statements) {
     try { await query(stmt); } catch(e) { console.error('[migrations] echec:',stmt.split('\n')[0],e.message); }
@@ -3954,10 +4159,12 @@ const server=http.createServer((req,res)=>handler(req,res).catch(e=>{ if(e&&e.st
 ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>console.error('[demarrage] echec initialisation:',e.message)).finally(()=>{
   setInterval(()=>checkDailyReportSchedule().catch(e=>console.error('[daily-report] echec planification:',e.message)), 60*1000);
   setInterval(()=>runCampaignTick(), 20*1000);
+  initPush();
+  setInterval(handoffReminderTick, 5*60*1000);
   setInterval(()=>runScheduledCampaigns(), 30*1000);
   const renewalTick=()=>checkRenewalReminders().catch(e=>console.error('[renewal] echec:',e.message));
   setInterval(renewalTick, 10*60*1000); setTimeout(renewalTick, 20*1000); // + un passage peu après chaque démarrage
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.34 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.35 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

@@ -434,3 +434,27 @@ ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ;
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS repeat TEXT;
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS repeat_runs INT NOT NULL DEFAULT 0;
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS optin_confirmed_at TIMESTAMPTZ;
+
+-- Alertes push + passage à l'humain (1.10.35)
+CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  user_agent TEXT,
+  fail_count INT NOT NULL DEFAULT 0,
+  last_ok_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS push_subscriptions_company_idx ON push_subscriptions(company_id);
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS needs_human BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS needs_human_reason TEXT;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS needs_human_at TIMESTAMPTZ;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS human_handled_at TIMESTAMPTZ;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS ai_paused_until TIMESTAMPTZ;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS handoff_reminders INT NOT NULL DEFAULT 0;
+-- Guide de démarrage : masqué par l'entreprise
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS onboarding_dismissed_at TIMESTAMPTZ;

@@ -7,6 +7,12 @@
 <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
 <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
 <link rel="icon" href="assets/favicon.ico">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0B1442">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="VENDIA">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
 :root{--navy:#0B1442;--navy-light:#152269;--blue:#17A2FE;--green:#1FD37A;--gradient:linear-gradient(135deg,var(--blue),var(--green))}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,sans-serif;background:#f5f7fb;color:#172033}
@@ -46,6 +52,31 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 .login{max-width:430px;margin:45px auto}.login h2{margin-top:0}.login input{display:block;margin:10px 0}.error{color:#b42318;margin-top:10px}.success{color:#18794e;margin-top:10px}.hidden{display:none}.empty{padding:28px;text-align:center;color:#687386}
 .langSwitch{display:flex;border:1px solid #ffffff33;border-radius:8px;overflow:hidden}.langSwitch button{border:0;background:transparent;color:#fff;opacity:.6;padding:6px 10px;font-weight:700;font-size:12px;cursor:pointer;border-radius:0}.langSwitch button.active{opacity:1;background:#ffffff26}
 @media(max-width:800px){.stats{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}form.formgrid{grid-template-columns:1fr}.hero h2{font-size:25px}header{padding:15px 18px}}
+
+.navBadge{display:inline-block;min-width:20px;padding:1px 6px;margin-left:6px;border-radius:12px;background:#d62839;color:#fff;font-size:11px;font-weight:800;text-align:center;line-height:18px}.navBadge.soft{background:#17A2FE}
+.pill{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;margin-left:6px;white-space:nowrap}.pill.todo{background:#fee4e2;color:#b42318}.pill.paused{background:#eef2f6;color:#536071}
+.convRow.needs{background:#fff5f4;border-left:4px solid #d62839}
+#convFilter{display:flex;gap:8px;margin:0 0 12px;flex-wrap:wrap}
+.convBanner{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:10px 22px;font-size:14px}.convBanner.todo{background:#fee4e2;color:#7a271a}.convBanner.paused{background:#f2f4f7;color:#344054}
+#handoffToast{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:300;display:none;background:#b42318;color:#fff;padding:12px 18px;border-radius:14px;box-shadow:0 10px 30px #0006;cursor:pointer;max-width:92vw;font-size:14px}
+.pnState{font-weight:700}.pnGuide details{border:1px solid #e4e7ec;border-radius:12px;padding:10px 14px;margin:8px 0;background:#fafbfd}.pnGuide summary{cursor:pointer;font-weight:700}.pnGuide ol{margin:8px 0 0;padding-left:20px}.pnGuide li{margin:5px 0}
+.pnLimits{font-size:13px;color:#475467;background:#fff8e6;border:1px solid #fde7a8;border-radius:12px;padding:10px 14px;margin-top:10px}
+.gdOverlay{position:fixed;inset:0;background:#0009;z-index:150;display:none;align-items:center;justify-content:center;padding:14px}
+.gdModal{background:#fff;border-radius:18px;max-width:720px;width:100%;max-height:92vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px #0005}
+.gdHead{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:18px 22px 8px}.gdHead h3{margin:0}
+.gdScroll{overflow:auto;padding:0 22px 8px;flex:1}
+.gdBar{height:8px;border-radius:8px;background:#e8edf5;margin:10px 0;overflow:hidden}.gdBar>div{height:100%;background:var(--gradient);border-radius:8px;transition:width .3s}
+.gdStep{border:1px solid #e4e7ec;border-radius:14px;margin:10px 0;background:#fff}.gdStep.ok{background:#f3fbf7;border-color:#bfe9d3}.gdStep.open{box-shadow:0 4px 18px #1a2a5a14}
+.gdTop{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer}
+.gdNum{width:28px;height:28px;border-radius:50%;background:#e8edf5;color:#344054;font-weight:800;display:flex;align-items:center;justify-content:center;flex:none;font-size:13px}.gdStep.ok .gdNum{background:#1FD37A;color:#fff}
+.gdIcon{font-size:20px}.gdTitle{font-weight:700;flex:1}.gdState{font-size:12px;color:#667085}.gdStep.ok .gdState{color:#18794e;font-weight:700}.gdArrow{color:#98a2b3}
+.gdBody{padding:0 16px 16px 52px}.gdBody ol{padding-left:20px;margin:8px 0}.gdBody li{margin:7px 0;line-height:1.45}
+.gdTip{background:#eef6ff;border:1px solid #cfe4ff;border-radius:10px;padding:9px 12px;font-size:13px;margin:10px 0}
+.gdCreds{background:#f7f9fc;border:1px solid #e4e7ec;border-radius:12px;padding:12px;margin:10px 0}.gdRow{display:flex;gap:8px;margin:4px 0 10px}.gdRow input{flex:1;min-width:0}
+.gdWarn{font-size:12px;color:#b54708;margin-bottom:8px}
+.gdFoot{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 22px;border-top:1px solid #edf0f5;font-size:13px}
+.gdCardBox{border:1px solid #cfe4ff;background:linear-gradient(135deg,#f2f8ff,#f1fbf6)}
+@media(max-width:560px){.gdBody{padding-left:16px}.gdState{display:none}}
 </style>
 </head>
 <body>
@@ -80,13 +111,15 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <section id="app" class="hidden">
 <div class="hero"><h2 data-i18n="hero_title">Votre entreprise gagne un commercial IA.</h2><p class="muted" data-i18n="hero_subtitle">Pilotez vos produits, prospects et performances depuis un seul espace.</p></div>
 <nav class="nav">
+<button id="guideNavBtn" class="hidden" onclick="openGuide()">🚀 <span data-i18n="nav_guide">Guide</span><span id="guideNavCount" class="navBadge soft"></span></button>
 <button class="active" data-tab="dashboard" onclick="tab('dashboard')">📊 <span data-i18n="nav_dashboard">Tableau de bord</span></button>
 <button data-tab="products" onclick="tab('products')">📦 <span data-i18n="nav_products">Produits</span></button>
 <button data-tab="crm" onclick="tab('crm')">👥 <span data-i18n="nav_crm">CRM</span></button>
-<button data-tab="conversations" onclick="tab('conversations')">💬 <span data-i18n="nav_conversations">Conversations</span></button><button data-tab="orders" onclick="tab('orders')">🛒 <span data-i18n="nav_orders">Commandes</span></button><button data-tab="followups" onclick="tab('followups')">🔁 <span data-i18n="nav_followups">Relances</span></button><button data-tab="bases" onclick="tab('bases')">🗂️ <span data-i18n="nav_bases">Bases clients</span></button><button data-tab="campaigns" onclick="tab('campaigns')">📣 <span data-i18n="nav_campaigns">Campagnes</span></button><button data-tab="analytics" onclick="tab('analytics')">📈 <span data-i18n="nav_analytics">Analytics</span></button><button data-tab="assistant" onclick="tab('assistant')">🤖 <span data-i18n="nav_assistant">Assistant IA</span></button><button data-tab="team" onclick="tab('team')">👥 <span data-i18n="nav_team">Équipe</span></button><button data-tab="promo" onclick="tab('promo')">🎨 <span data-i18n="nav_promo">Studio promo</span></button><button data-tab="billing" onclick="tab('billing')">💳 <span data-i18n="nav_billing">Abonnement</span></button><button data-tab="referral" onclick="tab('referral')">🤝 <span data-i18n="nav_referral">Parrainage</span></button><button data-tab="settings" onclick="tab('settings')">⚙️ <span data-i18n="nav_settings">Réglages WhatsApp</span></button>
+<button data-tab="conversations" onclick="tab('conversations')">💬 <span data-i18n="nav_conversations">Conversations</span><span id="convBadge" class="navBadge hidden"></span></button><button data-tab="orders" onclick="tab('orders')">🛒 <span data-i18n="nav_orders">Commandes</span></button><button data-tab="followups" onclick="tab('followups')">🔁 <span data-i18n="nav_followups">Relances</span></button><button data-tab="bases" onclick="tab('bases')">🗂️ <span data-i18n="nav_bases">Bases clients</span></button><button data-tab="campaigns" onclick="tab('campaigns')">📣 <span data-i18n="nav_campaigns">Campagnes</span></button><button data-tab="analytics" onclick="tab('analytics')">📈 <span data-i18n="nav_analytics">Analytics</span></button><button data-tab="assistant" onclick="tab('assistant')">🤖 <span data-i18n="nav_assistant">Assistant IA</span></button><button data-tab="team" onclick="tab('team')">👥 <span data-i18n="nav_team">Équipe</span></button><button data-tab="promo" onclick="tab('promo')">🎨 <span data-i18n="nav_promo">Studio promo</span></button><button data-tab="billing" onclick="tab('billing')">💳 <span data-i18n="nav_billing">Abonnement</span></button><button data-tab="referral" onclick="tab('referral')">🤝 <span data-i18n="nav_referral">Parrainage</span></button><button data-tab="settings" onclick="tab('settings')">⚙️ <span data-i18n="nav_settings">Réglages WhatsApp</span></button>
 </nav>
 
 <section id="dashboardTab">
+<div id="guideCard"></div>
 <div class="stats">
 <div class="stat"><div class="muted" data-i18n="stat_prospects">Prospects</div><div class="num" id="mProspects">0</div></div>
 <div class="stat"><div class="muted" data-i18n="stat_hot_prospects">Prospects chauds</div><div class="num" id="mHot">0</div></div>
@@ -142,10 +175,12 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <form class="formgrid" onsubmit="saveConversation(event)">
 <input id="vPhone" placeholder="Téléphone / contact" required data-i18n-placeholder="placeholder_phone_contact"><select id="vProspect"><option value="" data-i18n="option_associate_prospect">Associer à un prospect (optionnel)</option></select>
 <div class="full"><button class="btn primary" data-i18n="btn_new_conversation">Nouvelle conversation</button></div></form>
+<div id="convFilter"></div>
 <div id="conversationList"></div></div>
 <div id="conversationModal" style="position:fixed;inset:0;background:#0008;z-index:100;display:none;align-items:center;justify-content:center;padding:18px">
 <div style="background:white;border-radius:18px;max-width:620px;width:100%;max-height:85vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px #0004">
 <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;padding:20px 22px 14px;border-bottom:1px solid #edf0f5"><div><h3 id="modalConvName" style="margin:0">Client</h3><div class="muted" id="modalConvPhone"></div></div><button class="btn" onclick="closeConversationModal()" data-i18n="btn_close">Fermer</button></div>
+<div id="modalConvBanner" class="hidden"></div>
 <div id="modalConvThread" style="flex:1;overflow:auto;padding:18px 22px"></div>
 <form onsubmit="sendMessage(event)" style="display:flex;gap:8px;padding:14px 22px;border-top:1px solid #edf0f5"><input id="modalConvInput" placeholder="Répondre au client" required data-i18n-placeholder="placeholder_reply_client"><button class="btn primary" data-i18n="btn_send">Envoyer</button></form>
 </div></div>
@@ -372,6 +407,17 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 <div class="panel"><h3 data-i18n="referral_list_title">Vos filleuls</h3><div id="refTable"></div></div>
 </section>
 <section id="settingsTab" class="hidden">
+<div class="panel" id="pushPanel"><h3 data-i18n="pn_title">🔔 Alertes sur votre téléphone</h3>
+<p class="muted" data-i18n="pn_desc"></p>
+<div id="pnStatus"></div>
+<label style="display:flex;gap:8px;align-items:center;margin:8px 0"><input type="checkbox" id="pnBeep" onchange="setBeepEnabled(this.checked)" style="width:auto"> <span data-i18n="pn_beep"></span></label>
+<div class="pnGuide">
+<details><summary data-i18n="pn_android_t"></summary><ol><li data-i18n="pn_android_1"></li><li data-i18n="pn_android_2"></li><li data-i18n="pn_android_3"></li><li data-i18n="pn_android_4"></li></ol></details>
+<details><summary data-i18n="pn_ios_t"></summary><ol><li data-i18n="pn_ios_1"></li><li data-i18n="pn_ios_2"></li><li data-i18n="pn_ios_3"></li><li data-i18n="pn_ios_4"></li><li data-i18n="pn_ios_5"></li></ol></details>
+<details><summary data-i18n="pn_pc_t"></summary><ol><li data-i18n="pn_pc_1"></li><li data-i18n="pn_pc_2"></li></ol></details>
+</div>
+<div class="pnLimits" data-i18n="pn_limits"></div>
+</div>
 <div class="panel"><h3 data-i18n="whatsapp_conn_title">Connexion WhatsApp (Meta Cloud API)</h3>
 <p class="muted" data-i18n="whatsapp_conn_desc">Renseigne les identifiants obtenus dans ton compte Meta Business (App WhatsApp → Configuration de l'API). Tant que ces champs sont vides, VENDIA fonctionne comme avant : les messages restent enregistrés dans le CRM mais ne sont pas envoyés sur WhatsApp.</p>
 <form class="formgrid" onsubmit="saveWhatsappSettings(event)">
@@ -433,6 +479,11 @@ input,select{width:100%;padding:12px;border:1px solid #d9deea;border-radius:10px
 </section>
 </main>
 
+<div id="guideModal" class="gdOverlay" onclick="if(event.target===this)closeGuide()"><div class="gdModal">
+<div class="gdHead"><div><h3 data-i18n="gd_title">Guide de démarrage</h3><div class="muted" id="gdSub"></div></div><button class="btn" onclick="closeGuide()">✕</button></div>
+<div class="gdScroll"><p class="muted" data-i18n="gd_intro"></p><div class="gdBar"><div id="gdBarFill"></div></div><div id="gdList"></div></div>
+<div class="gdFoot"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="gdHide" onchange="gdDismiss(this.checked)" style="width:auto"> <span data-i18n="gd_hide"></span></label><button class="btn" onclick="loadGuide()" data-i18n="gd_refresh"></button></div>
+</div></div>
 <script>
 // --- i18n --------------------------------------------------------------
 const I18N = {
@@ -597,6 +648,127 @@ fr: {
   forgot_password_sent_default:"Si un compte existe avec cet email, un lien a été envoyé.",
   invalid_or_expired_link:"Lien invalide ou expiré", invalid_credentials:"Identifiants incorrects",
   qualification_hot:"Chaud", qualification_warm:"Tiède", qualification_cold:"Froid",
+  nav_guide:"Guide",
+  gd_title:"Guide de démarrage",
+  gd_sub:"{done} étape(s) sur {total} terminées",
+  gd_intro:"Suivez ces étapes dans l'ordre : votre progression se met à jour toute seule. Chaque étape s'ouvre pour vous expliquer quoi faire, pas à pas.",
+  gd_hide:"Ne plus ouvrir ce guide automatiquement",
+  gd_refresh:"Actualiser ma progression",
+  gd_done:"Fait",
+  gd_todo:"À faire",
+  gd_tip:"Astuce",
+  gd_card_title:"🚀 Votre guide de démarrage",
+  gd_card_btn:"Continuer le guide",
+  gd_card_next:"Prochaine étape : {s}",
+  gd_all_done:"🎉 Tout est en place ! VENDIA travaille pour vous.",
+  gd_open_page:"Ouvrir cette page",
+  gd_wa_url:"URL de rappel (Callback URL)",
+  gd_wa_token:"Jeton de vérification (Verify token)",
+  gd_copy:"Copier",
+  gd_copied:"Copié ✓",
+  gd_test_wa:"Tester la connexion WhatsApp",
+  gd_enable_push:"Activer les alertes sur cet appareil",
+  gd_ok_label:"✅ Fait",
+  gd_secret_warn:"🔒 Ne partagez jamais votre jeton d'accès (ni par message, ni en capture d'écran).",
+  gd_ai_title:"Personnalisez votre assistant IA",
+  gd_ai_desc:"C'est lui qui répond à vos clients 24h/24. Plus ses consignes sont précises, moins il aura besoin de vous.",
+  gd_ai_go:"Ouvrir « Assistant IA »",
+  gd_ai_s1:"Ouvrez l'onglet <b>Assistant IA</b>.",
+  gd_ai_s2:"Donnez un nom à votre assistant et choisissez le ton (chaleureux, professionnel…).",
+  gd_ai_s3:"Dans <b>Consignes</b>, écrivez vos règles : horaires, zones et délais de livraison, politique de retour, ce qu'il ne doit jamais promettre.",
+  gd_ai_s4:"Cliquez sur <b>Enregistrer</b>, puis essayez-le avec le testeur en bas de la page.",
+  gd_ai_tip:"Si une information n'est ni dans votre catalogue ni dans vos consignes, l'IA vous transmet la demande au lieu d'inventer. Plus vous renseignez, moins vous serez sollicité.",
+  gd_products_title:"Ajoutez vos produits",
+  gd_products_desc:"L'IA ne cite que les produits, prix et stocks de votre catalogue.",
+  gd_products_go:"Ouvrir « Produits »",
+  gd_products_s1:"Ouvrez l'onglet <b>Produits</b>.",
+  gd_products_s2:"Renseignez le nom, le prix (FCFA) et le stock de chaque article ; ajoutez une photo si possible.",
+  gd_products_s3:"Gagnez du temps : choisissez un modèle prêt à l'emploi adapté à votre activité, puis ajustez les prix.",
+  gd_products_tip:"Gardez le stock à jour : un produit à 0 est annoncé comme épuisé.",
+  gd_whatsapp_title:"Connectez votre numéro WhatsApp",
+  gd_whatsapp_desc:"VENDIA utilise l'API officielle WhatsApp de Meta : c'est ce qui permet à l'IA de répondre sur votre numéro professionnel.",
+  gd_whatsapp_go:"Ouvrir « Réglages WhatsApp »",
+  gd_whatsapp_s1:"Allez sur <b>developers.facebook.com</b>, créez une application de type <b>Entreprise</b> et ajoutez le produit <b>WhatsApp</b>.",
+  gd_whatsapp_s2:"Dans <b>WhatsApp → Configuration de l'API</b>, ajoutez votre numéro puis notez l'<b>ID du numéro de téléphone</b> (Phone Number ID).",
+  gd_whatsapp_s3:"Créez un <b>jeton permanent</b> : Meta Business → Paramètres → <b>Utilisateurs système</b> → créez un utilisateur (rôle Admin) → attribuez-lui votre application et votre compte WhatsApp → <b>Générer un jeton</b> avec les permissions <i>whatsapp_business_messaging</i> et <i>whatsapp_business_management</i>.",
+  gd_whatsapp_s4:"Ici, dans <b>Réglages WhatsApp</b>, collez l'ID du numéro et le jeton, cliquez sur <b>Enregistrer</b>, puis sur <b>Tester la connexion</b>.",
+  gd_whatsapp_s5:"Dans Meta → <b>WhatsApp → Configuration → Webhook</b> : collez l'URL de rappel et le jeton de vérification ci-dessous, puis cliquez sur <b>Vérifier et enregistrer</b>.",
+  gd_whatsapp_s6:"Toujours dans Webhook, <b>abonnez-vous au champ « messages »</b> (bouton S'abonner).",
+  gd_whatsapp_tip:"Les messages gratuits ne sont possibles que dans les 24 h qui suivent le dernier message du client. Au-delà (relances, campagnes), Meta impose des modèles de message approuvés.",
+  gd_inbound_title:"Vérifiez que les messages arrivent",
+  gd_inbound_desc:"Le vrai test : un client (ou vous, depuis un autre téléphone) écrit à votre numéro.",
+  gd_inbound_go:"Ouvrir « Conversations »",
+  gd_inbound_s1:"Depuis un <b>autre</b> téléphone, envoyez « Bonjour » sur WhatsApp à votre numéro professionnel.",
+  gd_inbound_s2:"Le message doit apparaître dans l'onglet <b>Conversations</b> et l'IA doit répondre en quelques secondes.",
+  gd_inbound_s3:"Rien ? Vérifiez dans Meta que le champ <b>messages</b> est abonné, que l'URL et le jeton de vérification sont identiques à ceux de VENDIA, et que votre numéro est bien <b>Connecté</b>. En mode test, le destinataire doit être dans la liste autorisée.",
+  gd_payment_title:"Indiquez vos numéros de paiement",
+  gd_payment_desc:"Quand un client confirme sa commande, l'IA lui donne le bon numéro Mobile Money.",
+  gd_payment_go:"Ouvrir « Réglages »",
+  gd_payment_s1:"Ouvrez <b>Réglages</b> et repérez la section <b>Moyens de paiement</b>.",
+  gd_payment_s2:"Saisissez votre numéro <b>Orange Money</b> et/ou <b>MTN Mobile Money</b>.",
+  gd_payment_s3:"Enregistrez. Vous confirmez ensuite les paiements reçus vous-même depuis la commande.",
+  gd_alerts_title:"Activez les alertes sur votre téléphone",
+  gd_alerts_desc:"Soyez prévenu à l'écran dès qu'un client demande un humain ou que l'IA ne peut pas répondre.",
+  gd_alerts_go:"Ouvrir les alertes",
+  gd_alerts_s1:"<b>Android</b> : ouvrez VENDIA dans Chrome, puis menu ⋮ → <b>Installer l'application</b> (conseillé).",
+  gd_alerts_s2:"<b>iPhone</b> : ouvrez VENDIA dans Safari → bouton Partager → <b>Sur l'écran d'accueil</b>, puis ouvrez VENDIA depuis cette icône (iOS 16.4 ou plus).",
+  gd_alerts_s3:"Cliquez sur <b>Activer les alertes sur cet appareil</b> et acceptez la demande d'autorisation.",
+  gd_alerts_s4:"Cliquez sur <b>Envoyer un test</b> : une notification doit apparaître sur l'écran.",
+  gd_alerts_tip:"Ce n'est pas une alarme qui force la sonnerie : le son dépend des réglages du téléphone (mode silencieux, ne pas déranger). Gardez l'app installée et les notifications autorisées.",
+  gd_team_title:"Invitez votre équipe (facultatif)",
+  gd_team_desc:"Ajoutez vos collaborateurs pour qu'ils répondent aux clients quand l'IA vous passe la main.",
+  gd_team_go:"Ouvrir « Équipe »",
+  gd_team_s1:"Ouvrez l'onglet <b>Équipe</b>.",
+  gd_team_s2:"Ajoutez un collaborateur : nom, email, mot de passe et rôle.",
+  gd_team_s3:"Le propriétaire et les administrateurs reçoivent les alertes ; chacun active les siennes sur son propre téléphone.",
+  gd_subscription_title:"Vérifiez votre abonnement",
+  gd_subscription_desc:"Pour que VENDIA continue de répondre à vos clients sans interruption.",
+  gd_subscription_go:"Ouvrir « Abonnement »",
+  gd_subscription_s1:"Ouvrez l'onglet <b>Abonnement</b> : vous y voyez votre forfait et votre date d'échéance.",
+  gd_subscription_s2:"Payez par Mobile Money en suivant les instructions affichées ; votre compte est activé après validation.",
+  gd_subscription_s3:"Un rappel s'affiche avant l'échéance. Après l'échéance, 2 jours de grâce vous sont laissés avant le blocage.",
+  pn_title:"🔔 Alertes sur votre téléphone",
+  pn_desc:"Recevez une notification à l'écran (avec vibration) chaque fois qu'un client demande un humain ou pose une question que l'IA ne peut pas traiter. L'IA reste prioritaire : elle gère seule tout le reste.",
+  pn_state_on:"✅ Alertes actives sur cet appareil",
+  pn_state_off:"Alertes non activées sur cet appareil",
+  pn_state_denied:"🚫 Les notifications sont bloquées dans ce navigateur : autorisez-les dans les réglages du site, puis réessayez.",
+  pn_state_ios:"📱 Sur iPhone, ajoutez d'abord VENDIA à l'écran d'accueil (guide ci-dessous), puis ouvrez-le depuis l'icône.",
+  pn_state_unsupported:"Ce navigateur ne gère pas les notifications. Utilisez Chrome (Android ou ordinateur) ou Safari (iPhone, app ajoutée à l'écran d'accueil).",
+  pn_state_role:"Seuls le propriétaire et les administrateurs reçoivent les alertes.",
+  pn_enable:"Activer les alertes sur cet appareil",
+  pn_disable:"Désactiver sur cet appareil",
+  pn_test:"Envoyer un test",
+  pn_test_sent:"Test envoyé à {n} appareil(s).",
+  pn_test_none:"Aucun appareil n'a reçu le test : activez d'abord les alertes (ou la souscription a expiré, réactivez-la).",
+  pn_devices:"{n} appareil(s) de votre entreprise reçoivent les alertes.",
+  pn_beep:"Bip sonore quand l'application est ouverte",
+  pn_android_t:"🤖 Android (Chrome)",
+  pn_android_1:"Ouvrez VENDIA dans <b>Chrome</b> et connectez-vous.",
+  pn_android_2:"Menu ⋮ en haut à droite → <b>Installer l'application</b> (ou « Ajouter à l'écran d'accueil »).",
+  pn_android_3:"Ouvrez VENDIA depuis la nouvelle icône, puis touchez <b>Activer les alertes sur cet appareil</b> et choisissez <b>Autoriser</b>.",
+  pn_android_4:"Pour un son bien audible : Paramètres du téléphone → Applications → VENDIA → Notifications → catégorie principale en importance <b>Élevée</b> avec son.",
+  pn_ios_t:"🍎 iPhone / iPad (Safari)",
+  pn_ios_1:"Il faut <b>iOS 16.4 ou plus</b> et ouvrir VENDIA avec <b>Safari</b>.",
+  pn_ios_2:"Touchez le bouton <b>Partager</b> (carré avec une flèche) → <b>Sur l'écran d'accueil</b> → <b>Ajouter</b>.",
+  pn_ios_3:"<b>Fermez Safari</b> et ouvrez VENDIA depuis la nouvelle icône sur l'écran d'accueil (obligatoire, sinon iOS refuse les alertes).",
+  pn_ios_4:"Allez dans Réglages de VENDIA, touchez <b>Activer les alertes sur cet appareil</b> et choisissez <b>Autoriser</b>.",
+  pn_ios_5:"Vérifiez : Réglages iPhone → Notifications → VENDIA → <b>Sons</b> activés. Le mode Concentration / Ne pas déranger peut les masquer.",
+  pn_pc_t:"💻 Ordinateur (Chrome, Edge, Firefox)",
+  pn_pc_1:"Cliquez sur <b>Activer les alertes sur cet appareil</b> et acceptez l'autorisation du navigateur.",
+  pn_pc_2:"Gardez un onglet VENDIA ouvert : il joue un bip en plus de la notification.",
+  pn_limits:"ℹ️ À savoir : une application web ne peut pas forcer une vraie sonnerie d'alarme qui passe outre le mode silencieux — seule une application native installée depuis une boutique d'applications le peut. Ici, vous recevez une notification persistante avec vibration, rappelée au bout de 30 min puis 2 h si personne n'a répondu.",
+  pn_err:"Impossible d'activer les alertes : {m}",
+  conv_filter_all:"Toutes",
+  conv_filter_todo:"🔔 À traiter ({n})",
+  conv_pill_todo:"🔔 À traiter",
+  conv_pill_paused:"👤 IA en pause",
+  conv_empty_todo:"Aucune conversation à traiter 🎉",
+  conv_banner_todo:"🔔 Cette conversation attend un humain : {r}",
+  conv_btn_handled:"Marquer comme traité",
+  conv_banner_paused:"👤 Vous avez répondu : l'IA est en pause sur cette conversation (reprise automatique après 12 h).",
+  conv_btn_resume:"Reprendre l'IA",
+  ho_toast:"🔔 Client à traiter : {n}",
+  ho_toast_more:"(+{n} autre(s))",
 },
 en: {
   tagline:"The AI sales rep working for you 24/7", beta_badge:"BETA", logout_btn:"Log out",
@@ -759,6 +931,127 @@ en: {
   forgot_password_sent_default:"If an account exists with this email, a link has been sent.",
   invalid_or_expired_link:"Invalid or expired link", invalid_credentials:"Incorrect credentials",
   qualification_hot:"Hot", qualification_warm:"Warm", qualification_cold:"Cold",
+  nav_guide:"Guide",
+  gd_title:"Getting started guide",
+  gd_sub:"{done} of {total} steps completed",
+  gd_intro:"Follow these steps in order: your progress updates by itself. Each step opens to explain what to do, one action at a time.",
+  gd_hide:"Don't open this guide automatically",
+  gd_refresh:"Refresh my progress",
+  gd_done:"Done",
+  gd_todo:"To do",
+  gd_tip:"Tip",
+  gd_card_title:"🚀 Your getting started guide",
+  gd_card_btn:"Continue the guide",
+  gd_card_next:"Next step: {s}",
+  gd_all_done:"🎉 Everything is set up! VENDIA is working for you.",
+  gd_open_page:"Open this page",
+  gd_wa_url:"Callback URL",
+  gd_wa_token:"Verify token",
+  gd_copy:"Copy",
+  gd_copied:"Copied ✓",
+  gd_test_wa:"Test the WhatsApp connection",
+  gd_enable_push:"Enable alerts on this device",
+  gd_ok_label:"✅ Done",
+  gd_secret_warn:"🔒 Never share your access token (neither in a message nor in a screenshot).",
+  gd_ai_title:"Customize your AI assistant",
+  gd_ai_desc:"It answers your customers 24/7. The clearer its instructions, the less it will need you.",
+  gd_ai_go:"Open \"AI Assistant\"",
+  gd_ai_s1:"Open the <b>AI Assistant</b> tab.",
+  gd_ai_s2:"Give your assistant a name and pick a tone (friendly, professional…).",
+  gd_ai_s3:"In <b>Instructions</b>, write your rules: opening hours, delivery areas and times, return policy, what it must never promise.",
+  gd_ai_s4:"Click <b>Save</b>, then try it with the tester at the bottom of the page.",
+  gd_ai_tip:"If a piece of information is in neither your catalogue nor your instructions, the AI passes the request to you instead of making it up. The more you fill in, the less you will be called.",
+  gd_products_title:"Add your products",
+  gd_products_desc:"The AI only quotes the products, prices and stock from your catalogue.",
+  gd_products_go:"Open \"Products\"",
+  gd_products_s1:"Open the <b>Products</b> tab.",
+  gd_products_s2:"Fill in each item's name, price (FCFA) and stock; add a photo if you can.",
+  gd_products_s3:"Save time: pick a ready-made template for your business, then adjust the prices.",
+  gd_products_tip:"Keep stock up to date: a product at 0 is announced as sold out.",
+  gd_whatsapp_title:"Connect your WhatsApp number",
+  gd_whatsapp_desc:"VENDIA uses Meta's official WhatsApp API: this is what lets the AI answer on your business number.",
+  gd_whatsapp_go:"Open \"WhatsApp settings\"",
+  gd_whatsapp_s1:"Go to <b>developers.facebook.com</b>, create a <b>Business</b> app and add the <b>WhatsApp</b> product.",
+  gd_whatsapp_s2:"In <b>WhatsApp → API setup</b>, add your number then note the <b>Phone number ID</b>.",
+  gd_whatsapp_s3:"Create a <b>permanent token</b>: Meta Business → Settings → <b>System users</b> → create a user (Admin role) → assign your app and WhatsApp account → <b>Generate token</b> with the <i>whatsapp_business_messaging</i> and <i>whatsapp_business_management</i> permissions.",
+  gd_whatsapp_s4:"Here, in <b>WhatsApp settings</b>, paste the number ID and the token, click <b>Save</b>, then <b>Test connection</b>.",
+  gd_whatsapp_s5:"In Meta → <b>WhatsApp → Configuration → Webhook</b>: paste the callback URL and the verify token below, then click <b>Verify and save</b>.",
+  gd_whatsapp_s6:"Still in Webhook, <b>subscribe to the \"messages\" field</b> (Subscribe button).",
+  gd_whatsapp_tip:"Free messages are only possible within 24 h of the customer's last message. Beyond that (follow-ups, campaigns), Meta requires approved message templates.",
+  gd_inbound_title:"Check that messages arrive",
+  gd_inbound_desc:"The real test: a customer (or you, from another phone) writes to your number.",
+  gd_inbound_go:"Open \"Conversations\"",
+  gd_inbound_s1:"From a <b>different</b> phone, send \"Hello\" on WhatsApp to your business number.",
+  gd_inbound_s2:"The message must appear in the <b>Conversations</b> tab and the AI must reply within seconds.",
+  gd_inbound_s3:"Nothing? Check in Meta that the <b>messages</b> field is subscribed, that the URL and verify token match VENDIA's, and that your number is <b>Connected</b>. In test mode, the recipient must be on the allowed list.",
+  gd_payment_title:"Enter your payment numbers",
+  gd_payment_desc:"When a customer confirms an order, the AI gives them the right Mobile Money number.",
+  gd_payment_go:"Open \"Settings\"",
+  gd_payment_s1:"Open <b>Settings</b> and find the <b>Payment methods</b> section.",
+  gd_payment_s2:"Enter your <b>Orange Money</b> and/or <b>MTN Mobile Money</b> number.",
+  gd_payment_s3:"Save. You then confirm received payments yourself from the order.",
+  gd_alerts_title:"Turn on alerts on your phone",
+  gd_alerts_desc:"Get notified on screen as soon as a customer asks for a human or the AI cannot answer.",
+  gd_alerts_go:"Open alerts",
+  gd_alerts_s1:"<b>Android</b>: open VENDIA in Chrome, then menu ⋮ → <b>Install app</b> (recommended).",
+  gd_alerts_s2:"<b>iPhone</b>: open VENDIA in Safari → Share button → <b>Add to Home Screen</b>, then open VENDIA from that icon (iOS 16.4 or later).",
+  gd_alerts_s3:"Click <b>Enable alerts on this device</b> and accept the permission request.",
+  gd_alerts_s4:"Click <b>Send a test</b>: a notification should appear on the screen.",
+  gd_alerts_tip:"This is not an alarm that forces a ringtone: the sound depends on the phone settings (silent mode, do not disturb). Keep the app installed and notifications allowed.",
+  gd_team_title:"Invite your team (optional)",
+  gd_team_desc:"Add your colleagues so they can answer customers when the AI hands over.",
+  gd_team_go:"Open \"Team\"",
+  gd_team_s1:"Open the <b>Team</b> tab.",
+  gd_team_s2:"Add a colleague: name, email, password and role.",
+  gd_team_s3:"The owner and administrators receive the alerts; each one enables them on their own phone.",
+  gd_subscription_title:"Check your subscription",
+  gd_subscription_desc:"So VENDIA keeps answering your customers without interruption.",
+  gd_subscription_go:"Open \"Subscription\"",
+  gd_subscription_s1:"Open the <b>Subscription</b> tab: you will see your plan and your due date.",
+  gd_subscription_s2:"Pay by Mobile Money following the instructions shown; your account is activated after validation.",
+  gd_subscription_s3:"A reminder appears before the due date. After it, you get 2 grace days before the account is blocked.",
+  pn_title:"🔔 Alerts on your phone",
+  pn_desc:"Get an on-screen notification (with vibration) whenever a customer asks for a human or asks something the AI cannot handle. The AI stays first in line: it handles everything else on its own.",
+  pn_state_on:"✅ Alerts are on for this device",
+  pn_state_off:"Alerts are not enabled on this device",
+  pn_state_denied:"🚫 Notifications are blocked in this browser: allow them in the site settings, then try again.",
+  pn_state_ios:"📱 On iPhone, first add VENDIA to your Home Screen (guide below), then open it from the icon.",
+  pn_state_unsupported:"This browser does not support notifications. Use Chrome (Android or computer) or Safari (iPhone, app added to the Home Screen).",
+  pn_state_role:"Only the owner and administrators receive alerts.",
+  pn_enable:"Enable alerts on this device",
+  pn_disable:"Turn off on this device",
+  pn_test:"Send a test",
+  pn_test_sent:"Test sent to {n} device(s).",
+  pn_test_none:"No device received the test: enable alerts first (or the subscription expired, enable it again).",
+  pn_devices:"{n} device(s) in your company receive the alerts.",
+  pn_beep:"Beep when the app is open",
+  pn_android_t:"🤖 Android (Chrome)",
+  pn_android_1:"Open VENDIA in <b>Chrome</b> and log in.",
+  pn_android_2:"Menu ⋮ at the top right → <b>Install app</b> (or \"Add to Home screen\").",
+  pn_android_3:"Open VENDIA from the new icon, then tap <b>Enable alerts on this device</b> and choose <b>Allow</b>.",
+  pn_android_4:"For a clearly audible sound: phone Settings → Apps → VENDIA → Notifications → main category set to <b>High</b> importance with sound.",
+  pn_ios_t:"🍎 iPhone / iPad (Safari)",
+  pn_ios_1:"You need <b>iOS 16.4 or later</b> and to open VENDIA with <b>Safari</b>.",
+  pn_ios_2:"Tap the <b>Share</b> button (square with an arrow) → <b>Add to Home Screen</b> → <b>Add</b>.",
+  pn_ios_3:"<b>Close Safari</b> and open VENDIA from the new Home Screen icon (required, otherwise iOS refuses alerts).",
+  pn_ios_4:"Go to VENDIA settings, tap <b>Enable alerts on this device</b> and choose <b>Allow</b>.",
+  pn_ios_5:"Check: iPhone Settings → Notifications → VENDIA → <b>Sounds</b> on. Focus / Do Not Disturb mode can hide them.",
+  pn_pc_t:"💻 Computer (Chrome, Edge, Firefox)",
+  pn_pc_1:"Click <b>Enable alerts on this device</b> and accept the browser permission.",
+  pn_pc_2:"Keep a VENDIA tab open: it plays a beep in addition to the notification.",
+  pn_limits:"ℹ️ Good to know: a web app cannot force a real alarm ringtone that overrides silent mode — only a native app installed from an app store can. Here you get a persistent notification with vibration, repeated after 30 min then 2 h if nobody has replied.",
+  pn_err:"Could not enable alerts: {m}",
+  conv_filter_all:"All",
+  conv_filter_todo:"🔔 To handle ({n})",
+  conv_pill_todo:"🔔 To handle",
+  conv_pill_paused:"👤 AI paused",
+  conv_empty_todo:"No conversation to handle 🎉",
+  conv_banner_todo:"🔔 This conversation is waiting for a human: {r}",
+  conv_btn_handled:"Mark as handled",
+  conv_banner_paused:"👤 You replied: the AI is paused on this conversation (it resumes automatically after 12 h).",
+  conv_btn_resume:"Resume the AI",
+  ho_toast:"🔔 Customer to handle: {n}",
+  ho_toast_more:"(+{n} more)",
 }
 };
 let lang = localStorage.getItem('vendia_lang') || 'fr';
@@ -944,7 +1237,7 @@ async function login() {
 
 function logout() {
   api('/api/logout',{method:'POST'}).catch(()=>{});
-  token = ''; localStorage.removeItem('wa_token');
+  token = ''; localStorage.removeItem('wa_token'); setHandoffBadge(0); guide={steps:{},dismissed:false,open:null,loaded:false,role:null};
   showLogin(t('logged_out'));
 }
 
@@ -955,6 +1248,7 @@ async function load() {
     data.conversations=cv.conversations||[]; data.followups=fu.followups||[];
     await loadShops();
     renderAll();
+    handoffInit=false; handoffKnown=new Set(); afterLoadExtras();
   } catch(e) { console.error(e); }
 }
 
@@ -964,7 +1258,7 @@ function tab(name) {
   ['dashboard','products','crm','assistant','conversations','orders','followups','bases','campaigns','analytics','team','promo','billing','referral','settings'].forEach(x => $(x+'Tab').classList.toggle('hidden', x !== name));
   if (name === 'products') { renderProducts(); renderOnboardingTemplates(); }
   if (name === 'crm') renderCRM();
-  if (name === 'conversations') renderConversations();
+  if (name === 'conversations') { renderConversations(); refreshConvQuiet(); }
   if (name === 'orders') renderOrders();
   if (name === 'bases') { loadBases(); loadDirectory(); }
   if (name === 'campaigns') loadCampaigns();
@@ -975,13 +1269,13 @@ function tab(name) {
   if (name === 'billing') loadBilling();
   if (name === 'referral') loadReferral();
   if (name === 'assistant') loadAiSettings();
-  if (name === 'settings') { loadWhatsappSettings(); loadShopSettings(); loadPaymentSettings(); loadOrderNotify(); loadTelegram(); }
+  if (name === 'settings') { loadWhatsappSettings(); loadShopSettings(); loadPaymentSettings(); loadOrderNotify(); loadTelegram(); renderPushPanel(); }
 }
 
 function renderAll() {
   $('companyNameTag').textContent = data.company?.name ? '— '+data.company.name : '';
   renderBillingBanner(); renderUpgradeBanner(); renderStockBanner();
-  renderDashboard(); renderProducts(); renderCRM(); renderConversations(); renderOrders(); renderFollowups(); renderAppointments(); populateProspectSelects(); initAiAutoReplyToggle(); renderAiUsagePanel();
+  renderDashboard(); renderProducts(); renderCRM(); renderConversations(); renderOrders(); renderFollowups(); renderAppointments(); populateProspectSelects(); initAiAutoReplyToggle(); renderAiUsagePanel(); renderGuideCard(); if(guideIsOpen()) renderGuide();
 }
 function initAiAutoReplyToggle() {
   const el=$('aiAutoReplyToggle'); if(!el) return;
@@ -1295,16 +1589,22 @@ function sortedConversations(){
 }
 function renderConversations(){
   const list=$('conversationList');
+  renderConvFilter();
+  let convs=sortedConversations();
+  if(convFilter==='todo') convs=convs.filter(c=>c.needsHuman);
+  else convs=convs.slice().sort((x,y)=>(y.needsHuman?1:0)-(x.needsHuman?1:0));
   if(!data.conversations.length){ list.innerHTML='<div class="empty">'+t('empty_conversations')+'</div>'; return; }
-  list.innerHTML=sortedConversations().map(c=>{
+  if(!convs.length){ list.innerHTML='<div class="empty">'+t('conv_empty_todo')+'</div>'; return; }
+  list.innerHTML=convs.map(c=>{
     const msgs=c.messages||[];
     const last=msgs[msgs.length-1];
     const name=c.prospect||t('label_client');
     const rawPreview=last?String(last.body||''):'';
     const preview=last?esc(rawPreview.length>60?rawPreview.slice(0,60)+'…':rawPreview):t('conv_no_messages');
-    return '<div class="convRow" onclick="openConversationModal(\''+c.id+'\')">'+
+    const pill=c.needsHuman?'<span class="pill todo" title="'+esc(c.needsHumanReason||'')+'">'+t('conv_pill_todo')+'</span>':(c.aiPaused?'<span class="pill paused">'+t('conv_pill_paused')+'</span>':'');
+    return '<div class="convRow'+(c.needsHuman?' needs':'')+'" onclick="openConversationModal(\''+c.id+'\')">'+
       '<div class="convAvatar">'+esc(convInitials(name))+'</div>'+
-      '<div class="convInfo"><div class="convTop"><strong>'+esc(name)+'</strong>'+(last?'<span class="convTime">'+esc(timeFmt(last.createdAt))+'</span>':'')+'</div>'+
+      '<div class="convInfo"><div class="convTop"><strong>'+esc(name)+'</strong>'+pill+(last?'<span class="convTime">'+esc(timeFmt(last.createdAt))+'</span>':'')+'</div>'+
       '<div class="convBottom"><span class="convPhone">'+esc(c.channel==='telegram'?'✈️ Telegram':(c.phone||'—'))+'</span><span class="convPreview">'+preview+'</span></div></div>'+
       '</div>';
   }).join('');
@@ -1326,7 +1626,7 @@ function openConversationModal(id){
   currentConvId=id;
   $('modalConvName').textContent=c.prospect||t('label_client');
   $('modalConvPhone').textContent=c.channel==='telegram'?'✈️ Telegram':((c.phone||'—')+' · '+(c.channel||'whatsapp'));
-  renderConversationThread(c);
+  renderConversationThread(c); renderConvBanner(c);
   $('conversationModal').style.display='flex';
   setTimeout(()=>{const i=$('modalConvInput'); if(i) i.focus();},0);
 }
@@ -1352,7 +1652,8 @@ async function sendMessage(e){
     input.value='';
     await loadConversations();
     const c=data.conversations.find(x=>x.id===currentConvId);
-    if(c) renderConversationThread(c);
+    if(c){ renderConversationThread(c); renderConvBanner(c); }
+    pollHandoff();
   }catch(x){alert(x.message);}
 }
 async function loadConversations(){
@@ -2402,6 +2703,244 @@ document.addEventListener('click', e => {
   const dc=e.target.closest('[data-delete-prospect]'); if(dc){deleteProspect(dc.dataset.deleteProspect);return;}
   const df=e.target.closest('[data-delete-followup]'); if(df){deleteFollowup(df.dataset.deleteFollowup);return;}
 });
+
+// ===== Alertes téléphone, passage à l'humain et guide de démarrage (1.10.35) =====
+let convFilter='all', handoffKnown=new Set(), handoffInit=false, handoffCount=0, audioCtx=null;
+function beepEnabled(){ try{ return localStorage.getItem('vendia_beep')!=='0'; }catch(e){ return true; } }
+function setBeepEnabled(on){ try{ localStorage.setItem('vendia_beep', on?'1':'0'); }catch(e){} }
+function unlockAudio(){ try{ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); if(audioCtx.state==='suspended') audioCtx.resume(); }catch(e){} }
+['click','touchstart','keydown'].forEach(ev=>document.addEventListener(ev,unlockAudio,{passive:true}));
+function beepAlert(){
+  if(beepEnabled()){
+    try{
+      unlockAudio();
+      if(audioCtx){
+        const t0=audioCtx.currentTime;
+        [0,0.28,0.56].forEach((d,i)=>{
+          const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+          o.type='square'; o.frequency.value=i===1?660:880;
+          g.gain.setValueAtTime(0.0001,t0+d); g.gain.exponentialRampToValueAtTime(0.25,t0+d+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t0+d+0.22);
+          o.connect(g); g.connect(audioCtx.destination); o.start(t0+d); o.stop(t0+d+0.25);
+        });
+      }
+    }catch(e){}
+  }
+  try{ if(navigator.vibrate) navigator.vibrate([300,100,300]); }catch(e){}
+}
+function setHandoffBadge(n){
+  handoffCount=n;
+  const b=$('convBadge'); if(b){ b.textContent=n>99?'99+':String(n); b.classList.toggle('hidden',!n); }
+  document.title=(n?'('+n+') ':'')+'VENDIA';
+  try{ if(navigator.setAppBadge){ n?navigator.setAppBadge(n):navigator.clearAppBadge(); } }catch(e){}
+  renderConvFilter();
+}
+function showHandoffToast(item,total){
+  let el=$('handoffToast');
+  if(!el){ el=document.createElement('div'); el.id='handoffToast'; document.body.appendChild(el); }
+  el.innerHTML='<strong>'+esc(tf('ho_toast',{n:item.name||t('label_client')}))+(total>1?' '+esc(tf('ho_toast_more',{n:total-1})):'')+'</strong><div>'+esc(item.reason||'')+'</div>';
+  el.onclick=()=>{ el.style.display='none'; openConvById(item.id); };
+  el.style.display='block';
+  clearTimeout(showHandoffToast.t); showHandoffToast.t=setTimeout(()=>{ el.style.display='none'; },20000);
+}
+async function pollHandoff(){
+  if(!token||blockedMode||$('app').classList.contains('hidden')) return;
+  try{
+    const r=await api('/api/handoff/summary');
+    const fresh=r.items.filter(i=>!handoffKnown.has(i.id));
+    handoffKnown=new Set(r.items.map(i=>i.id));
+    setHandoffBadge(r.count);
+    if(handoffInit && fresh.length){ beepAlert(); showHandoffToast(fresh[0],fresh.length); }
+    if(handoffInit && (fresh.length||currentTab==='conversations')) refreshConvQuiet();
+    handoffInit=true;
+  }catch(e){}
+}
+async function refreshConvQuiet(){
+  try{ const r=await api('/api/conversations'); data.conversations=r.conversations||[]; renderConversations(); const c=currentConvId&&data.conversations.find(x=>x.id===currentConvId); if(c){ renderConversationThread(c); renderConvBanner(c); } }catch(e){}
+}
+async function openConvById(id){
+  if(!id) return;
+  tab('conversations');
+  await refreshConvQuiet();
+  openConversationModal(id);
+}
+function openConvFromUrl(url){
+  try{ const id=new URL(url,location.origin).searchParams.get('conv'); if(id) openConvById(id); }catch(e){}
+}
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.addEventListener('message',e=>{
+    const m=e.data||{};
+    if(m.type==='vendia-push') pollHandoff();
+    if(m.type==='vendia-open') openConvFromUrl(m.url);
+  });
+}
+setInterval(pollHandoff,30000);
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pollHandoff(); });
+
+function setConvFilter(f){ convFilter=f; renderConversations(); }
+function renderConvFilter(){
+  const el=$('convFilter'); if(!el) return;
+  el.innerHTML='<button class="btn'+(convFilter==='all'?' primary':'')+'" onclick="setConvFilter(\'all\')">'+esc(t('conv_filter_all'))+'</button> '+
+    '<button class="btn'+(convFilter==='todo'?' primary':'')+'" onclick="setConvFilter(\'todo\')">'+esc(tf('conv_filter_todo',{n:handoffCount}))+'</button>';
+}
+function renderConvBanner(c){
+  const el=$('modalConvBanner'); if(!el) return;
+  if(c.needsHuman){
+    el.className='convBanner todo';
+    el.innerHTML='<div>'+esc(tf('conv_banner_todo',{r:c.needsHumanReason||''}))+'</div><button class="btn" onclick="markHandled()">'+esc(t('conv_btn_handled'))+'</button>';
+  } else if(c.aiPaused){
+    el.className='convBanner paused';
+    el.innerHTML='<div>'+esc(t('conv_banner_paused'))+'</div><button class="btn" onclick="resumeAi()">'+esc(t('conv_btn_resume'))+'</button>';
+  } else { el.className='hidden'; el.innerHTML=''; }
+}
+async function markHandled(){ if(!currentConvId) return; try{ await api('/api/conversations/'+currentConvId+'/handled',{method:'POST'}); await refreshConvQuiet(); pollHandoff(); }catch(e){ alert(e.message); } }
+async function resumeAi(){ if(!currentConvId) return; try{ await api('/api/conversations/'+currentConvId+'/resume-ai',{method:'POST'}); await refreshConvQuiet(); pollHandoff(); }catch(e){ alert(e.message); } }
+
+// --- Notifications push -------------------------------------------------
+function pushEnv(){
+  const ua=navigator.userAgent||'';
+  const ios=/iPhone|iPad|iPod/i.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  const standalone=window.navigator.standalone===true||(window.matchMedia&&matchMedia('(display-mode: standalone)').matches);
+  const capable=('serviceWorker' in navigator)&&('PushManager' in window)&&('Notification' in window);
+  return {ios,standalone,capable};
+}
+function b64ToU8(b){ const p='='.repeat((4-b.length%4)%4); const raw=atob((b+p).replace(/-/g,'+').replace(/_/g,'/')); const u=new Uint8Array(raw.length); for(let i=0;i<raw.length;i++) u[i]=raw.charCodeAt(i); return u; }
+async function pushRegister(){ if(!('serviceWorker' in navigator)) return null; try{ return await navigator.serviceWorker.register('/sw.js'); }catch(e){ return null; } }
+async function currentPushSub(){ try{ const reg=await navigator.serviceWorker.getRegistration('/'); return reg?await reg.pushManager.getSubscription():null; }catch(e){ return null; } }
+async function enablePush(){
+  const env=pushEnv();
+  if(!env.capable){ alert(env.ios&&!env.standalone?t('pn_state_ios'):t('pn_state_unsupported')); return false; }
+  try{
+    const st=await api('/api/push/status');
+    if(!st.supported||!st.publicKey) throw new Error(t('pn_state_unsupported'));
+    const perm=await Notification.requestPermission();
+    if(perm!=='granted'){ renderPushPanel(); return false; }
+    const reg=await pushRegister(); await navigator.serviceWorker.ready;
+    let sub=await reg.pushManager.getSubscription();
+    if(!sub) sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToU8(st.publicKey)});
+    await api('/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subscription:sub.toJSON()})});
+    await renderPushPanel(); loadGuide(); return true;
+  }catch(e){ alert(tf('pn_err',{m:e.message})); return false; }
+}
+async function disablePush(){
+  try{
+    const sub=await currentPushSub();
+    if(sub){ await api('/api/push/unsubscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({endpoint:sub.endpoint})}); await sub.unsubscribe(); }
+    await renderPushPanel(); loadGuide();
+  }catch(e){ alert(e.message); }
+}
+async function testPush(){
+  const el=$('pnMsg')||$('gdMsg');
+  try{ const r=await api('/api/push/test',{method:'POST'}); if(el) el.textContent=r.sent?tf('pn_test_sent',{n:r.sent}):t('pn_test_none'); }catch(e){ if(el) el.textContent=e.message; }
+}
+async function renderPushPanel(){
+  const st=$('pnStatus'); if(!st) return;
+  const env=pushEnv();
+  const cb=$('pnBeep'); if(cb) cb.checked=beepEnabled();
+  let info={supported:false,canReceive:true,company:0};
+  try{ info=await api('/api/push/status'); }catch(e){}
+  const sub=env.capable?await currentPushSub():null;
+  const perm=env.capable?Notification.permission:'unsupported';
+  let msg='', btns='';
+  if(!info.canReceive){ msg=t('pn_state_role'); }
+  else if(!env.capable){ msg=env.ios&&!env.standalone?t('pn_state_ios'):t('pn_state_unsupported'); }
+  else if(perm==='denied'){ msg=t('pn_state_denied'); }
+  else if(sub&&perm==='granted'){
+    msg=t('pn_state_on');
+    btns='<button class="btn primary" onclick="testPush()">'+esc(t('pn_test'))+'</button> <button class="btn" onclick="disablePush()">'+esc(t('pn_disable'))+'</button>';
+  } else {
+    msg=t('pn_state_off');
+    btns='<button class="btn primary" onclick="enablePush()">'+esc(t('pn_enable'))+'</button>';
+  }
+  st.innerHTML='<div class="pnState">'+esc(msg)+'</div><div class="actions" style="margin:10px 0">'+btns+'</div><div class="muted" id="pnMsg"></div>'+
+    (info.company?'<div class="muted" style="margin-top:6px">'+esc(tf('pn_devices',{n:info.company}))+'</div>':'');
+}
+
+// --- Guide de démarrage -------------------------------------------------
+const GUIDE_STEPS=[
+  {id:'ai',icon:'🤖',tab:'assistant',n:4,tip:1},
+  {id:'products',icon:'📦',tab:'products',n:3,tip:1},
+  {id:'whatsapp',icon:'💬',tab:'settings',n:6,tip:1,creds:1},
+  {id:'inbound',icon:'📥',tab:'conversations',n:3},
+  {id:'payment',icon:'💳',tab:'settings',n:3},
+  {id:'alerts',icon:'🔔',tab:'settings',n:4,tip:1,push:1},
+  {id:'team',icon:'👥',tab:'team',n:3},
+  {id:'subscription',icon:'💎',tab:'billing',n:3}
+];
+let guide={steps:{},dismissed:false,open:null,loaded:false,role:null};
+function guideDone(){ return GUIDE_STEPS.filter(s=>guide.steps[s.id]).length; }
+function guideIsOpen(){ const m=$('guideModal'); return m&&m.style.display!=='none'; }
+function guideVisible(){ return guide.loaded&&['owner','admin'].includes(guide.role); }
+async function loadGuide(auto){
+  try{
+    const r=await api('/api/onboarding/progress');
+    guide.steps=r.steps||{}; guide.dismissed=!!r.dismissed; guide.role=r.role; guide.loaded=true;
+    if(!guide.open||guide.steps[guide.open]){ const first=GUIDE_STEPS.find(s=>!guide.steps[s.id]); guide.open=first?first.id:null; }
+    const nb=$('guideNavBtn'); if(nb) nb.classList.toggle('hidden',!guideVisible());
+    const cnt=$('guideNavCount'); if(cnt) cnt.textContent=guideDone()+'/'+GUIDE_STEPS.length;
+    renderGuideCard(); if(guideIsOpen()) renderGuide();
+    if(auto&&guideVisible()&&!guide.dismissed&&guideDone()<=2){
+      let seen=false; try{ seen=sessionStorage.getItem('vendia_guide_auto')==='1'; sessionStorage.setItem('vendia_guide_auto','1'); }catch(e){}
+      if(!seen) openGuide();
+    }
+  }catch(e){}
+}
+function renderGuideCard(){
+  const el=$('guideCard'); if(!el) return;
+  if(!guideVisible()||guide.dismissed&&guideDone()===GUIDE_STEPS.length){ el.innerHTML=''; return; }
+  const done=guideDone(), total=GUIDE_STEPS.length;
+  if(done===total){ el.innerHTML='<div class="panel gdCardBox"><strong>'+esc(t('gd_all_done'))+'</strong></div>'; return; }
+  if(guide.dismissed){ el.innerHTML=''; return; }
+  const next=GUIDE_STEPS.find(s=>!guide.steps[s.id]);
+  el.innerHTML='<div class="panel gdCardBox"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center"><div><strong>'+esc(t('gd_card_title'))+'</strong><div class="muted">'+esc(tf('gd_sub',{done,total}))+' · '+esc(tf('gd_card_next',{s:t('gd_'+next.id+'_title')}))+'</div></div><button class="btn primary" onclick="openGuide()">'+esc(t('gd_card_btn'))+'</button></div><div class="gdBar"><div style="width:'+Math.round(done/total*100)+'%"></div></div></div>';
+}
+function openGuide(){ if(!guide.loaded){ loadGuide().then(()=>{ renderGuide(); $('guideModal').style.display='flex'; }); return; } renderGuide(); $('guideModal').style.display='flex'; if(guide.open==='whatsapp') gdLoadCreds(); }
+function closeGuide(){ $('guideModal').style.display='none'; }
+function gdToggle(id){ guide.open=guide.open===id?null:id; renderGuide(); if(guide.open==='whatsapp') gdLoadCreds(); }
+function gdGo(tabName){ closeGuide(); tab(tabName); window.scrollTo({top:0,behavior:'smooth'}); }
+function renderGuide(){
+  const done=guideDone(), total=GUIDE_STEPS.length;
+  $('gdSub').textContent=tf('gd_sub',{done,total});
+  $('gdBarFill').style.width=Math.round(done/total*100)+'%';
+  const h=$('gdHide'); if(h) h.checked=guide.dismissed;
+  $('gdList').innerHTML=GUIDE_STEPS.map((s,idx)=>{
+    const ok=!!guide.steps[s.id], open=guide.open===s.id;
+    let body='';
+    if(open){
+      let li=''; for(let i=1;i<=s.n;i++) li+='<li>'+t('gd_'+s.id+'_s'+i)+'</li>';
+      body='<div class="gdBody"><p class="muted" style="margin-top:0">'+esc(t('gd_'+s.id+'_desc'))+'</p><ol>'+li+'</ol>'+
+        (s.tip?'<div class="gdTip"><b>'+esc(t('gd_tip'))+' :</b> '+esc(t('gd_'+s.id+'_tip'))+'</div>':'')+
+        (s.creds?'<div class="gdCreds"><label class="muted">'+esc(t('gd_wa_url'))+'</label><div class="gdRow"><input id="gdWaUrl" readonly onclick="this.select()"><button class="btn" onclick="gdCopy(\'gdWaUrl\',this)">'+esc(t('gd_copy'))+'</button></div>'+
+          '<label class="muted">'+esc(t('gd_wa_token'))+'</label><div class="gdRow"><input id="gdWaTok" readonly onclick="this.select()"><button class="btn" onclick="gdCopy(\'gdWaTok\',this)">'+esc(t('gd_copy'))+'</button></div>'+
+          '<div class="gdWarn">'+esc(t('gd_secret_warn'))+'</div><div class="actions"><button class="btn" onclick="gdTestWa()">'+esc(t('gd_test_wa'))+'</button></div><div id="gdMsg" class="muted" style="margin-top:6px"></div></div>':'')+
+        (s.push?'<div class="actions" style="margin:10px 0"><button class="btn primary" onclick="enablePush().then(()=>loadGuide())">'+esc(t('gd_enable_push'))+'</button> <button class="btn" onclick="testPush()">'+esc(t('pn_test'))+'</button></div><div id="gdMsg" class="muted"></div>':'')+
+        '<div class="actions" style="margin-top:12px"><button class="btn'+(ok?'':' primary')+'" onclick="gdGo(\''+s.tab+'\')">'+esc(t('gd_'+s.id+'_go'))+' →</button></div></div>';
+    }
+    return '<div class="gdStep'+(ok?' ok':'')+(open?' open':'')+'"><div class="gdTop" onclick="gdToggle(\''+s.id+'\')"><span class="gdNum">'+(ok?'✓':(idx+1))+'</span><span class="gdIcon">'+s.icon+'</span><span class="gdTitle">'+esc(t('gd_'+s.id+'_title'))+'</span><span class="gdState">'+esc(ok?t('gd_done'):t('gd_todo'))+'</span><span class="gdArrow">'+(open?'▾':'▸')+'</span></div>'+body+'</div>';
+  }).join('');
+}
+async function gdLoadCreds(){
+  try{ const s=await api('/api/settings/whatsapp'); const a=$('gdWaUrl'), b=$('gdWaTok'); if(a) a.value=s.webhookUrl||''; if(b) b.value=s.verifyToken||''; }catch(e){}
+}
+async function gdCopy(id,btn){
+  const el=$(id); if(!el) return;
+  try{ await navigator.clipboard.writeText(el.value); }catch(e){ el.select(); try{ document.execCommand('copy'); }catch(x){} }
+  if(btn){ const o=btn.textContent; btn.textContent=t('gd_copied'); setTimeout(()=>{ btn.textContent=o; },1500); }
+}
+async function gdTestWa(){
+  const el=$('gdMsg'); if(el) el.textContent=t('loading_testing');
+  try{
+    const r=await api('/api/settings/whatsapp/test',{method:'POST'});
+    if(el) el.innerHTML=r.ok?'<span class="badge">'+esc(t('test_success_prefix')+' '+(r.verifiedName||r.displayPhoneNumber||t('test_verified_number')))+'</span>':'<span class="error">'+esc(t('test_fail_prefix')+' '+(r.error||t('test_fail_default')))+'</span>';
+  }catch(x){ if(el) el.innerHTML='<span class="error">'+esc(x.message)+'</span>'; }
+}
+async function gdDismiss(on){ try{ await api('/api/onboarding/dismiss',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dismissed:!!on})}); guide.dismissed=!!on; renderGuideCard(); }catch(e){} }
+function afterLoadExtras(){
+  pushRegister();
+  pollHandoff();
+  loadGuide(true);
+  const conv=new URLSearchParams(location.search).get('conv');
+  if(conv){ history.replaceState(null,'',location.pathname); openConvById(conv); }
+}
 
 applyI18n();
 if (new URLSearchParams(location.search).get('resetToken')) {

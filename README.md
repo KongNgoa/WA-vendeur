@@ -139,6 +139,24 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - Le tableau du parrain montre ses filleuls (abonné actif ou en attente de paiement) et ce que chacun lui a rapporté.
 
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.
+## 1.10.35 — Alertes téléphone, passage à l'humain et guide de démarrage
+
+**Passage à l'humain (l'IA reste prioritaire)**
+- L'IA répond seule à tout ce que le catalogue, les moyens de paiement et les consignes permettent de traiter. Elle ne dit plus « je vérifie et je reviens » : si elle ne peut pas répondre, elle dit honnêtement que la demande est transmise à l'équipe et termine par le marqueur interne `[[HUMAIN]]` (retiré avant l'envoi).
+- Une conversation passe « À traiter » (`conversations.needs_human`) dans 3 cas : demande explicite d'un humain, réclamation/litige/paiement bloqué, ou question hors catalogue/consignes. Une seule alerte par demande ; rappels push à 30 min puis 2 h si personne ne répond (vérification toutes les 5 min).
+- Dès qu'un humain répond depuis l'application, l'IA est **en pause** sur cette conversation (12 h, `ai_paused_until`). Boutons « Marquer comme traité » et « Reprendre l'IA » (`POST /api/conversations/:id/handled|resume-ai`). Si le client réécrit pendant la pause et que la dernière réponse humaine date de plus de 5 min, une nouvelle alerte part (l'IA reste muette).
+- Onglet Conversations : filtre « À traiter », pastille rouge, badge sur l'onglet et dans le titre de la page, bip + bandeau quand l'app est ouverte (`GET /api/handoff/summary`, interrogé toutes les 30 s).
+
+**Notifications push (Android, iPhone, ordinateur)**
+- Web Push (paquet `web-push`). Les clés VAPID sont créées au premier démarrage et stockées en base (`app_settings`) : **aucune variable Railway à ajouter**. Abonnements dans `push_subscriptions` ; seuls propriétaire et admins reçoivent les alertes ; un abonnement expiré (404/410) est supprimé automatiquement.
+- `/sw.js` (service worker) et `/manifest.webmanifest` (app installable). Notification persistante (`requireInteraction`) avec vibration, ouverture directe de la conversation (`/?conv=…`).
+- Réglages → « Alertes sur votre téléphone » : activer/désactiver/tester, guides Android, iPhone (iOS 16.4+, app ajoutée à l'écran d'accueil) et ordinateur. Routes : `GET /api/push/status`, `POST /api/push/subscribe|unsubscribe|test`.
+- **Limite** : une application web ne peut pas forcer une vraie sonnerie d'alarme qui passe outre le mode silencieux (seule une app native le peut). Les alertes Telegram n'ont pas été ajoutées.
+
+**Guide de démarrage**
+- Bouton « Guide » + carte sur le tableau de bord + ouverture automatique pour un nouveau compte (≤ 2 étapes faites). 8 étapes dépliables, expliquées pas à pas, en français et en anglais : assistant IA, produits, connexion WhatsApp (URL de rappel et jeton de vérification avec boutons Copier, test de connexion), premier message reçu, numéros de paiement, alertes téléphone, équipe, abonnement.
+- Progression détectée automatiquement (`GET /api/onboarding/progress`) ; masquable par entreprise (`POST /api/onboarding/dismiss`, colonne `companies.onboarding_dismissed_at`).
+
 ## 1.10.34 — Campagnes récurrentes
 
 - Lors de la programmation, option **Une seule fois / Chaque jour / Chaque semaine / Chaque mois** (`repeat` sur `POST /api/campaigns/:id/schedule`).
