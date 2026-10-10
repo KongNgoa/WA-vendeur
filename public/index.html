@@ -607,8 +607,8 @@ fr: {
   upgrade_blocked_orders:"🚨 URGENT : {n} commande(s) de votre vitrine ({total}) sont BLOQUÉES car votre quota de prospects est atteint. Les coordonnées de vos clients sont masquées et ils attendent votre appel — chaque heure compte.",
   stock_head_critical:"🔴 URGENT — Stock presque épuisé : réapprovisionnez immédiatement !", stock_head_high:"🟠 Stock très bas : réapprovisionnez vite", stock_head_low:"⚠️ Stock faible : pensez à vous réapprovisionner",
   sup_bubble:"Aide", sup_title:"Aide VENDIA", sup_sub:"Posez votre question — l'assistant répond tout de suite", sup_placeholder:"Votre question…", sup_ai_name:"Assistant VENDIA", sup_team_name:"Équipe VENDIA",
-  sup_welcome:"Bonjour 👋 Je suis l'assistant VENDIA. Dites-moi ce qui vous bloque ou ce que vous voulez faire, je vous guide. Si je ne peux pas résoudre, je transmets à l'équipe.",
-  sup_q1:"Comment connecter mon WhatsApp ?", sup_q2:"Mon IA ne répond pas aux clients", sup_q3:"J'ai un problème de paiement ou d'abonnement", sup_q4:"Je voudrais parler à quelqu'un",
+  sup_welcome:"Bonjour 👋 Je suis l'assistant VENDIA. Dites-moi ce qui vous bloque ou ce que vous voulez faire, je vous guide.",
+  sup_q1:"Comment connecter mon WhatsApp ?", sup_q2:"Mon IA ne répond pas aux clients", sup_q3:"J'ai un problème de paiement ou d'abonnement", sup_q4:"J'ai une autre question",
   sup_resolved:"✅ Problème résolu", sup_human:"👤 Parler à l'équipe", sup_closed:"✅ Demande clôturée. Merci !", sup_st_ai:"L'assistant vous répond", sup_st_waiting:"Transmis à l'équipe — réponse ici", sup_st_replied:"L'équipe vous a répondu",
   stock_s_critical:"🔴 Stock critique", stock_s_high:"🟠 Stock très bas", stock_s_low:"⚠️ Stock faible", stock_details:"Détails", stock_hide:"Masquer", stock_btn_short:"Gérer le stock",
   stock_out:"épuisé", stock_left:"reste {n}", stock_rate:"≈ {r} vendu(s)/jour", stock_days:"environ {d} jour(s) de stock", stock_less_day:"moins d'un jour de stock", stock_btn:"Mettre à jour le stock", stock_more:"… et {n} autre(s) produit(s) à surveiller.",
@@ -900,8 +900,8 @@ en: {
   upgrade_blocked_orders:"🚨 URGENT: {n} order(s) from your storefront ({total}) are BLOCKED because your lead quota is reached. Your customers' contact details are hidden and they are waiting for your call — every hour counts.",
   stock_head_critical:"🔴 URGENT — Stock almost gone: restock immediately!", stock_head_high:"🟠 Very low stock: restock soon", stock_head_low:"⚠️ Low stock: plan to restock",
   sup_bubble:"Help", sup_title:"VENDIA Help", sup_sub:"Ask your question — the assistant answers right away", sup_placeholder:"Your question…", sup_ai_name:"VENDIA assistant", sup_team_name:"VENDIA team",
-  sup_welcome:"Hello 👋 I'm the VENDIA assistant. Tell me what's blocking you or what you want to do and I'll guide you. If I can't solve it, I'll pass it to the team.",
-  sup_q1:"How do I connect my WhatsApp?", sup_q2:"My AI isn't replying to customers", sup_q3:"I have a payment or subscription problem", sup_q4:"I'd like to talk to someone",
+  sup_welcome:"Hello 👋 I'm the VENDIA assistant. Tell me what's blocking you or what you want to do and I'll guide you.",
+  sup_q1:"How do I connect my WhatsApp?", sup_q2:"My AI isn't replying to customers", sup_q3:"I have a payment or subscription problem", sup_q4:"I have another question",
   sup_resolved:"✅ Problem solved", sup_human:"👤 Talk to the team", sup_closed:"✅ Request closed. Thank you!", sup_st_ai:"The assistant is replying", sup_st_waiting:"Passed to the team — reply here", sup_st_replied:"The team has replied",
   stock_s_critical:"🔴 Critical stock", stock_s_high:"🟠 Very low stock", stock_s_low:"⚠️ Low stock", stock_details:"Details", stock_hide:"Hide", stock_btn_short:"Manage stock",
   stock_out:"out of stock", stock_left:"{n} left", stock_rate:"≈ {r} sold/day", stock_days:"about {d} day(s) of stock", stock_less_day:"less than a day of stock", stock_btn:"Update stock", stock_more:"… and {n} more product(s) to watch.",
@@ -1365,7 +1365,7 @@ function supRender(){
   $('supQuick').innerHTML=supMsgs.length?'':supQuickList().map((q,i)=>'<button type="button" onclick="supQuickSend('+i+')">'+esc(q)+'</button>').join('');
   const has=supMsgs.some(m=>m.sender==='ai'||m.sender==='admin');
   $('supActs').classList.toggle('hidden',!(supTicket&&has));
-  const esc_=supTicket&&supTicket.escalated; $('supHumanBtn').classList.toggle('hidden',!!esc_);
+  const esc_=supTicket&&supTicket.escalated, aiN=supMsgs.filter(m=>m.sender==='ai').length; $('supHumanBtn').classList.toggle('hidden',!!esc_||aiN<2);
   const st=$('supStatus'); st.textContent=!supTicket?t('sup_sub'):supTicket.status==='replied'?t('sup_st_replied'):supTicket.status==='waiting'?t('sup_st_waiting'):t('sup_st_ai');
 }
 async function supLoad(openIt){

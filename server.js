@@ -1257,7 +1257,12 @@ async function supportAiReply(ticket, history, ctx) {
     'Tu es l\'assistant d\'aide intégré à l\'application VENDIA. Tu aides le propriétaire/utilisateur d\'une entreprise cliente à utiliser VENDIA. Réponds en ' + lang + ', ton chaleureux et professionnel, court (6 phrases maximum, étapes numérotées si c\'est un pas-à-pas), sans jargon.',
     'Contexte : entreprise « ' + (ctx.company || '') + ' », forfait ' + (ctx.plan || 'inconnu') + (ctx.expired ? ', abonnement EXPIRÉ' : '') + ', page ouverte : ' + (ctx.tab || 'inconnue') + '.',
     'BASE DE CONNAISSANCES (seule source autorisée — n\'invente aucune fonction, aucun prix, aucun délai) :\n' + SUPPORT_KB,
-    'RÈGLES : 1) Commence par comprendre le problème ; si c\'est flou, pose UNE question précise. 2) Si la base permet de résoudre, guide précisément. 3) Mets escalate=true quand tu ne peux pas résoudre : bug ou erreur technique persistante, accès/compte impossible, paiement ou facturation à vérifier, remboursement, donnée à corriger ou supprimer, question absente de la base, utilisateur mécontent ou qui demande un humain, ou deux tentatives sans succès. Dans ce cas dis clairement que tu transmets la demande à l\'équipe VENDIA qui répondra dans cette même fenêtre. 4) urgent=true seulement si l\'activité du client est bloquée (plus aucune réponse aux clients, paiement refusé alors que payé, compte bloqué).',
+    'PRINCIPE : c\'est TOI qui résous presque tout. L\'équipe humaine n\'intervient qu\'en DERNIER RECOURS. Ne parle JAMAIS spontanément de l\'équipe ni de transmission, ne dis jamais « si je ne peux pas résoudre… », ne propose pas de passer la main : tu dois d\'abord mener l\'utilisateur à la solution.',
+    'MÉTHODE : 1) Comprends la demande ; si c\'est flou, pose UNE question précise (quel écran, quel message d\'erreur, depuis quand). 2) Donne des étapes concrètes tirées de la base, adaptées à son cas, puis vérifie si ça a marché. 3) Si ça ne marche pas, propose une autre piste (vérifications, causes fréquentes) au lieu d\'abandonner. 4) Réponds toujours à la question posée, même partiellement, avant de poser la tienne.',
+    ctx.canEscalate
+      ? 'TRANSMISSION AUTORISÉE (dernier recours uniquement) : mets escalate=true seulement si, après avoir réellement essayé, la solution exige une action humaine (valider un paiement, débloquer ou corriger un compte, corriger des données, remboursement, bug confirmé que l\'utilisateur ne peut pas contourner) ou si l\'utilisateur insiste pour parler à une personne. AVANT de transmettre, rassemble les informations utiles (référence de transaction, numéro, forfait, message d\'erreur…) pour que l\'équipe n\'ait pas à reposer de questions. Quand tu transmets, dis simplement et chaleureusement que l\'équipe va regarder et répondre dans cette fenêtre.'
+      : 'TRANSMISSION INTERDITE pour l\'instant : escalate=false obligatoire. Même si l\'utilisateur réclame une personne, réponds avec bienveillance que tu peux sûrement l\'aider tout de suite et demande-lui de préciser son problème, puis résous-le. Ne mentionne pas l\'équipe.',
+    'urgent=true seulement si l\'activité du client est bloquée (plus aucune réponse aux clients, paiement refusé alors que payé, compte bloqué).',
     'Réponds UNIQUEMENT par un objet JSON : {"reply":"texte pour l\'utilisateur","category":"' + SUPPORT_CATEGORIES.join('|') + '","escalate":true|false,"urgent":true|false,"summary":"résumé en une phrase pour l\'équipe (en français)"}'
   ].join('\n\n');
   const raw = history.slice(-14).map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.body }));
@@ -1836,8 +1841,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.38',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.38'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.39',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.39'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -2579,11 +2584,17 @@ async function handler(req,res) {
         await query('UPDATE support_tickets SET updated_at=now() WHERE id=$1',[t.id]);
         const hist=(await query('SELECT sender,body FROM support_messages WHERE ticket_id=$1 ORDER BY created_at',[t.id])).rows;
         const cx=(await query('SELECT c.name,s.plan,('+EXPIRED_SQL+') AS expired FROM companies c LEFT JOIN subscriptions s ON s.company_id=c.id WHERE c.id=$1',[companyId])).rows[0]||{};
-        const ai=await supportAiReply(t,hist,{company:cx.name,plan:cx.plan,expired:cx.expired,tab:String(b.tab||'').slice(0,30)});
+        const aiTurns=hist.filter(m=>m.sender==='ai').length;
+        const humanAsks=hist.filter(m=>m.sender==='user'&&/(parler|joindre|contacter|appeler|passez?|transf[eé]r|quelqu.un|un humain|une personne|le support|l.[ée]quipe|human|real person|someone|agent)/i.test(m.body)&&/(humain|personne|quelqu.un|[ée]quipe|support|agent|human|someone|conseiller|responsable|vendia)/i.test(m.body)).length;
+        const canEscalate=aiTurns>=2||humanAsks>=2;
+        const ai=await supportAiReply(t,hist,{company:cx.name,plan:cx.plan,expired:cx.expired,tab:String(b.tab||'').slice(0,30),canEscalate});
+        if(ai&&!canEscalate) ai.escalate=false;
         if(ai) {
           await query("INSERT INTO support_messages(ticket_id,sender,body) VALUES($1,'ai',$2)",[t.id,ai.reply]);
           await query("UPDATE support_tickets SET category=$2,summary=COALESCE(NULLIF($3,''),summary),updated_at=now() WHERE id=$1",[t.id,ai.category,ai.summary]);
           if(ai.escalate) { await query("INSERT INTO support_messages(ticket_id,sender,body) VALUES($1,'system',$2)",[t.id,lang==='en'?'👤 Your request has been passed to the VENDIA team. They will reply here.':'👤 Votre demande a été transmise à l\'équipe VENDIA. Elle vous répondra ici.']); await supportEscalate(t,'ai_escalation',ai.urgent,ai.summary||t.subject); }
+        } else if(process.env.ANTHROPIC_API_KEY) {
+          await query("INSERT INTO support_messages(ticket_id,sender,body) VALUES($1,'ai',$2)",[t.id,lang==='en'?'Sorry, I had a small hiccup 🙏 Could you send your message again in a moment?':'Désolé, petit souci de mon côté 🙏 Pouvez-vous renvoyer votre message dans un instant ?']);
         } else {
           await query("INSERT INTO support_messages(ticket_id,sender,body) VALUES($1,'system',$2)",[t.id,lang==='en'?'👤 Your request has been passed to the VENDIA team. They will reply here.':'👤 Votre demande a été transmise à l\'équipe VENDIA. Elle vous répondra ici.']);
           await supportEscalate(t,'ai_unavailable',false,t.subject);
@@ -4415,6 +4426,6 @@ ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>
   const renewalTick=()=>checkRenewalReminders().catch(e=>console.error('[renewal] echec:',e.message));
   setInterval(renewalTick, 10*60*1000); setTimeout(renewalTick, 20*1000); // + un passage peu après chaque démarrage
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.38 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.39 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});

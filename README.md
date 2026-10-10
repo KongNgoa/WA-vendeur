@@ -139,6 +139,12 @@ Suite à un audit complet du code et une étude du marché WhatsApp commerce IA 
 - Le tableau du parrain montre ses filleuls (abonné actif ou en attente de paiement) et ce que chacun lui a rapporté.
 
 Dernière étape d'intégration : API raccordée au modèle PostgreSQL relationnel.
+## 1.10.39 — Support : l'IA va au bout, l'humain en dernier recours
+
+- Le message d'accueil de la bulle d'aide ne parle plus de transmission à l'équipe.
+- L'assistant de support doit comprendre, guider pas à pas, proposer d'autres pistes et collecter les informations utiles. La transmission n'est autorisée par le serveur qu'après au moins 2 réponses de l'IA, ou si l'utilisateur réclame une personne à 2 reprises ; avant, `escalate` est forcé à faux et l'IA reçoit la consigne de ne jamais mentionner l'équipe.
+- Le bouton « Parler à l'équipe » n'apparaît qu'après 2 réponses de l'IA. En cas d'erreur passagère de l'IA, elle demande de renvoyer le message au lieu de transmettre (transmission directe seulement sans clé `ANTHROPIC_API_KEY`).
+
 ## 1.10.38 — Support intégré, navigation latérale, barre de stock compacte
 
 - **Bulle d'aide** dans l'espace client (🔔 « Aide », en bas à droite, aussi quand l'abonnement est expiré) : l'assistant IA répond avec une base de connaissances VENDIA (`SUPPORT_KB` dans `server.js`) ; s'il ne peut pas résoudre (bug, paiement, accès, question hors base, client mécontent, demande d'humain, 2 tentatives sans succès) il **transmet à l'équipe** et prévient par email (`SUPERADMIN_EMAIL`). Le client peut aussi cliquer « Parler à l'équipe » ou « Problème résolu ».
