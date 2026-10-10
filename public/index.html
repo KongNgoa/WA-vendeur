@@ -671,6 +671,7 @@ fr: {
   ostatus_en_attente:"En attente", ostatus_confirmee:"Confirmée", ostatus_en_preparation:"En préparation", ostatus_livree:"Livrée", ostatus_annulee:"Annulée",
   btn_create_order:"Créer la commande", btn_export_excel:"📊 Exporter en Excel", th_number:"N°", th_client:"Client", th_amount:"Montant", empty_orders:"Aucune commande.",
   followups_schedule_title:"Programmer une relance", placeholder_followup_message:"Message de relance", btn_schedule:"Programmer",
+  shop_locked:"Vous avez atteint le nombre de boutiques inclus dans votre forfait. Passez au forfait supérieur pour en créer d'autres.",
   fu_locked:"Les relances automatiques par WhatsApp sont disponibles à partir du forfait Business. Passez au forfait supérieur pour y accéder.",
   followups_auto_note:"Une relance auto (🤖) est envoyée automatiquement au client par WhatsApp dès son échéance — aucune action requise. « Envoyée » = relance déjà partie.",
   th_due:"Échéance", th_message:"Message", th_origin:"Origine", th_action:"Action", origin_auto:"🤖 Auto", origin_manual:"✍️ Manuel",
@@ -966,6 +967,7 @@ en: {
   ostatus_en_attente:"Pending", ostatus_confirmee:"Confirmed", ostatus_en_preparation:"Preparing", ostatus_livree:"Delivered", ostatus_annulee:"Cancelled",
   btn_create_order:"Create order", btn_export_excel:"📊 Export to Excel", th_number:"No.", th_client:"Client", th_amount:"Amount", empty_orders:"No orders yet.",
   followups_schedule_title:"Schedule a follow-up", placeholder_followup_message:"Follow-up message", btn_schedule:"Schedule",
+  shop_locked:"You have reached the number of shops included in your plan. Upgrade to create more.",
   fu_locked:"Automatic WhatsApp follow-ups are available from the Business plan. Upgrade to unlock them.",
   followups_auto_note:"An automatic follow-up (🤖) is sent to the client on WhatsApp as soon as it's due — no action needed. \"Sent\" = the follow-up already went out.",
   th_due:"Due", th_message:"Message", th_origin:"Origin", th_action:"Action", origin_auto:"🤖 Auto", origin_manual:"✍️ Manual",
@@ -1875,6 +1877,7 @@ async function exportOrdersExcel(){
   }catch(x){ alert(x.message); }
 }
 
+function lockCta(msgKey,plan){ return '<div class="panel" style="border:2px dashed #e9b949;margin:8px 0 0;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>🔒 '+t(msgKey)+'</span> <button type="button" class="btn primary" onclick="goUpgrade(\''+plan+'\')">'+tf('upgrade_btn',{plan:plan})+'</button></div>'; }
 function renderFollowupLock(){
   const el=$('fuLock'); if(!el) return;
   const off=data.usage&&data.usage.autoFollowups===false;
@@ -1937,7 +1940,7 @@ function renderTeam(users){
   $('teamUsage').innerHTML = (limit==null
     ? '<span class="badge">'+t('team_unlimited')+'</span>'
     : '<span class="badge '+(users.length>=limit?'handoff':users.length>=limit-1?'hot':'')+'">'+users.length+' / '+limit+' '+t('team_members_used')+'</span>'
-      + (users.length>=limit ? '<p class="muted" style="margin-top:6px">'+t('team_limit_reached')+'</p>' : ''))
+      + (users.length>=limit ? lockCta('team_limit_reached',NEXT_PLAN[data.subscription?.plan]||'Pro') : ''))
     + (maxAdmins!=null ? ' <span class="badge">'+ownerCount+' / '+maxAdmins+' '+t('team_admins')+'</span>' : '');
   $('teamTable').innerHTML = users.length ? '<table><thead><tr><th>'+t('th_name')+'</th><th>'+t('th_email')+'</th><th>'+t('th_role')+'</th><th>'+t('th_actions')+'</th></tr></thead><tbody>' +
     users.map(u => {
@@ -2324,6 +2327,8 @@ function fillShopForm(s){
 function renderShopSelector(){
   $('sShopSel').innerHTML=shopsInfo.shops.map(x=>'<option value="'+x.id+'"'+(x.id===curShopId?' selected':'')+'>'+esc(x.name)+(x.isMain?' ★':'')+(x.enabled?'':' ('+esc(t('shop_off'))+')')+'</option>').join('');
   $('sShopLimit').textContent=tf('shop_limit',{n:shopsInfo.shops.length,max:shopsInfo.limit,plan:shopsInfo.plan});
+  let lk=$('sShopLock'); if(!lk){ lk=document.createElement('div'); lk.id='sShopLock'; $('sShopLimit').after(lk); }
+  lk.innerHTML=(shopsInfo.limit!=null&&shopsInfo.shops.length>=shopsInfo.limit&&NEXT_PLAN[shopsInfo.plan])?lockCta('shop_locked',NEXT_PLAN[shopsInfo.plan]):'';
 }
 function selectShop(id){ const s=shopById(id); if(s){ fillShopForm(s); renderShopSelector(); $('sStatus').innerHTML=''; } }
 async function newShop(){

@@ -1848,8 +1848,8 @@ async function ingestMessage(companyId, conversationId, conv, b) {
 async function handler(req,res) {
   if(req.method==='OPTIONS') return json(res,204,{});
   const u=new URL(req.url,`http://${req.headers.host}`);
-  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.41',service:'VENDIA',database:'postgresql'});
-  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.41'});
+  if(req.method==='GET'&&u.pathname==='/api/health') return json(res,200,{ok:true,version:'1.10.42',service:'VENDIA',database:'postgresql'});
+  if(req.method==='GET'&&u.pathname==='/api/version') return json(res,200,{version:'1.10.42'});
   if(req.method==='GET'&&u.pathname==='/') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/index.html'))); }
   if(req.method==='GET'&&(u.pathname==='/confidentialite'||u.pathname==='/privacy')) { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/confidentialite.html'))); }
   if(req.method==='GET'&&u.pathname==='/superadmin.html') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); return res.end(await readFile(path.join(__dirname,'public/superadmin.html'))); }
@@ -4445,6 +4445,6 @@ ensureMigrations().then(()=>ensureSuperAdmin()).then(()=>ensureDemo()).catch(e=>
   const renewalTick=()=>checkRenewalReminders().catch(e=>console.error('[renewal] echec:',e.message));
   setInterval(renewalTick, 10*60*1000); setTimeout(renewalTick, 20*1000); // + un passage peu après chaque démarrage
   setInterval(()=>checkDueFollowups().catch(e=>console.error('[followup-send] echec planification:',e.message)), 60*1000);
-  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.41 listening on ${PORT}`));
+  server.listen(PORT,'0.0.0.0',()=>console.log(`VENDIA 1.10.42 listening on ${PORT}`));
 });
 process.on('SIGTERM',async()=>{server.close();await closeDatabase();});
